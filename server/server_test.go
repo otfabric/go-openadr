@@ -197,3 +197,43 @@ func TestEmptySearchIsAnEmptyArray(t *testing.T) {
 		}
 	}
 }
+
+// fakeWebhooks accepts every callback URL and delivers nothing.
+type fakeWebhooks struct{}
+
+func (fakeWebhooks) Verify(context.Context, string) error { return nil }
+func (fakeWebhooks) Send(string, string, []byte)          {}
+
+func TestNotifierEndpoints(t *testing.T) {
+	h := newServer(t, server.Config{Webhooks: fakeWebhooks{}})
+	// Every authenticated client may ask how the VTN notifies.
+	for _, token := range []string{"bl", "ven"} {
+		got := call(h, "GET", "/notifiers", token, "")
+		if got.status != 200 || got.json["WEBHOOK"] != true || got.json["MQTT"] != nil {
+			t.Errorf("GET /notifiers as %s = %d %s", token, got.status, got.body)
+		}
+	}
+	for name, tc := range map[string]struct {
+		method, target, token, body string
+		want                        int
+	}{
+		"notifiers without a token":      {"GET", "/notifiers", "", "", 401},
+		"notifiers with another method":  {"POST", "/notifiers", "bl", "", 405},
+		"mqtt topics":                    {"GET", "/notifiers/mqtt/topics/programs", "bl", "", 501},
+		"subscriptions":                  {"GET", "/subscriptions", "ven", "", 200},
+		"subscription without a scope":   {"POST", "/subscriptions", "readonly", `{"clientName":"c","objectOperations":[]}`, 403},
+		"subscription without its list":  {"POST", "/subscriptions", "ven", `{"clientName":"c"}`, 400},
+		"subscription to a strange kind": {"POST", "/subscriptions", "ven", `{"clientName":"c","objectOperations":[{"objects":["TARIFF"],"operations":["CREATE"],"callbackUrl":"https://x.example/h"}]}`, 400},
+		"bad objects filter":             {"GET", "/subscriptions?objects=TARIFF", "ven", "", 400},
+		"unknown subscription":           {"GET", "/subscriptions/missing", "ven", "", 404},
+		"subscriptions, other method":    {"PATCH", "/subscriptions", "ven", "", 405},
+	} {
+		if got := call(h, tc.method, tc.target, tc.token, tc.body); got.status != tc.want {
+			t.Errorf("%s: %d %s, want %d", name, got.status, got.body, tc.want)
+		}
+	}
+	created := call(h, "POST", "/subscriptions", "ven", `{"clientName":"c","clientID":"someone-else","objectOperations":[{"objects":["EVENT"],"operations":["CREATE"],"callbackUrl":"https://x.example/h","bearerToken":"t"}]}`)
+	if created.status != 201 || created.json["objectType"] != "SUBSCRIPTION" || created.json["clientID"] != "ven" {
+		t.Errorf("POST /subscriptions = %d %s; the client ID is the token's", created.status, created.body)
+	}
+}

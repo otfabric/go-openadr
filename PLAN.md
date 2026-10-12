@@ -9,7 +9,7 @@ OpenADR 3.x, for both Virtual End Node (VEN) clients and Virtual Top Node
 | [otfabric/go-openadr](https://github.com/otfabric/go-openadr) | The protocol implementation: VEN client, VTN server, shared data models, authentication, notifications |
 | [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop) | Reference implementations as container images behind one contract, fixtures, and a conformance suite that asserts the specification. It knows no library under test; this module consumes it |
 
-Status as of 2026-10-12.
+Status as of 2026-10-13: v0.0.1 released; v0.1.0 ready, which closes M1 to M3 except for what is marked open below.
 
 ## 1. Scope and version strategy
 
@@ -60,9 +60,9 @@ communication protocol and does not become an energy-management platform.
 | Phase | go-openadr | Exit criterion | Status |
 |---|---|---|---|
 | **M0 Foundation** | Domain models, version strategy, HTTP scaffolding | First authenticated API request against OpenLEADR | **Done.** The Go clients run against OpenLEADR v0.2.7 (`make interop`) |
-| **M1 Core REST** | VEN and BL clients, VTN handlers, CRUD, filtering, pagination, storage | Complete 3.1 REST resource API exercised | Programs, events, reports, VENs, resources done, in-memory. Open: subscriptions, notifier endpoints, SQLite |
-| **M2 Security** | OAuth2, token discovery, scopes, targeting, resource ownership | Unauthorized access consistently rejected | First cut done and tested. Open: authorization test matrix in openadr-interop, a JWT validator, webhook callback verification |
-| **M3 Notifications** | Webhook and MQTT for client and server | Notifications work with external peers | Not started |
+| **M1 Core REST** | VEN and BL clients, VTN handlers, CRUD, filtering, pagination, storage | Complete 3.1 REST resource API exercised | **Done**: all 45 operations, exercised by `e2e/` and, where the peers can, by `interop/`. Persistence is a journal file; a SQL store is open (see section 6) |
+| **M2 Security** | OAuth2, token discovery, scopes, targeting, resource ownership | Unauthorized access consistently rejected | **Done**: JWT validator, callback verification, and an authorization matrix of every operation as five kinds of client (`e2e/matrix_test.go`). The same matrix in openadr-interop's conformance suite: see that repository |
+| **M3 Notifications** | Webhook and MQTT for client and server | Notifications work with external peers | Both bindings done on both sides. MQTT works with an external peer: this module's subscriber receives OpenLEADR's notifications on Mosquitto, in `make interop`. Open: webhooks, and the VTN as MQTT publisher, with an external client |
 | **M4 Stabilization** | Production hardening, documentation, examples | OpenADR 3.1 release candidate | Not started |
 | **M5 Version expansion** | OpenADR 3.0.1 | Both versions independently validated | Not started |
 
@@ -88,13 +88,13 @@ Logic retrieves the report.
 
 | Requirement | Acceptance criterion | Status |
 |---|---|---|
-| OpenADR 3.1 REST coverage | Every defined operation implemented or explicitly documented as optional | 27 of 45 operations; the rest answer 501 and are listed in docs/CONFORMANCE.md |
+| OpenADR 3.1 REST coverage | Every defined operation implemented or explicitly documented as optional | All 45 operations |
 | VEN interoperability | Successful tests against at least one independent VTN | Passing locally against OpenLEADR v0.2.7; not in CI yet |
 | VTN interoperability | Successful tests with at least one independent VEN | Passing locally with the ElaadNL openadr3-client 2.4.0; not in CI yet |
-| Authentication | OAuth2 and authorization scenarios pass | Unit and end-to-end tests pass; interop matrix open |
-| Persistence | VTN data survives restart | Open (in-memory only) |
-| Notifications | Webhook and MQTT tested independently | Open |
-| Automated testing | Unit, integration, conformance and interoperability CI | Unit and integration in CI; an `Interop` workflow against the released reference images is written and has not run yet |
+| Authentication | OAuth2 and authorization scenarios pass | Passing: `e2e/` matrix, JWT forgery tests, interop with both peers |
+| Persistence | VTN data survives restart | Passing with `storage.File` (`e2e` restart test). SQL store open |
+| Notifications | Webhook and MQTT tested independently | MQTT subscriber: against OpenLEADR on Mosquitto. Webhooks and the MQTT publisher: between this module's two sides only |
+| Automated testing | Unit, integration, conformance and interoperability CI | Unit, e2e and interop in CI; the conformance suite runs in openadr-interop's CI against its references, and by hand against this VTN |
 | Go quality | Race detector, `go vet`, linting and relevant fuzz tests pass | Passing (`make check`, `make fuzz`) |
 | Documentation | GoDoc, runnable VEN/VTN examples and compatibility matrix | GoDoc and examples done; matrix started in INTEROP.md |
 | Release management | Semantic versioning, changelog and reproducible test results | Open |
@@ -119,10 +119,23 @@ redistributed in either repository.
 | 9 | openadr-interop | Integrate ElaadNL's Python VEN and BL clients into automated tests | Done: reference client image released in openadr-interop v0.1.0 |
 | 10 | Both | First end-to-end program → event → report workflow | Done in all three pairings: Go/Go, Go clients/OpenLEADR, ElaadNL client/Go VTN |
 
-Webhook and MQTT work follows once the REST baseline holds against the
-external peers.
+## 6. Next: M4 hardening
 
-## 6. References
+Carried over from M1 to M3:
+
+1. **The VTN's notifications with an external client.** The ElaadNL client
+   can subscribe by MQTT and manage subscriptions; the client contract of
+   openadr-interop needs subscription and notification operations for it.
+   The VTN's publisher should also meet a production broker.
+2. **A SQL store**, as a module of its own (the pure-Go SQLite driver needs
+   Go 1.26; this module supports 1.23 and has no dependencies), and with it
+   durable delivery of notifications.
+
+M4 proper: load and soak tests, restart and failure injection in `e2e/`,
+metrics hooks, API review before v1.0.0, and the OpenADR Alliance's test
+suite if access can be had.
+
+## 7. References
 
 - [OpenADR Alliance specifications](https://www.openadr.org/specification)
 - [OpenADR 3.1.0 OpenAPI YAML](https://github.com/grid-coordination/openadr3-specification/blob/main/3.1.0/openadr3.yaml)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-package openadr_test
+package e2e_test
 
 import (
 	"context"
@@ -13,7 +13,6 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/client"
-	"github.com/otfabric/go-openadr/internal/vtntest"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -41,7 +40,7 @@ func mustEvent(t *testing.T, bl *client.BL, e openadr.Event) openadr.Event {
 // reads the report.
 func TestProgramEventReportWorkflow(t *testing.T) {
 	ctx := context.Background()
-	vtn := vtntest.Start(t)
+	vtn := start(t, options{})
 
 	start := time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)
 	program := mustProgram(t, vtn.BL, openadr.Program{
@@ -115,16 +114,13 @@ func TestProgramEventReportWorkflow(t *testing.T) {
 
 func TestRolesAndOwnership(t *testing.T) {
 	ctx := context.Background()
-	vtn := vtntest.Start(t)
+	vtn := start(t, options{})
 	program := mustProgram(t, vtn.BL, openadr.Program{Name: "p"})
 	event := mustEvent(t, vtn.BL, openadr.Event{ProgramID: program.ID})
 
 	t.Run("a VEN cannot write programs or events", func(t *testing.T) {
 		// The VEN client has no such methods; use the BL API with VEN credentials.
-		asVEN, err := client.NewBL(client.Config{
-			BaseURL:     vtn.URL,
-			Credentials: &client.Credentials{ClientID: "ven-1", ClientSecret: "ven-1-secret"},
-		})
+		asVEN, err := client.NewBL(vtn.config("ven-1", "ven-1-secret"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,10 +137,7 @@ func TestRolesAndOwnership(t *testing.T) {
 	})
 
 	t.Run("wrong credentials", func(t *testing.T) {
-		bad, err := client.NewVEN(client.Config{
-			BaseURL:     vtn.URL,
-			Credentials: &client.Credentials{ClientID: "ven-1", ClientSecret: "nope"},
-		})
+		bad, err := client.NewVEN(vtn.config("ven-1", "nope"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -153,8 +146,8 @@ func TestRolesAndOwnership(t *testing.T) {
 			t.Errorf("Programs with a wrong secret: %v, want a TokenError invalid_client", err)
 		}
 		for name, cfg := range map[string]client.Config{
-			"no token":      {BaseURL: vtn.URL},
-			"unknown token": {BaseURL: vtn.URL, Tokens: client.StaticToken("made-up")},
+			"no token":      {BaseURL: vtn.URL, HTTPClient: vtn.HTTP},
+			"unknown token": {BaseURL: vtn.URL, HTTPClient: vtn.HTTP, Tokens: client.StaticToken("made-up")},
 		} {
 			anon, err := client.NewVEN(cfg)
 			if err != nil {
@@ -207,7 +200,7 @@ func TestRolesAndOwnership(t *testing.T) {
 
 func TestVENsAndResources(t *testing.T) {
 	ctx := context.Background()
-	vtn := vtntest.Start(t)
+	vtn := start(t, options{})
 
 	own, err := vtn.VEN1.CreateVEN(ctx, openadr.VEN{Name: "site-1", Targets: []string{"self-granted"}})
 	if err != nil {
@@ -262,7 +255,7 @@ func TestVENsAndResources(t *testing.T) {
 
 func TestTargeting(t *testing.T) {
 	ctx := context.Background()
-	vtn := vtntest.Start(t)
+	vtn := start(t, options{})
 
 	open := mustProgram(t, vtn.BL, openadr.Program{Name: "open"})
 	groupA := mustProgram(t, vtn.BL, openadr.Program{Name: "a", Targets: []string{"group-a", "group-b"}})
@@ -324,7 +317,7 @@ func TestTargeting(t *testing.T) {
 
 func TestProgramLifecycleAndPaging(t *testing.T) {
 	ctx := context.Background()
-	vtn := vtntest.Start(t)
+	vtn := start(t, options{})
 
 	const n = 120
 	for i := range n {
@@ -386,7 +379,7 @@ func TestProgramLifecycleAndPaging(t *testing.T) {
 
 func TestActiveEvents(t *testing.T) {
 	ctx := context.Background()
-	vtn := vtntest.Start(t)
+	vtn := start(t, options{})
 	p := mustProgram(t, vtn.BL, openadr.Program{Name: "p"})
 	past := time.Now().Add(-48 * time.Hour)
 	future := time.Now().Add(48 * time.Hour)

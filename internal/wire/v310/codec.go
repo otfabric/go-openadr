@@ -20,6 +20,22 @@ func Codec() *wire.Codec {
 		VENs:      wire.ObjectCodec[openadr.VEN]{Marshal: marshalVEN, Unmarshal: unmarshalVEN},
 		Resources: wire.ObjectCodec[openadr.Resource]{Marshal: marshalResource, Unmarshal: unmarshalResource},
 
+		Subscriptions:         wire.ObjectCodec[openadr.Subscription]{Marshal: marshalSubscription, Unmarshal: unmarshalSubscription},
+		MarshalNotification:   marshalNotification,
+		UnmarshalNotification: unmarshalNotification,
+		MarshalNotifiers:      marshalNotifiers,
+		UnmarshalNotifiers:    unmarshalNotifiers,
+		MarshalTopics: func(t openadr.Topics) ([]byte, error) {
+			return json.Marshal(topicsResponse{Topics: topics{Create: t.Create, Update: t.Update, Delete: t.Delete, All: t.All}})
+		},
+		UnmarshalTopics: func(data []byte) (openadr.Topics, error) {
+			var w topicsResponse
+			if err := decode(data, &w); err != nil {
+				return openadr.Topics{}, err
+			}
+			return openadr.Topics{Create: w.Topics.Create, Update: w.Topics.Update, Delete: w.Topics.Delete, All: w.Topics.All}, nil
+		},
+
 		MarshalProblem: func(p openadr.Problem) ([]byte, error) {
 			return json.Marshal(problem(p))
 		},
@@ -296,6 +312,178 @@ func unmarshalResource(data []byte) (openadr.Resource, wire.Form, error) {
 		return openadr.Resource{}, 0, err
 	}
 	return r, form, nil
+}
+
+// --- subscription
+
+func marshalSubscription(sub openadr.Subscription, form wire.Form) ([]byte, error) {
+	w := subscription{
+		ClientName:       sub.ClientName,
+		ProgramID:        sub.ProgramID,
+		Targets:          sub.Targets,
+		ObjectOperations: make([]objectOperation, len(sub.ObjectOperations)),
+	}
+	if form == wire.Object {
+		w.metadata = metaTo(sub.Metadata, openadr.ObjectSubscription)
+		w.ClientID = sub.ClientID
+	}
+	for i, oo := range sub.ObjectOperations {
+		w.ObjectOperations[i] = objectOperation{
+			// Required, so written even when empty.
+			Objects:     make([]string, len(oo.Objects)),
+			Operations:  make([]string, len(oo.Operations)),
+			CallbackURL: oo.CallbackURL,
+			BearerToken: oo.BearerToken,
+		}
+		for j, o := range oo.Objects {
+			w.ObjectOperations[i].Objects[j] = string(o)
+		}
+		for j, op := range oo.Operations {
+			w.ObjectOperations[i].Operations[j] = string(op)
+		}
+	}
+	return json.Marshal(w)
+}
+
+func unmarshalSubscription(data []byte) (openadr.Subscription, wire.Form, error) {
+	var w subscription
+	if err := decode(data, &w); err != nil {
+		return openadr.Subscription{}, 0, err
+	}
+	if w.ObjectOperations == nil {
+		return openadr.Subscription{}, 0, invalid("objectOperations", "is required")
+	}
+	sub := openadr.Subscription{
+		Metadata:         metaFrom(w.metadata),
+		ClientID:         w.ClientID,
+		ClientName:       w.ClientName,
+		ProgramID:        w.ProgramID,
+		Targets:          w.Targets,
+		ObjectOperations: make([]openadr.ObjectOperation, len(w.ObjectOperations)),
+	}
+	for i, oo := range w.ObjectOperations {
+		f := fmt.Sprintf("objectOperations[%d]", i)
+		if oo.Objects == nil {
+			return openadr.Subscription{}, 0, invalid(f+".objects", "is required")
+		}
+		if oo.Operations == nil {
+			return openadr.Subscription{}, 0, invalid(f+".operations", "is required")
+		}
+		out := openadr.ObjectOperation{CallbackURL: oo.CallbackURL, BearerToken: oo.BearerToken}
+		for _, o := range oo.Objects {
+			out.Objects = append(out.Objects, openadr.ObjectType(o))
+		}
+		for _, op := range oo.Operations {
+			out.Operations = append(out.Operations, openadr.Operation(op))
+		}
+		sub.ObjectOperations[i] = out
+	}
+	return sub, wire.Object, nil
+}
+
+// --- notification
+
+func marshalNotification(n openadr.Notification) ([]byte, error) {
+	var (
+		object []byte
+		err    error
+	)
+	switch o := n.Object.(type) {
+	case openadr.Program:
+		object, err = marshalProgram(o, wire.Object)
+	case openadr.Event:
+		object, err = marshalEvent(o, wire.Object)
+	case openadr.Report:
+		object, err = marshalReport(o, wire.Object)
+	case openadr.Subscription:
+		object, err = marshalSubscription(o, wire.Object)
+	case openadr.VEN:
+		object, err = marshalVEN(o, wire.Object)
+	case openadr.Resource:
+		object, err = marshalResource(o, wire.Object)
+	default:
+		return nil, fmt.Errorf("openadr: a notification cannot carry a %T", n.Object)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(notification{
+		ObjectType: string(n.ObjectType), Operation: string(n.Operation), Object: object, Targets: n.Targets,
+	})
+}
+
+func unmarshalNotification(data []byte) (openadr.Notification, error) {
+	var w notification
+	if err := decode(data, &w); err != nil {
+		return openadr.Notification{}, err
+	}
+	if w.Operation == "" {
+		return openadr.Notification{}, invalid("operation", "is required")
+	}
+	if len(w.Object) == 0 || string(w.Object) == "null" {
+		return openadr.Notification{}, invalid("object", "is required")
+	}
+	n := openadr.Notification{
+		ObjectType: openadr.ObjectType(w.ObjectType), Operation: openadr.Operation(w.Operation), Targets: w.Targets,
+	}
+	var err error
+	// The schema discriminates the object on its own objectType; the one
+	// of the notification says the same and is always there.
+	switch n.ObjectType {
+	case openadr.ObjectProgram:
+		n.Object, _, err = unmarshalProgram(w.Object)
+	case openadr.ObjectEvent:
+		n.Object, _, err = unmarshalEvent(w.Object)
+	case openadr.ObjectReport:
+		n.Object, _, err = unmarshalReport(w.Object)
+	case openadr.ObjectSubscription:
+		n.Object, _, err = unmarshalSubscription(w.Object)
+	case openadr.ObjectVEN:
+		n.Object, _, err = unmarshalVEN(w.Object)
+	case openadr.ObjectResource:
+		n.Object, _, err = unmarshalResource(w.Object)
+	case "":
+		return openadr.Notification{}, invalid("objectType", "is required")
+	default:
+		return openadr.Notification{}, invalid("objectType", "is %q, not an object type", w.ObjectType)
+	}
+	if err != nil {
+		return openadr.Notification{}, fmt.Errorf("object: %w", err)
+	}
+	return n, nil
+}
+
+// --- notifiers
+
+func marshalNotifiers(n openadr.Notifiers) ([]byte, error) {
+	w := notifiers{Webhook: n.Webhook}
+	if n.MQTT != nil {
+		a := n.MQTT.Authentication
+		w.MQTT = &mqttBinding{
+			URIs: n.MQTT.URIs, Serialization: n.MQTT.Serialization,
+			Authentication: mqttAuthentication{Method: a.Method, Username: a.Username, CACert: a.CACert, ClientCert: a.ClientCert, ClientKey: a.ClientKey},
+		}
+		if w.MQTT.URIs == nil {
+			w.MQTT.URIs = []string{}
+		}
+	}
+	return json.Marshal(w)
+}
+
+func unmarshalNotifiers(data []byte) (openadr.Notifiers, error) {
+	var w notifiers
+	if err := decode(data, &w); err != nil {
+		return openadr.Notifiers{}, err
+	}
+	n := openadr.Notifiers{Webhook: w.Webhook}
+	if w.MQTT != nil {
+		a := w.MQTT.Authentication
+		n.MQTT = &openadr.MQTTBinding{
+			URIs: w.MQTT.URIs, Serialization: w.MQTT.Serialization,
+			Authentication: openadr.MQTTAuthentication{Method: a.Method, Username: a.Username, CACert: a.CACert, ClientCert: a.ClientCert, ClientKey: a.ClientKey},
+		}
+	}
+	return n, nil
 }
 
 // formOf maps the objectType of a ven or resource message to the form of

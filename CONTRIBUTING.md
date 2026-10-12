@@ -39,6 +39,9 @@ make fuzz
 # Build the examples into ./bin
 make build
 
+# Run this module's clients against this module's VTN, every feature
+make e2e
+
 # Run the interop suite against the OpenLEADR and ElaadNL reference images (needs Docker)
 make interop
 ```
@@ -53,7 +56,7 @@ Run `make` (or `make help`) for the full list of targets.
 - Start every Go file with `// SPDX-License-Identifier: MIT`
 - No dependencies outside the standard library
 - Property names of the specification appear in error messages and wire structures as the specification writes them (`programName`, `venID`); everything else follows Go naming
-- Respect the package boundaries in [ARCHITECTURE.md](ARCHITECTURE.md): the root package knows neither HTTP nor JSON, the JSON of a revision stays in `internal/wire`, and `client` and `server` do not import each other
+- Respect the package boundaries in [ARCHITECTURE.md](ARCHITECTURE.md): the root package knows neither HTTP nor JSON, the JSON of a revision stays in `internal/wire`, `client` and `server` do not import each other, and `server` knows a notification binding only through an interface
 
 ### Formatting
 
@@ -62,7 +65,8 @@ Run `make` (or `make help`) for the full list of targets.
 ### Tests
 
 - A change to what goes on the wire needs a test in `internal/wire/v310` against JSON written from the specification, not from the encoder's own output
-- A change to who may see or write what needs a case in the end-to-end tests (`e2e_test.go`) for the client that must be refused as well as the one that is served
+- A change to who may see or write what shows in the authorization matrix (`e2e/matrix_test.go`), which has a row for every operation and a column for every kind of client: change the number, and say why in the commit
+- A new feature gets an end-to-end test in `e2e/`, through the public API of both sides over HTTPS, whether or not another implementation can exercise it
 - Tests must pass with `-race` and must not depend on timing beyond generous upper bounds
 - A change to the client, the VTN or the wire format must keep `make interop` green (the Interop workflow runs it on every push). The `interop` package holds this repository's scenarios and assertions; the reference implementations belong to [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop) and are consumed as images only
 - Where the specification leaves room and the VTN makes a choice, the choice is written down in [docs/CONFORMANCE.md](docs/CONFORMANCE.md) with the test that pins it

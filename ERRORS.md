@@ -141,6 +141,12 @@ a 409 on the name, before repeating it.
 | `*storage.ConstraintError` (matches `openadr.ErrConflict`) | A rule of the store is broken: `Detail` says which | 409 with that detail |
 | anything else | The store failed | 500, logged, no detail to the client |
 
+`storage.OpenFile` returns an error that matches `storage.ErrCorrupt` for a
+journal it cannot replay. A `storage.File` whose journal can no longer be
+written returns a plain error for that write and every later one ("the
+store is read-only until restarted"); the VTN answers 500 for them and keeps
+serving reads.
+
 `auth.Validator` implementations report:
 
 | Error | Meaning | The VTN answers |
@@ -148,11 +154,34 @@ a 409 on the name, before repeating it.
 | `auth.ErrInvalidToken` | Unknown, malformed or expired token | 401 |
 | anything else | The validator failed | 500, logged |
 
+`auth.JWTValidator` returns `ErrInvalidToken` for every way a token can be
+wrong, without saying which: a bad signature, an algorithm that does not go
+with the key, expiry, issuer, audience, a missing client ID. Its only other
+error is that the provider's key set could not be fetched while no key is
+known.
+
 Every error answer of the VTN is a problem object with the HTTP status in
 `status` and its name in `title`. The full list: 400 (invalid body,
-parameter or ID), 401, 403, 404, 405 (with `Allow`), 409, 413 (body over
-`Config.MaxBodyBytes`), 500, 501 (subscriptions, notifiers, and
-`/auth/token` without a `TokenHandler`) and 503 (the request's context ended).
+parameter or ID, or a callback URL that could not be verified), 401, 403,
+404, 405 (with `Allow`), 409, 413 (body over `Config.MaxBodyBytes`), 500,
+501 (subscriptions without `Config.Webhooks`, the MQTT topic operations
+without `Config.MQTT`, `/notifiers` without either; `/auth/token` without a
+`TokenHandler`) and 503 (the
+request's context ended).
+
+A callback URL the VTN refuses is a 400 whose detail names the property and
+the reason, for example `objectOperations[0].callbackUrl must use https` or
+`... did not answer the verification request with the value of its echo
+parameter`. The reason never says what the VTN's own network answered.
+
+Delivering a notification has no caller to return an error to: a delivery
+that fails for good is logged by the `webhook.Sender`, if it has a logger,
+and the request that caused the notification is not affected. The same
+holds for MQTT: the `mqtt.Publisher` logs a broker it cannot reach and a
+notification it drops, and `mqtt.NewPublisher` and `mqtt.NewSubscriber`
+return an error only for a configuration that cannot work, such as a URL
+that is not `mqtt://` or `mqtts://`. A broker that refuses the login is
+logged and tried again, not returned.
 
 `server.New`, `client.NewVEN`, `client.NewBL` and `auth.NewIssuer` return a
 plain error for an invalid configuration.

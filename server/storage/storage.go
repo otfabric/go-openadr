@@ -20,8 +20,9 @@ import (
 //
 //   - program names and VEN names are unique, and so is a resource name
 //     within its VEN;
-//   - an event refers to an existing program, a report to an existing event
-//     and a resource to an existing VEN;
+//   - an event refers to an existing program, a report to an existing event,
+//     a resource to an existing VEN, and a subscription that names a program
+//     to an existing one;
 //   - a program that has events and a VEN that has resources cannot be
 //     deleted.
 //
@@ -33,6 +34,25 @@ type Store interface {
 	Reports() Collection[openadr.Report, ReportFilter]
 	VENs() Collection[openadr.VEN, VENFilter]
 	Resources() Collection[openadr.Resource, ResourceFilter]
+	Subscriptions() Collection[SubscriptionRecord, SubscriptionFilter]
+}
+
+// SubscriptionRecord is a subscription as the VTN keeps it: the object of
+// the API, and what the VTN has to remember about the subscriber to decide
+// later, without a request and its token at hand, what to notify it of.
+type SubscriptionRecord struct {
+	openadr.Subscription
+	// ReadsAll says the subscriber could read every object when it
+	// subscribed: it is Business Logic. A VEN is notified of what it could
+	// read itself.
+	ReadsAll bool
+}
+
+// SubscriptionFilter selects subscriptions; empty fields match everything.
+type SubscriptionFilter struct {
+	ProgramID  string
+	ClientName string
+	ClientID   string
 }
 
 // Collection stores objects of one type under their Metadata.ID, which the

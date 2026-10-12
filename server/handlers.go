@@ -32,6 +32,10 @@ func (s *Server) programs() kind[openadr.Program, storage.ProgramFilter] {
 			p.Targets, ok = view.show(p.Targets)
 			return p, ok, nil
 		},
+		subject: func(_ context.Context, p openadr.Program) subject {
+			return subject{kind: openadr.ObjectProgram, id: p.ID, programID: p.ID, targets: p.Targets, targeted: true,
+				object: func(shown []string) any { p.Targets = shown; return p }}
+		},
 	}
 }
 
@@ -101,6 +105,10 @@ func (s *Server) events() kind[openadr.Event, storage.EventFilter] {
 			var ok bool
 			e.Targets, ok = view.show(e.Targets)
 			return e, ok, nil
+		},
+		subject: func(_ context.Context, e openadr.Event) subject {
+			return subject{kind: openadr.ObjectEvent, id: e.ID, programID: e.ProgramID, targets: e.Targets, targeted: true,
+				object: func(shown []string) any { e.Targets = shown; return e }}
 		},
 	}
 }
@@ -178,6 +186,14 @@ func (s *Server) reports() kind[openadr.Report, storage.ReportFilter] {
 			}
 			return rep, nil
 		},
+		subject: func(ctx context.Context, rep openadr.Report) subject {
+			sub := subject{kind: openadr.ObjectReport, id: rep.ID, owner: rep.ClientID, object: func([]string) any { return rep }}
+			// A report belongs to the program of its event, while the event exists.
+			if e, err := s.store.Events().Get(ctx, rep.EventID); err == nil {
+				sub.programID = e.ProgramID
+			}
+			return sub
+		},
 	}
 }
 
@@ -249,6 +265,9 @@ func (s *Server) vens() kind[openadr.VEN, storage.VENFilter] {
 				v.Targets = old.Targets
 			}
 			return v, nil
+		},
+		subject: func(_ context.Context, v openadr.VEN) subject {
+			return subject{kind: openadr.ObjectVEN, id: v.ID, owner: v.ClientID, object: func([]string) any { return v }}
 		},
 	}
 }
@@ -328,6 +347,9 @@ func (s *Server) resources() kind[openadr.Resource, storage.ResourceFilter] {
 				res.Targets = old.Targets
 			}
 			return res, nil
+		},
+		subject: func(_ context.Context, res openadr.Resource) subject {
+			return subject{kind: openadr.ObjectResource, id: res.ID, venID: res.VENID, owner: res.ClientID, object: func([]string) any { return res }}
 		},
 	}
 }

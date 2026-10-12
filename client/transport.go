@@ -359,3 +359,103 @@ type ResourceQuery struct {
 func (q ResourceQuery) values() url.Values {
 	return newParams(q.Page).str("resourceName", q.Name).str("venID", q.VENID).list("targets", q.Targets).Values
 }
+
+// SubscriptionQuery filters a search for subscriptions.
+type SubscriptionQuery struct {
+	ProgramID  string
+	ClientName string
+	// Objects selects subscriptions to any of these kinds of object.
+	Objects []openadr.ObjectType
+	Page
+}
+
+func (q SubscriptionQuery) values() url.Values {
+	p := newParams(q.Page).str("programID", q.ProgramID).str("clientName", q.ClientName)
+	for _, o := range q.Objects {
+		p.Add("objects", string(o))
+	}
+	return p.Values
+}
+
+// TopicSet names a set of objects whose MQTT topics a VTN can be asked for.
+// The functions below return the twelve sets OpenADR 3.1.0 defines.
+type TopicSet struct {
+	path string
+	id   string
+}
+
+// Topics of every object of a kind. A VTN gives them to Business Logic.
+
+// AllPrograms is every program.
+func AllPrograms() TopicSet { return TopicSet{path: "programs"} }
+
+// AllEvents is every event.
+func AllEvents() TopicSet { return TopicSet{path: "events"} }
+
+// AllReports is every report.
+func AllReports() TopicSet { return TopicSet{path: "reports"} }
+
+// AllSubscriptions is every subscription.
+func AllSubscriptions() TopicSet { return TopicSet{path: "subscriptions"} }
+
+// AllVENs is every ven.
+func AllVENs() TopicSet { return TopicSet{path: "vens"} }
+
+// AllResources is every resource.
+func AllResources() TopicSet { return TopicSet{path: "resources"} }
+
+// OneProgram is the program with the given ID.
+func OneProgram(programID string) TopicSet { return TopicSet{path: "programs/%s", id: programID} }
+
+// EventsOfProgram is the events of the program with the given ID.
+func EventsOfProgram(programID string) TopicSet {
+	return TopicSet{path: "programs/%s/events", id: programID}
+}
+
+// Topics of one ven. A VTN gives them to the VEN the ven object belongs to.
+
+// OneVEN is the ven object with the given ID.
+func OneVEN(venID string) TopicSet { return TopicSet{path: "vens/%s", id: venID} }
+
+// EventsForVEN is the events the VEN may see.
+func EventsForVEN(venID string) TopicSet { return TopicSet{path: "vens/%s/events", id: venID} }
+
+// ProgramsForVEN is the programs the VEN may see.
+func ProgramsForVEN(venID string) TopicSet { return TopicSet{path: "vens/%s/programs", id: venID} }
+
+// ResourcesOfVEN is the resources of the ven.
+func ResourcesOfVEN(venID string) TopicSet { return TopicSet{path: "vens/%s/resources", id: venID} }
+
+func (c *core) notifiers(ctx context.Context) (openadr.Notifiers, error) {
+	body, err := c.do(ctx, http.MethodGet, "notifiers", nil, nil)
+	if err != nil {
+		return openadr.Notifiers{}, err
+	}
+	n, err := c.codec.UnmarshalNotifiers(body)
+	if err != nil {
+		return openadr.Notifiers{}, fmt.Errorf("openadr: decoding the response: %w", err)
+	}
+	return n, nil
+}
+
+func (c *core) topics(ctx context.Context, of TopicSet) (openadr.Topics, error) {
+	path := of.path
+	if path == "" {
+		return openadr.Topics{}, &openadr.ValidationError{Field: "of", Reason: "is the zero TopicSet"}
+	}
+	if strings.Contains(path, "%s") {
+		if !openadr.ValidID(of.id) {
+			return openadr.Topics{}, &openadr.ValidationError{Field: "id", Reason: fmt.Sprintf("%q is not an object ID", of.id)}
+		}
+		path = fmt.Sprintf(path, of.id)
+	}
+	body, err := c.do(ctx, http.MethodGet, "notifiers/mqtt/topics/"+path, nil, nil)
+	if err != nil {
+		return openadr.Topics{}, err
+	}
+	t, err := c.codec.UnmarshalTopics(body)
+	if err != nil {
+		return openadr.Topics{}, fmt.Errorf("openadr: decoding the response: %w", err)
+	}
+	return t, nil
+}

@@ -7,9 +7,10 @@
 // and TLS, where tokens come from (auth.Validator) and where objects are
 // kept (storage.Store).
 //
-// Programs, events, reports, VENs and resources are implemented.
-// Subscriptions and the notifier endpoints answer 501 Not Implemented until
-// notification delivery exists.
+// Programs, events, reports, VENs and resources are always served.
+// Subscriptions, and with them GET /notifiers, are served when the Server is
+// given a WebhookSender to deliver notifications with; without one they
+// answer 501 Not Implemented. The MQTT topic endpoints always do.
 //
 // Mount the handler at the root of the API. To serve it under a path prefix,
 // wrap it in http.StripPrefix.
@@ -51,6 +52,14 @@ type Config struct {
 	// TokenHandler serves POST /auth/token, for a VTN that issues its own
 	// tokens (see auth.Issuer). When nil the endpoint answers 501.
 	TokenHandler http.Handler
+	// Webhooks delivers notifications and verifies callback URLs; see
+	// package notification/webhook for the implementation. When nil, the
+	// VTN has no subscriptions.
+	Webhooks WebhookSender
+	// MQTT publishes notifications to a broker and makes the VTN announce
+	// it; see package notification/mqtt for a publisher. When nil, the
+	// MQTT topic operations answer 501.
+	MQTT *MQTTConfig
 	// Logger receives internal errors. Nil disables logging.
 	Logger *slog.Logger
 	// MaxBodyBytes limits the size of a request body; 1 MiB when zero.
@@ -59,11 +68,47 @@ type Config struct {
 	Now func() time.Time
 }
 
+// WebhookSender is what the VTN needs to notify by webhook. *webhook.Sender
+// implements it.
+type WebhookSender interface {
+	// Verify checks, before a subscription is accepted, that a callback
+	// URL may be used and that a webhook answers there. Its error is shown
+	// to the client that named the URL.
+	Verify(ctx context.Context, callbackURL string) error
+	// Send delivers a notification in the background and returns at once.
+	// bearerToken is empty when the subscription has none.
+	Send(callbackURL, bearerToken string, body []byte)
+}
+
+// MQTTConfig is the MQTT binding of a VTN's notifications.
+type MQTTConfig struct {
+	// Publisher sends the notifications. Required. *mqtt.Publisher of
+	// package notification/mqtt implements it.
+	Publisher MQTTPublisher
+	// URIs are the addresses of the broker as clients reach it, such as
+	// mqtts://broker.example.com. Required: GET /notifiers announces them.
+	URIs []string
+	// Authentication says how clients log in to the broker, for
+	// GET /notifiers. The zero value announces anonymous access.
+	Authentication openadr.MQTTAuthentication
+	// TopicPrefix is put before every topic, for a broker that is shared
+	// with other applications. It should end in a slash.
+	TopicPrefix string
+}
+
+// MQTTPublisher is what the VTN needs to notify by MQTT.
+type MQTTPublisher interface {
+	// Publish sends a message in the background and returns at once.
+	Publish(topic string, body []byte)
+}
+
 // Server is a VTN. It is safe for concurrent use and holds no state besides
 // its Store.
 type Server struct {
 	store     storage.Store
 	validator auth.Validator
+	webhooks  WebhookSender
+	mqtt      *MQTTConfig
 	codec     *wire.Codec
 	logger    *slog.Logger
 	maxBody   int64
@@ -81,12 +126,22 @@ func New(cfg Config) (*Server, error) {
 	case cfg.TokenURL == "":
 		return nil, errors.New("server: Config.TokenURL is required")
 	}
+	if cfg.MQTT != nil {
+		if cfg.MQTT.Publisher == nil || len(cfg.MQTT.URIs) == 0 {
+			return nil, errors.New("server: Config.MQTT needs a Publisher and the URIs of the broker")
+		}
+		if cfg.MQTT.Authentication.Method == "" {
+			cfg.MQTT.Authentication.Method = openadr.MQTTAnonymous
+		}
+	}
 	if u, err := url.Parse(cfg.TokenURL); err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" {
 		return nil, fmt.Errorf("server: Config.TokenURL %q is not an absolute http or https URL", cfg.TokenURL)
 	}
 	s := &Server{
 		store:     cfg.Store,
 		validator: cfg.Validator,
+		webhooks:  cfg.Webhooks,
+		mqtt:      cfg.MQTT,
 		codec:     v310.Codec(),
 		logger:    cfg.Logger,
 		maxBody:   cfg.MaxBodyBytes,
@@ -165,12 +220,31 @@ func (s *Server) routes(cfg Config) {
 		}))
 	}
 
-	// Not implemented yet. Authentication still applies.
+	// What this VTN does not have. Authentication still applies.
 	notImplemented := s.authorized("", func(w http.ResponseWriter, r *http.Request, _ auth.Identity) {
-		s.problem(w, r, http.StatusNotImplemented, "subscriptions and notifiers are not implemented by this VTN")
+		s.problem(w, r, http.StatusNotImplemented, "this VTN does not implement "+strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 2)[0])
 	})
-	for _, path := range []string{"/subscriptions", "/subscriptions/{id}", "/notifiers", "/notifiers/"} {
-		s.mux.Handle(path, notImplemented)
+	if cfg.Webhooks != nil {
+		op("GET", "/subscriptions", auth.ScopeReadVENObjects, s.listSubscriptions)
+		op("POST", "/subscriptions", auth.ScopeWriteSubscriptions, s.createSubscription)
+		op("GET", "/subscriptions/{id}", auth.ScopeReadVENObjects, s.getSubscription)
+		op("PUT", "/subscriptions/{id}", auth.ScopeWriteSubscriptions, s.updateSubscription)
+		op("DELETE", "/subscriptions/{id}", auth.ScopeWriteSubscriptions, s.deleteSubscription)
+	} else {
+		for _, path := range []string{"/subscriptions", "/subscriptions/{id}"} {
+			s.mux.Handle(path, notImplemented)
+		}
+	}
+	if cfg.Webhooks != nil || cfg.MQTT != nil {
+		// Every client may ask how the VTN notifies.
+		op("GET", "/notifiers", "", s.getNotifiers)
+	} else {
+		s.mux.Handle("/notifiers", notImplemented)
+	}
+	if cfg.MQTT != nil {
+		s.mqttRoutes(op)
+	} else {
+		s.mux.Handle("/notifiers/", notImplemented)
 	}
 
 	// A known path with another method is 405, anything else 404, both with

@@ -89,6 +89,62 @@ type resource struct {
 	Targets      []string    `json:"targets,omitempty"`
 }
 
+type subscription struct {
+	metadata
+	ClientID   string `json:"clientID,omitempty"`
+	ClientName string `json:"clientName"`
+	ProgramID  string `json:"programID,omitempty"`
+	// Required, so written even when empty.
+	ObjectOperations []objectOperation `json:"objectOperations"`
+	Targets          []string          `json:"targets,omitempty"`
+}
+
+type objectOperation struct {
+	Objects     []string `json:"objects"`
+	Operations  []string `json:"operations"`
+	CallbackURL string   `json:"callbackUrl"`
+	BearerToken string   `json:"bearerToken,omitempty"`
+}
+
+type notification struct {
+	ObjectType string          `json:"objectType"`
+	Operation  string          `json:"operation"`
+	Object     json.RawMessage `json:"object"`
+	Targets    []string        `json:"targets,omitempty"`
+}
+
+type notifiers struct {
+	Webhook bool         `json:"WEBHOOK"`
+	MQTT    *mqttBinding `json:"MQTT,omitempty"`
+}
+
+type mqttBinding struct {
+	URIs           []string           `json:"URIS"`
+	Serialization  string             `json:"serialization"`
+	Authentication mqttAuthentication `json:"authentication"`
+}
+
+type mqttAuthentication struct {
+	Method     string `json:"method"`
+	Username   string `json:"username,omitempty"`
+	CACert     string `json:"caCert,omitempty"`
+	ClientCert string `json:"clientCert,omitempty"`
+	ClientKey  string `json:"clientKey,omitempty"`
+}
+
+type topicsResponse struct {
+	Topics topics `json:"topics"`
+}
+
+// topics has UPDATE and DELETE required by the schema; CREATE and ALL are
+// absent where the VTN has no such topic.
+type topics struct {
+	Create string `json:"CREATE,omitempty"`
+	Update string `json:"UPDATE"`
+	Delete string `json:"DELETE"`
+	All    string `json:"ALL,omitempty"`
+}
+
 type interval struct {
 	// A pointer so that a missing id can be told from id 0.
 	ID             *int32          `json:"id"`

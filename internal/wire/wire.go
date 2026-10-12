@@ -79,6 +79,18 @@ type Codec struct {
 	VENs      ObjectCodec[openadr.VEN]
 	Resources ObjectCodec[openadr.Resource]
 
+	Subscriptions ObjectCodec[openadr.Subscription]
+
+	// A notification carries one object, in the VTN's representation.
+	MarshalNotification   func(openadr.Notification) ([]byte, error)
+	UnmarshalNotification func([]byte) (openadr.Notification, error)
+
+	// The body of GET /notifiers, and of the MQTT topic operations.
+	MarshalNotifiers   func(openadr.Notifiers) ([]byte, error)
+	UnmarshalNotifiers func([]byte) (openadr.Notifiers, error)
+	MarshalTopics      func(openadr.Topics) ([]byte, error)
+	UnmarshalTopics    func([]byte) (openadr.Topics, error)
+
 	MarshalProblem   func(openadr.Problem) ([]byte, error)
 	UnmarshalProblem func([]byte) (openadr.Problem, error)
 

@@ -25,11 +25,11 @@ permissions:
   packages: read
 
 env:
-  # otfabric/openadr-interop v0.1.0: OpenLEADR openleadr-rs v0.2.7,
+  # otfabric/openadr-interop v0.2.0: OpenLEADR openleadr-rs v0.2.7,
   # ElaadNL openadr3-client 2.4.0.
   # Keep in step with the Makefile and interop/harness_test.go.
-  OPENADR_INTEROP_OPENLEADR_IMAGE: ${{ inputs.openleadr_image || 'ghcr.io/otfabric/openadr-interop-openleadr@sha256:03131a264f34ac85b65d929702ca6c9ac051093d4996ae3972bf24a706667c7c' }}
-  OPENADR_INTEROP_ELAADNL_IMAGE: ${{ inputs.elaadnl_image || 'ghcr.io/otfabric/openadr-interop-elaadnl@sha256:8390bcc0ecd58158c755fc439388a9d7679c65eb3376beaf1ec94711284e91ac' }}
+  OPENADR_INTEROP_OPENLEADR_IMAGE: ${{ inputs.openleadr_image || 'ghcr.io/otfabric/openadr-interop-openleadr@sha256:a8fbdd858b15c4ccf797cd80695ab5b4abc11d1dcf6890efb7a8a03e98ef5f6c' }}
+  OPENADR_INTEROP_ELAADNL_IMAGE: ${{ inputs.elaadnl_image || 'ghcr.io/otfabric/openadr-interop-elaadnl@sha256:a976273dab5481cb2e7c90af6a6200aad7ecb0ebbffa8a8022f6a48a2d64ccaa' }}
 
 jobs:
   interop:

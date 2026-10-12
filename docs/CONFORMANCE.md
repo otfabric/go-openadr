@@ -18,13 +18,19 @@ against other implementations is in [INTEROP.md](../INTEROP.md).
 | Resources | search, read, create, update, delete | yes | yes | yes |
 | Auth | `GET /auth/server` | yes | yes | yes |
 | Auth | `POST /auth/token` (optional in the specification) | optional | yes | yes |
-| Subscriptions | all five | 501 | no | no |
-| Notifiers | `GET /notifiers` and the 12 MQTT topic operations | 501 | no | no |
+| Subscriptions | search, read, create, update, delete | yes, with a webhook sender | yes | yes |
+| Notifiers | `GET /notifiers` | yes, with either binding | yes | yes |
+| Notifiers | the 12 MQTT topic operations | yes, with an MQTT publisher | yes | yes |
+| Notifications | by webhook | sender | handler | handler |
+| Notifications | by MQTT | publisher | subscriber | subscriber |
 
 "n/a" marks operations the specification's scopes do not give that role.
 
-Also not implemented: webhook and MQTT notification delivery, persistent
-storage, gzip, mDNS discovery of local VTNs, a VTN mode without
+That is all 45 operations of the specification. A VTN that is not given a
+webhook sender has no subscriptions, and one that is not given an MQTT
+publisher has no topic operations: those answer 501.
+
+Not implemented: notifications of `READ`, gzip, mDNS discovery of local VTNs, a VTN mode without
 authentication, and the retention of properties the schema does not define
 (they are ignored, as the specification allows).
 
@@ -109,6 +115,56 @@ and that form is rejected.
 `authError` schema describes the RFC 6749 body. `auth.Issuer` returns a body
 with the members of both.
 
-**`read_bl`.** Six MQTT topic operations require a scope `read_bl` that the
-document does not declare. Not relevant until notifiers are implemented;
-it will be treated as `read_all`.
+**A subscriber is told of what its own search would show it.** The
+Definition says to process targets for a notification "as described" for
+reads, using the client ID of the subscription. Here: reports, VENs,
+resources and subscriptions go to their own client and to Business Logic;
+programs and events follow the rules for targets, with the subscription's
+`targets` taken as the targets of a search, so a VEN's subscription without
+targets is told of untargeted objects only. A subscription with a
+`programID` is told of that program, its events and the reports on them.
+
+**The role of a subscriber is the one it had when it subscribed.** A
+notification is decided without a request, so the VTN remembers with the
+subscription whether its client could read everything.
+
+**Callback URLs are verified as the Definition requires, and more
+strictly.** https only, and the echo challenge on create and on every URL an
+update adds. In addition the default sender connects to public addresses
+only and follows no redirect, which the Definition recommends. A refused URL
+answers 400.
+
+**`READ` is never notified of.** The schema lists it as an operation; the
+VTN accepts it in a subscription and sends nothing for it.
+
+**`GET /notifiers` needs a token and no particular scope.** The document
+assigns it `read_all`, which a VEN does not have, while a VEN is who needs
+to know how it will be notified.
+
+**Delivery is at least once and in order per callback URL, and not
+durable.** The Definition leaves retries to the VTN.
+
+**MQTT topics follow who may read what.** The Definition leaves topic names
+to the VTN. Here, below an optional prefix: `programs/<op>`,
+`programs/{id}/<op>`, `programs/{id}/events/<op>`, `events/<op>`,
+`reports/<op>`, `subscriptions/<op>`, `vens/<op>`, `resources/<op>` carry
+every object as Business Logic sees it; `vens/{id}/<op>`,
+`vens/{id}/programs/<op>`, `vens/{id}/events/<op>` and
+`vens/{id}/resources/<op>` carry what that VEN may see, with the targets it
+was granted. `<op>` is `create`, `update` or `delete`, and `ALL` is the
+filter `.../+`.
+
+**On a ven's topics, targeted objects need no naming.** A search needs the
+VEN to name its targets; a topic has no request to name them in. A ven's
+program and event topics carry untargeted objects and those with a target
+the VEN was granted, as a read by ID does.
+
+**The topic operations for all objects of a kind need `read_all`.** The
+document asks for `read_all` on some and for `read_bl`, a scope it does not
+declare, on others. Both are read here as "Business Logic". The operations
+for one ven need `read_ven_objects` and a ven of the client's own.
+
+**The message of a topic is the notification object**, as for a webhook.
+
+**The broker is not the VTN's.** The VTN publishes; who may subscribe to
+which topic is the broker's access control (SECURITY.md).

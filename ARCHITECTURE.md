@@ -5,12 +5,18 @@ go-openadr/
 ├── *.go                 package openadr: domain model, durations, validation, errors
 ├── client/              VEN and BL clients, OAuth2 token handling
 ├── server/              the VTN http.Handler and its access rules
-│   └── storage/         the persistence interface and the in-memory store
-├── auth/                Identity, scopes, Validator, the in-memory Issuer
+│   └── storage/         the persistence interface; Memory and File
+├── auth/                Identity, scopes, Validator; Issuer and JWTValidator
+├── notification/
+│   ├── webhook/         Sender (VTN side) and Handler (client side)
+│   └── mqtt/            Publisher (VTN side) and Subscriber (client side)
 ├── internal/
 │   ├── wire/            what a protocol revision has to provide
 │   │   └── v310/        the JSON of OpenADR 3.1.0
-│   └── vtntest/         an in-process VTN for this module's tests
+│   ├── mqtt/            an MQTT 3.1.1 client
+│   └── mqtttest/        a broker for tests
+├── e2e/                 this module's clients against this module's VTN
+├── interop/             against other implementations (build tag)
 └── examples/
 ```
 
@@ -73,18 +79,27 @@ objects, and refusing to delete a program that has events or a VEN that has
 resources. Everything else — who may see or write what — stays in the
 server, so that every backend behaves the same.
 
-`storage.Memory` is the only implementation today. Searches filter on
-simple fields in the store and apply target visibility and paging in the
-server, which is correct but loads every candidate; a SQL backend will want
-the store interface to take paging and target filters. That is the known
-cost of this cut and is to be revisited with the SQLite backend.
+`storage.Memory` holds everything in the process. `storage.File` is the
+same with a journal: a change is applied to memory and appended to a file
+as one step, under one lock, so that the file replays to the state memory
+has; the objects are written in the JSON of 3.1.0 through the wire codec.
+It gives a standalone VTN persistence without a dependency. It is not a
+database, and a SQL store remains to be written: the pure-Go SQLite driver
+needs a newer Go than this module supports, so it will be a module of its
+own.
+
+Searches filter on simple fields in the store and apply target visibility
+and paging in the server, which is correct but loads every candidate; a SQL
+backend will want the store interface to take paging and target filters.
+That is the known cost of this cut.
 
 ### Authentication
 
 The server validates tokens through an interface and does not issue them.
-`auth.Issuer` exists so that tests, examples and small deployments are
-self-contained; it keeps tokens in memory and is not meant to replace an
-identity provider.
+`auth.JWTValidator` is the implementation for an identity provider that
+issues JSON Web Tokens. `auth.Issuer` exists so that tests, examples and
+small deployments are self-contained; it keeps tokens in memory and is not
+meant to replace an identity provider.
 
 ## The clients
 
@@ -102,9 +117,50 @@ client to a cleartext token endpoint.
 
 ## Notifications
 
-Not implemented. The intended shape: the server emits a change event after
-each successful write to a `notification` dispatcher that evaluates
-subscriptions with the same `see` rules as reads, and hands deliveries to
-webhook and MQTT publishers behind one interface. The VTN will use an
-external MQTT broker. On the client side, webhook reception and MQTT
-subscription feed the same callback type as polling.
+After a write has succeeded, the server works out who is to be told
+(`server/notify.go`): it lists the subscriptions and, for each, applies the
+same visibility rules as a search by that client would meet, with the
+subscription's targets in the place of the search's. It does this in the
+request, so that what is decided reflects the state the write left; the
+delivery itself is handed to a `WebhookSender` and never waits.
+
+A notification is decided without a request and its token, so the store
+keeps with each subscription whether its client was Business Logic
+(`storage.SubscriptionRecord`).
+
+`notification/webhook.Sender` owns delivery: one queue per worker, a
+callback URL always on the same worker, so that order per callback holds
+across retries without a lock per URL. It also owns the rules for URLs that
+clients choose, because they have to hold for the verification request and
+for every delivery alike. The server sees an interface with two methods and
+does not import the package.
+
+The same package has the receiving side, `Handler`, so that both ends of
+the webhook binding are tested against each other in one place.
+
+The MQTT binding has no subscriptions to evaluate: a topic is the
+subscription. The server publishes each change on the topics it belongs to
+(`server/mqtt.go`): the topics of all objects of the kind, and for a
+program or event the topic of every ven that may see it, with the object
+cut down to what that VEN may see. That is one message per ven for an
+untargeted object, which is the price of privacy on a medium without
+per-message access control.
+
+`notification/mqtt` wraps `internal/mqtt`, an MQTT 3.1.1 client written for
+this module so that it stays free of dependencies: CONNECT, PUBLISH and
+SUBSCRIBE at QoS 1, keep-alive, TLS. Reconnecting and resending live one
+level up, in `Publisher` and `Subscriber`, where the policy is.
+
+## Tests
+
+- Unit tests sit next to the code.
+- `e2e/` runs this module's clients against this module's VTN over HTTPS,
+  with every feature, including those no other implementation can exercise
+  yet. A bug both sides share is invisible there.
+- `interop/` (build tag `interop`) runs each side against another
+  implementation, from the images of otfabric/openadr-interop.
+- That repository's conformance suite checks the VTN against the
+  specification's own OpenAPI document.
+
+Not there yet: durable delivery of notifications, which a journal of
+pending deliveries in the store would give.

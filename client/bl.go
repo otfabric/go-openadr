@@ -148,3 +148,45 @@ func (c *BL) UpdateResource(ctx context.Context, res openadr.Resource) (openadr.
 func (c *BL) DeleteResource(ctx context.Context, id string) (openadr.Resource, error) {
 	return deleteObject(ctx, c.core, c.core.codec.Resources, "resources", id)
 }
+
+// Subscriptions searches the subscriptions of all clients.
+func (c *BL) Subscriptions(ctx context.Context, q SubscriptionQuery) ([]openadr.Subscription, error) {
+	return listObjects(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", q.values())
+}
+
+// Subscription returns the subscription with the given ID.
+func (c *BL) Subscription(ctx context.Context, id string) (openadr.Subscription, error) {
+	return getObject(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", id)
+}
+
+// CreateSubscription subscribes this client to notifications and returns the
+// subscription as the VTN stored it. Before it accepts one, a VTN sends a
+// verification request to every callback URL: the webhook has to be running.
+// See package notification/webhook for a handler.
+func (c *BL) CreateSubscription(ctx context.Context, sub openadr.Subscription) (openadr.Subscription, error) {
+	return sendObject(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", "", sub, wire.Request)
+}
+
+// UpdateSubscription replaces the subscription that has sub.ID with sub.
+func (c *BL) UpdateSubscription(ctx context.Context, sub openadr.Subscription) (openadr.Subscription, error) {
+	if sub.ID == "" {
+		return openadr.Subscription{}, &openadr.ValidationError{Field: "id", Reason: "is required for an update"}
+	}
+	return sendObject(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", sub.ID, sub, wire.Request)
+}
+
+// DeleteSubscription ends a subscription and returns it as it last was.
+func (c *BL) DeleteSubscription(ctx context.Context, id string) (openadr.Subscription, error) {
+	return deleteObject(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", id)
+}
+
+// Notifiers asks the VTN how it notifies: by webhook, by MQTT, or both.
+func (c *BL) Notifiers(ctx context.Context) (openadr.Notifiers, error) {
+	return c.core.notifiers(ctx)
+}
+
+// MQTTTopics asks the VTN on which MQTT topics it publishes the operations
+// on a set of objects. Subscribe to them with package notification/mqtt.
+func (c *BL) MQTTTopics(ctx context.Context, of TopicSet) (openadr.Topics, error) {
+	return c.core.topics(ctx, of)
+}

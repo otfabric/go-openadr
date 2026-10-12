@@ -98,6 +98,43 @@ func TestMemoryConstraints(t *testing.T) {
 	}
 }
 
+func TestMemorySubscriptions(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	sub := func(id, program, client string) SubscriptionRecord {
+		return SubscriptionRecord{Subscription: openadr.Subscription{Metadata: meta(id), ProgramID: program, ClientID: client, ClientName: "n-" + client}}
+	}
+	if err := m.Subscriptions().Create(ctx, sub("s1", "nope", "c1")); !errors.Is(err, openadr.ErrConflict) {
+		t.Errorf("subscription to a missing program: %v", err)
+	}
+	_ = m.Programs().Create(ctx, openadr.Program{Metadata: meta("p1"), Name: "one"})
+	for _, rec := range []SubscriptionRecord{sub("s1", "p1", "c1"), sub("s2", "", "c1"), sub("s3", "", "c2")} {
+		if err := m.Subscriptions().Create(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for filter, want := range map[SubscriptionFilter]int{
+		{}:                                   3,
+		{ClientID: "c1"}:                     2,
+		{ProgramID: "p1"}:                    1,
+		{ClientName: "n-c2"}:                 1,
+		{ClientID: "c2", ProgramID: "p1"}:    0,
+		{ClientID: "c1", ClientName: "n-c2"}: 0,
+	} {
+		if got, _ := m.Subscriptions().List(ctx, filter); len(got) != want {
+			t.Errorf("subscriptions %+v: %d, want %d", filter, len(got), want)
+		}
+	}
+	kept := sub("s2", "", "c1")
+	kept.ReadsAll = true
+	if err := m.Subscriptions().Update(ctx, kept); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := m.Subscriptions().Get(ctx, "s2"); !got.ReadsAll {
+		t.Error("the record lost what the VTN remembers about the subscriber")
+	}
+}
+
 func TestMemoryOrderAndConcurrency(t *testing.T) {
 	ctx := context.Background()
 	m := NewMemory()

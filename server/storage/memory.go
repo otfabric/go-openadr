@@ -20,6 +20,8 @@ type Memory struct {
 	reports   table[openadr.Report]
 	vens      table[openadr.VEN]
 	resources table[openadr.Resource]
+
+	subscriptions table[SubscriptionRecord]
 }
 
 // NewMemory returns an empty Memory store.
@@ -30,6 +32,8 @@ func NewMemory() *Memory {
 		reports:   newTable[openadr.Report](),
 		vens:      newTable[openadr.VEN](),
 		resources: newTable[openadr.Resource](),
+
+		subscriptions: newTable[SubscriptionRecord](),
 	}
 }
 
@@ -210,6 +214,19 @@ func (m *Memory) Reports() Collection[openadr.Report, ReportFilter] {
 	}
 }
 
+// restoreReport adds a report whose event no longer exists, which Create
+// would refuse. For a store that rebuilds its state from a record of it.
+func (m *Memory) restoreReport(r openadr.Report) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.reports.byID[r.ID]; exists {
+		return conflict("ID %s is in use", r.ID)
+	}
+	m.reports.byID[r.ID] = r
+	m.reports.order = append(m.reports.order, r.ID)
+	return nil
+}
+
 // VENs implements Store.
 func (m *Memory) VENs() Collection[openadr.VEN, VENFilter] {
 	return collection[openadr.VEN, VENFilter]{
@@ -251,6 +268,28 @@ func (m *Memory) Resources() Collection[openadr.Resource, ResourceFilter] {
 			return (f.Name == "" || r.Name == f.Name) &&
 				(f.VENID == "" || r.VENID == f.VENID) &&
 				(f.ClientID == "" || r.ClientID == f.ClientID)
+		},
+	}
+}
+
+// Subscriptions implements Store.
+func (m *Memory) Subscriptions() Collection[SubscriptionRecord, SubscriptionFilter] {
+	return collection[SubscriptionRecord, SubscriptionFilter]{
+		mu: &m.mu, table: &m.subscriptions,
+		id: func(s SubscriptionRecord) string { return s.ID },
+		check: func(s SubscriptionRecord, _ *SubscriptionRecord) error {
+			if s.ProgramID == "" {
+				return nil
+			}
+			if _, ok := m.programs.byID[s.ProgramID]; !ok {
+				return conflict("program %s does not exist", s.ProgramID)
+			}
+			return nil
+		},
+		match: func(s SubscriptionRecord, f SubscriptionFilter) bool {
+			return (f.ProgramID == "" || s.ProgramID == f.ProgramID) &&
+				(f.ClientName == "" || s.ClientName == f.ClientName) &&
+				(f.ClientID == "" || s.ClientID == f.ClientID)
 		},
 	}
 }

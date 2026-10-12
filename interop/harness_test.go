@@ -19,11 +19,11 @@ import (
 	"time"
 )
 
-// The reference images of otfabric/openadr-interop v0.1.0, by multi-arch
+// The reference images of otfabric/openadr-interop v0.2.0, by multi-arch
 // index digest. Keep in step with the Makefile and .github/workflows/interop.yml.
 var defaultImages = map[string]string{
-	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:03131a264f34ac85b65d929702ca6c9ac051093d4996ae3972bf24a706667c7c",
-	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:8390bcc0ecd58158c755fc439388a9d7679c65eb3376beaf1ec94711284e91ac",
+	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:a8fbdd858b15c4ccf797cd80695ab5b4abc11d1dcf6890efb7a8a03e98ef5f6c",
+	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:a976273dab5481cb2e7c90af6a6200aad7ecb0ebbffa8a8022f6a48a2d64ccaa",
 }
 
 func image(adapter string) string {
@@ -134,6 +134,24 @@ func freePort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
+// has reports whether an image declares a feature in its capabilities.
+func has(t *testing.T, img, feature string) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, exit, err := docker(ctx, "run", "--rm", img, "print-capabilities")
+	if err != nil || exit != 0 {
+		t.Fatalf("print-capabilities: exit %d, %v", exit, err)
+	}
+	var caps struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.Unmarshal(out, &caps); err != nil {
+		t.Fatalf("print-capabilities: %v", err)
+	}
+	return caps.Features[feature]
+}
+
 // startServer runs a reference VTN on a loopback port of the host, waits
 // until it has loaded its fixture, and returns the URL of its API.
 func startServer(t *testing.T, adapter, fixtureName string) string {
@@ -144,8 +162,16 @@ func startServer(t *testing.T, adapter, fixtureName string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	out, exit, err := docker(ctx, "run", "-d", "-p", fmt.Sprintf("127.0.0.1:%d:8080", port), img,
-		"server", "--fixture", "/fixtures/"+fixtureName+"/fixture.json", "--public-url", url)
+	run := []string{"run", "-d", "-p", fmt.Sprintf("127.0.0.1:%d:8080", port)}
+	serve := []string{"server", "--fixture", "/fixtures/" + fixtureName + "/fixture.json", "--public-url", url}
+	if has(t, img, "serverMqtt") {
+		// The broker is announced by the VTN under the URL it uses itself,
+		// so it listens on the same port inside the container and out.
+		mqttPort := freePort(t)
+		run = append(run, "-p", fmt.Sprintf("127.0.0.1:%d:%d", mqttPort, mqttPort))
+		serve = append(serve, "--mqtt-port", fmt.Sprint(mqttPort), "--mqtt-public-url", fmt.Sprintf("mqtt://127.0.0.1:%d", mqttPort))
+	}
+	out, exit, err := docker(ctx, append(append(run, img), serve...)...)
 	if err != nil || exit != 0 {
 		t.Fatalf("starting the %s server: exit %d, %v", adapter, exit, err)
 	}

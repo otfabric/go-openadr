@@ -8,15 +8,15 @@ specific tests against specific versions.
 
 | Client | VTN | Result | How |
 |---|---|---|---|
-| go-openadr VEN and BL | go-openadr | Passing, in CI | `e2e_test.go` |
+| go-openadr VEN and BL | go-openadr | Passing, in CI; every feature | `make e2e` |
 | go-openadr VEN and BL | [OpenLEADR](https://github.com/OpenLEADR/openleadr-rs) v0.2.7 (Rust) | Passing, run locally | `make interop` |
 | [ElaadNL openadr3-client](https://github.com/ElaadNL/openadr3-client) 2.4.0 (Python), VEN and BL | go-openadr | Passing, run locally | `make interop` |
-| the specification-driven suite of openadr-interop v0.1.0 | go-openadr | 21 of 21 scenarios, run locally | see below |
+| go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| the specification-driven suite of openadr-interop v0.2.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
 
-Last run: 2026-10-12, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.1.0, pinned by
-digest. The `Interop` workflow runs the same tests in CI on linux/amd64; it
-has not completed a run yet.
+Last run: 2026-10-13, on a developer machine (linux/arm64 containers on
+macOS), against the published images of openadr-interop v0.2.0, pinned by
+digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
 [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop) as
@@ -27,7 +27,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.1.0, pinned by
+Needs Docker. The images are those of openadr-interop v0.2.0, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -62,6 +62,20 @@ baseline fixture of openadr-interop and drives it with `client.BL` and
   are visible to exactly the clients that should see them; a VEN client
   registers itself and a resource; Business Logic grants it a target and it
   then sees a program that carries it, while a VEN without the grant does not.
+
+## MQTT notifications from OpenLEADR
+
+`interop/mqtt_test.go` uses the MQTT broker in the OpenLEADR reference image
+(the feature `serverMqtt`, from openadr-interop v0.2.0; with an older image
+given by environment variable the test is skipped). The VEN client asks OpenLEADR where its broker is
+(`Notifiers`) and for its topics (`MQTTTopics`), this module's
+`mqtt.Subscriber` logs in to the Mosquitto in the image, and Business Logic
+creates, updates and deletes an event: each arrives, decoded, on the topic
+of all events and on the VEN's own.
+
+One thing had to be worked around, and it is OpenLEADR's: the topics it
+names for a ven (`events/vens/{id}/...`) are not the ones it publishes on
+(`vens/{id}/events/...`). The test listens on both.
 
 ## The ElaadNL client against this module's VTN
 
@@ -120,6 +134,10 @@ go run ./cmd/openadr-interop -url http://127.0.0.1:8080 \
 
 ## Not covered
 
-Subscriptions, webhooks and MQTT; TLS between the implementations (the
-references run over plain HTTP on loopback); OpenADR 3.0.x; any VTN other
-than OpenLEADR; any client other than ElaadNL's and the conformance suite.
+**Webhooks, and the VTN publishing by MQTT, against another
+implementation.** They are tested between this module's two sides only
+(`e2e/`): OpenLEADR has no webhook subscriptions, and the reference
+client's contract has no subscription or notification operations yet. TLS
+between the implementations (the references run over plain HTTP on
+loopback). OpenADR 3.0.x. Any VTN other than OpenLEADR, and any client other
+than ElaadNL's and the conformance suite.

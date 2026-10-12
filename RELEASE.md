@@ -1,5 +1,63 @@
 # go-openadr Releases
 
+## v0.1.0
+
+**Date:** 2026-10-13
+**Previous release:** v0.0.1
+
+## Summary
+
+The rest of OpenADR 3.1.0: subscriptions, notifications by webhook and by
+MQTT on both sides, and the MQTT topic operations, which brings the VTN to
+all 45 operations of the specification. With it a validator for JSON Web
+Tokens, a store that survives a restart, and an end-to-end test suite of
+this module's clients against this module's VTN.
+
+**Upgrade notes**
+
+- `storage.Store` has a new method, `Subscriptions`. An implementation of the interface outside this module has to add it; `storage.Memory` and the new `storage.File` have it.
+- `server.Config.TokenURL` was already required to be an absolute URL in v0.0.1; nothing else in a v0.0.1 configuration changes meaning. A VTN that is given neither `Webhooks` nor `MQTT` answers 501 for subscriptions and notifiers, as before.
+
+## Changes
+
+### Added
+
+- **Subscriptions** — `openadr.Subscription`, `ObjectOperation` and `Notification`, and on both clients `Subscriptions`, `Subscription`, `CreateSubscription`, `UpdateSubscription` and `DeleteSubscription`. In the VTN: all five operations, with the `programID`, `clientName` and `objects` filters.
+- **Webhook notifications** (`notification/webhook`) — `Sender` delivers a VTN's notifications: in order per callback URL, with retries and backoff, with the subscription's bearer token. By default it accepts https URLs only, follows no redirect and connects to public addresses only, checked on the address actually connected to. `Handler` is the receiving side: it answers the VTN's verification request, checks the bearer token and decodes the notification.
+- **Callback verification** — before the VTN accepts a subscription it sends `GET <callbackUrl>?echo=<random>` and requires the value back, as the specification asks. A URL that fails is refused with 400.
+- **MQTT notifications** (`notification/mqtt`) — `Publisher` sends a VTN's notifications to a broker at QoS 1, in order, reconnecting as needed; `Subscriber` receives them in a client and resubscribes after a lost connection. Both use this module's own MQTT 3.1.1 client: no dependency was added.
+- **Notifier discovery** — `GET /notifiers` and the 12 MQTT topic operations in the VTN; `Notifiers` and `MQTTTopics` on both clients. Topics that carry every object of a kind are given to Business Logic; a VEN is given the topics of its own ven object, on which the VTN publishes what that VEN may see.
+- **Who is told what** — by webhook, a subscriber is notified of what a search of its own would show it; by MQTT, each ven's topics carry what its VEN may read by ID. In both, a VEN is shown only the targets it was granted.
+- **`auth.JWTValidator`** — validates JSON Web Tokens of an identity provider: RS256/384/512, ES256/384/512, EdDSA and HS256/384/512, with static keys or the provider's key set (JWKS, fetched on demand and rate-limited), and checks of expiry, `nbf`, issuer and audience. The kind of key decides the algorithms it verifies.
+- **`storage.File`** (`storage.OpenFile`) — a store that survives a restart: everything in memory, every change appended to a journal file and synced before the write returns, the journal replayed and compacted at start. For a standalone VTN of modest size.
+- **End-to-end tests** (`e2e/`, `make e2e`) — this module's clients against this module's VTN over HTTPS: the workflow, roles and ownership, targeting, paging, webhooks, MQTT with a broker in the test, JWTs, a restart on the journal store, and a matrix of every operation as five kinds of client.
+- **Examples** — `examples/notifications`: a VEN that subscribes and is told of a new event. `examples/vtn` takes `-webhooks`, `-insecure-webhooks`, `-mqtt` and `-store`.
+
+### Changed
+
+- `storage.Store` gained `Subscriptions()`, which stores `storage.SubscriptionRecord`: the subscription, and whether the subscriber was Business Logic when it subscribed.
+- A `server.Server` that is given `Webhooks` or `MQTT` causes background activity: the sender and the publisher have goroutines of their own, and the embedding program closes them on shutdown.
+- The README has a comparison with OpenLEADR and the ElaadNL client.
+
+### Verification
+
+- `make e2e`: 16 end-to-end tests, among them an authorization matrix of 47 operations, each as no client, a client with a forged token, the owning VEN, another VEN and Business Logic.
+- Unit tests of the webhook sender's address rules, ordering, retries and shutdown; of the MQTT client against packet bytes written out from the MQTT 3.1.1 standard, and against connection loss; of the JWT validator against forged tokens (no signature, `alg: none`, a public key used as an HMAC secret, wrong key, changed payload, wrong issuer and audience); of the journal store against restart, a crash in the middle of a write, corruption and a disk that stops taking writes.
+- Three fuzz targets: the duration parser, the event decoder and the MQTT packet reader.
+- `make interop` is green against the reference images of openadr-interop v0.2.0 (OpenLEADR v0.2.7 with a Mosquitto broker, ElaadNL openadr3-client 2.4.0), pinned by digest: everything of v0.0.1, and MQTT notifications from OpenLEADR. The VEN finds the broker and its topics through OpenLEADR's API, and this module's subscriber receives the create, update and delete of an event on Mosquitto.
+- The conformance suite of openadr-interop v0.2.0, with its authorization scenarios: 24 of 24 against the VTN.
+
+### Known limitations
+
+- **Webhooks, and the VTN's side of MQTT, have not been tested against another implementation.** OpenLEADR has no webhook subscriptions, and the reference client cannot subscribe yet. The MQTT publisher has met this module's test broker only; the subscriber is tested on Mosquitto with OpenLEADR's notifications.
+- Notifications are delivered at least once while the VTN runs, and are not durable: what is queued when the process stops is lost. A client that must not miss a change still polls, and does so after a reconnect.
+- The VTN decides what it publishes on which MQTT topic; who may read a topic is for the broker's access control, which this module does not configure.
+- No notification for `READ`, which the schema lists as an operation.
+- `storage.File` is not a database: one process, all objects in memory. A SQL store is not included: the pure-Go SQLite driver needs a newer Go than this module supports and would end its freedom from dependencies. It is to follow as a separate module.
+- What a webhook subscriber may be told is decided by its role when it subscribed, not by its token at the time of the notification.
+
+---
+
 ## v0.0.1
 
 **Date:** 2026-10-12

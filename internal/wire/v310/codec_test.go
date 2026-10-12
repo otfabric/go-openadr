@@ -88,6 +88,71 @@ func TestRoundTrip(t *testing.T) {
 	roundTrip(t, c.Reports, openadr.Report{Metadata: meta, EventID: "e", ClientName: "c", Resources: []openadr.ReportResource{}})
 	roundTrip(t, c.VENs, openadr.VEN{Metadata: meta, ClientID: "client", Name: "VEN-999", Attributes: values, Targets: []string{"a", "b"}})
 	roundTrip(t, c.Resources, openadr.Resource{Metadata: meta, ClientID: "client", VENID: "ven-1", Name: "RESOURCE-999", Targets: []string{"a"}})
+	roundTrip(t, c.Subscriptions, subscriptionFixture)
+	roundTrip(t, c.Subscriptions, openadr.Subscription{Metadata: meta, ClientName: "c", ObjectOperations: []openadr.ObjectOperation{}})
+}
+
+var subscriptionFixture = openadr.Subscription{
+	Metadata: meta, ClientID: "client", ClientName: "VEN-999", ProgramID: "program-1", Targets: []string{"group-1"},
+	ObjectOperations: []openadr.ObjectOperation{{
+		Objects:     []openadr.ObjectType{openadr.ObjectEvent, openadr.ObjectProgram},
+		Operations:  []openadr.Operation{openadr.OperationCreate, openadr.OperationUpdate},
+		CallbackURL: "https://myserver.com/send/callback/here", BearerToken: "NCEJGI9E8ER9802UT9HUG",
+	}},
+}
+
+func TestNotification(t *testing.T) {
+	c := Codec()
+	for _, object := range []any{
+		openadr.Program{Metadata: meta, Name: "p", Targets: []string{"a"}},
+		openadr.Event{Metadata: meta, ProgramID: "p1", Name: "e"},
+		openadr.Report{Metadata: meta, ClientID: "c", EventID: "e1", ClientName: "n", Resources: []openadr.ReportResource{}},
+		subscriptionFixture,
+		openadr.VEN{Metadata: meta, ClientID: "c", Name: "v"},
+		openadr.Resource{Metadata: meta, ClientID: "c", VENID: "v1", Name: "r"},
+	} {
+		kind := map[string]openadr.ObjectType{
+			"Program": openadr.ObjectProgram, "Event": openadr.ObjectEvent, "Report": openadr.ObjectReport,
+			"Subscription": openadr.ObjectSubscription, "VEN": openadr.ObjectVEN, "Resource": openadr.ObjectResource,
+		}[reflect.TypeOf(object).Name()]
+		n := openadr.Notification{ObjectType: kind, Operation: openadr.OperationDelete, Object: object, Targets: []string{"a"}}
+		data, err := c.MarshalNotification(n)
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		// The object inside says what it is, as the schema's discriminator needs.
+		var shape struct {
+			ObjectType string `json:"objectType"`
+			Object     struct {
+				ObjectType string `json:"objectType"`
+			} `json:"object"`
+		}
+		if err := json.Unmarshal(data, &shape); err != nil || shape.ObjectType != string(kind) || shape.Object.ObjectType != string(kind) {
+			t.Errorf("%s: wire form %s", kind, data)
+		}
+		back, err := c.UnmarshalNotification(data)
+		if err != nil || !reflect.DeepEqual(back, n) {
+			t.Errorf("%s round trip = %+v, %v", kind, back, err)
+		}
+	}
+	if _, err := c.MarshalNotification(openadr.Notification{ObjectType: openadr.ObjectEvent, Object: "an event"}); err == nil {
+		t.Error("a notification that carries a string was encoded")
+	}
+	if _, err := c.MarshalNotification(openadr.Notification{ObjectType: openadr.ObjectEvent, Object: &openadr.Event{}}); err == nil {
+		t.Error("a notification that carries a pointer was encoded; the documented type is the value")
+	}
+	for _, body := range []string{
+		`{"objectType":"EVENT","object":{"programID":"p"}}`,
+		`{"operation":"CREATE","object":{"programID":"p"}}`,
+		`{"objectType":"EVENT","operation":"CREATE"}`,
+		`{"objectType":"EVENT","operation":"CREATE","object":null}`,
+		`{"objectType":"SUBSCRIPTION","operation":"CREATE","object":{"clientName":"c"}}`,
+		`{"objectType":"SUBSCRIPTION","operation":"CREATE","object":{"clientName":"c","objectOperations":[{"operations":[],"callbackUrl":"https://x"}]}}`,
+	} {
+		if n, err := c.UnmarshalNotification([]byte(body)); err == nil {
+			t.Errorf("%s decoded to %+v", body, n)
+		}
+	}
 }
 
 // What goes on the wire, checked against the property names and required
