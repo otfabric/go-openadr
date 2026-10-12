@@ -1,0 +1,86 @@
+name: Interop
+run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
+
+# Runs go-openadr against the reference implementations published by
+# otfabric/openadr-interop: its clients against the OpenLEADR VTN, and its VTN
+# with the ElaadNL client. The images are consumed as published: nothing of
+# openadr-interop is cloned or built here.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+    inputs:
+      openleadr_image:
+        description: "OpenLEADR reference image (default: the pinned release)"
+        required: false
+      elaadnl_image:
+        description: "ElaadNL reference image (default: the pinned release)"
+        required: false
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  # otfabric/openadr-interop v0.1.0: OpenLEADR openleadr-rs v0.2.7,
+  # ElaadNL openadr3-client 2.4.0.
+  # Keep in step with the Makefile and interop/harness_test.go.
+  OPENADR_INTEROP_OPENLEADR_IMAGE: ${{ inputs.openleadr_image || 'ghcr.io/otfabric/openadr-interop-openleadr@sha256:03131a264f34ac85b65d929702ca6c9ac051093d4996ae3972bf24a706667c7c' }}
+  OPENADR_INTEROP_ELAADNL_IMAGE: ${{ inputs.elaadnl_image || 'ghcr.io/otfabric/openadr-interop-elaadnl@sha256:8390bcc0ecd58158c755fc439388a9d7679c65eb3376beaf1ec94711284e91ac' }}
+
+jobs:
+  interop:
+    name: OpenLEADR VTN + ElaadNL client
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Pull reference images
+        run: |
+          images=("${OPENADR_INTEROP_OPENLEADR_IMAGE}" "${OPENADR_INTEROP_ELAADNL_IMAGE}")
+          # GHCR is occasionally slow or rate limiting: try each pull a few times.
+          for image in "${images[@]}"; do
+            for attempt in 1 2 3 4 5; do
+              docker pull "${image}" && break
+              [[ "${attempt}" == 5 ]] && { echo "::error::cannot pull ${image}"; exit 1; }
+              sleep $((attempt * 15))
+            done
+          done
+          {
+            echo "| Reference | Image | Upstream |"
+            echo "|---|---|---|"
+            for image in "${images[@]}"; do
+              docker run --rm "${image}" print-capabilities \
+                | jq -r --arg image "${image}" '"| \(.adapter) \(.adapterVersion) | `\($image)` | \(.upstream.name) \(.upstream.version) |"'
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the interop suite
+        run: make interop
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          docker ps -a > artifacts/docker-ps.txt || true
+          for c in $(docker ps -aq); do
+            docker logs "$c" > "artifacts/${c}.log" 2>&1 || true
+          done
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-logs
+          path: artifacts/
+          if-no-files-found: ignore
