@@ -21,6 +21,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -50,6 +52,27 @@ type Config struct {
 	UserAgent string
 	// MaxResponseBytes limits the size of a response body; 16 MiB when zero.
 	MaxResponseBytes int64
+	// RetryPolicy decides whether a call that failed in a way another
+	// attempt can cure is tried again, and after how long: see
+	// RetryPolicy for which failures those are. When nil, nothing is
+	// retried (NoRetry); ExponentialBackoff is the usual choice.
+	RetryPolicy RetryPolicy
+	// RetryCreates lets the policy also retry a create whose fate is not
+	// known: the connection was lost, or a gateway got no answer. The VTN
+	// may then have created the object, and the second attempt may create
+	// it again, or be answered with openadr.ErrConflict where names are
+	// unique. Without it such a create is returned to the caller, who can
+	// look before trying again.
+	RetryCreates bool
+	// Metrics receives a callback for every call; see Metrics. Nil
+	// disables them.
+	Metrics Metrics
+	// Logger receives what a client does beside what it returns: at debug
+	// level every call, with its operation, duration and outcome; at info
+	// level a token that was renewed because the VTN refused the old one;
+	// at warn level every retry. Never bodies, tokens or secrets. Nil
+	// disables logging.
+	Logger *slog.Logger
 }
 
 // core is what VEN and BL share: the HTTP exchange with the VTN.
@@ -60,6 +83,12 @@ type core struct {
 	ua      string
 	maxBody int64
 	codec   *wire.Codec
+
+	retry        RetryPolicy
+	retryCreates bool
+	metrics      Metrics
+	attempts     AttemptMetrics
+	logger       *slog.Logger
 }
 
 func newCore(cfg Config) (*core, error) {
@@ -88,7 +117,16 @@ func newCore(cfg Config) (*core, error) {
 		ua:      cfg.UserAgent,
 		maxBody: cfg.MaxResponseBytes,
 		codec:   v310.Codec(),
+
+		retry:        cfg.RetryPolicy,
+		retryCreates: cfg.RetryCreates,
+		metrics:      cfg.Metrics,
+		logger:       cfg.Logger,
 	}
+	if c.retry == nil {
+		c.retry = NoRetry()
+	}
+	c.attempts, _ = cfg.Metrics.(AttemptMetrics)
 	if c.hc == nil {
 		c.hc = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -113,19 +151,106 @@ func (c *core) url(path string, query url.Values) string {
 	return u.String()
 }
 
-// do performs one API call and returns the body of a 2xx response. A 401 is
-// retried once with a fresh token: the VTN did not act on the request, and
-// the usual cause is a token that expired or was revoked early.
+// opName names an API call for metrics and logs: the method and the path
+// as the specification writes it, with {id} where an ID stands.
+func opName(method, path string) string {
+	segments := strings.Split(path, "/")
+	for i, segment := range segments {
+		switch segment {
+		case "programs", "events", "reports", "vens", "resources", "subscriptions", "resource_groups",
+			"notifiers", "mqtt", "topics", "ws", "auth", "server":
+		default:
+			segments[i] = "{id}"
+		}
+	}
+	return method + " /" + strings.Join(segments, "/")
+}
+
+// do performs one API call and returns the body of a 2xx response. It is
+// where a call is counted, logged and, by the policy, tried again.
 func (c *core) do(ctx context.Context, method, path string, query url.Values, body []byte) ([]byte, error) {
+	var out []byte
+	err := c.call(ctx, opName(method, path), method, func() (err error) {
+		out, err = c.once(ctx, method, path, query, body)
+		return err
+	})
+	return out, err
+}
+
+// call runs the attempts of one call, as the retry policy has it, and
+// reports the call to the metrics and the log.
+func (c *core) call(ctx context.Context, op, method string, attempt func() error) error {
+	start := time.Now()
+	if c.metrics != nil {
+		c.metrics.OnRequest(op)
+	}
+	var (
+		err error
+		n   int
+	)
+attempts:
+	for n = 1; ; n++ {
+		began := time.Now()
+		err = attempt()
+		if c.attempts != nil {
+			c.attempts.OnAttempt(op, n, time.Since(began), err)
+		}
+		if err == nil || !retryable(method, err, c.retryCreates) {
+			break
+		}
+		again, wait := c.retry.ShouldRetry(n, err)
+		if !again {
+			break
+		}
+		// The VTN's own word on when to come back counts for more.
+		wait = max(wait, retryAfter(err))
+		if c.logger != nil {
+			c.logger.WarnContext(ctx, "openadr: retrying", slog.String("op", op), slog.Int("attempt", n), slog.Duration("wait", wait), slog.Any("error", err))
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			// The caller is told why the call failed, not that it
+			// stopped waiting to try again.
+			timer.Stop()
+			break attempts
+		}
+	}
+	duration := time.Since(start)
+	if c.metrics != nil {
+		switch {
+		case err == nil:
+			c.metrics.OnResponse(op, duration)
+		case errors.Is(err, openadr.ErrTimeout):
+			c.metrics.OnTimeout(op, duration)
+		default:
+			c.metrics.OnError(op, duration, err)
+		}
+	}
+	if c.logger != nil && c.logger.Enabled(ctx, slog.LevelDebug) {
+		attrs := []any{slog.String("op", op), slog.Duration("duration", duration)}
+		if err != nil {
+			attrs = append(attrs, slog.Any("error", err))
+		}
+		c.logger.DebugContext(ctx, "openadr: call", attrs...)
+	}
+	return err
+}
+
+// once sends a request and returns the body of a 2xx response. A 401 is
+// answered once with a fresh token: the VTN did not act on the request,
+// and the usual cause is a token that expired or was revoked early.
+func (c *core) once(ctx context.Context, method, path string, query url.Values, body []byte) ([]byte, error) {
 	for attempt := 0; ; attempt++ {
 		token := ""
 		if c.tokens != nil {
 			var err error
 			if token, err = c.tokens.Token(ctx); err != nil {
-				return nil, fmt.Errorf("openadr: obtaining a token: %w", err)
+				return nil, fmt.Errorf("%w: obtaining a token: %w", errNotSent, err)
 			}
 		}
-		respBody, status, err := c.roundTrip(ctx, method, c.url(path, query), token, "application/json", body)
+		respBody, status, header, err := c.roundTrip(ctx, method, c.url(path, query), token, "application/json", body)
 		if err != nil {
 			return nil, err
 		}
@@ -135,10 +260,13 @@ func (c *core) do(ctx context.Context, method, path string, query url.Values, bo
 		if status == http.StatusUnauthorized && attempt == 0 && token != "" {
 			if inv, ok := c.tokens.(interface{ Invalidate(token string) }); ok {
 				inv.Invalidate(token)
+				if c.logger != nil {
+					c.logger.InfoContext(ctx, "openadr: the VTN refused the token; asking for a new one", slog.String("op", opName(method, path)))
+				}
 				continue
 			}
 		}
-		apiErr := &openadr.Error{Method: method, Path: "/" + path, StatusCode: status}
+		apiErr := &openadr.Error{Method: method, Path: "/" + path, StatusCode: status, RetryAfter: parseRetryAfter(header, time.Now())}
 		if p, err := c.codec.UnmarshalProblem(respBody); err == nil {
 			apiErr.Problem = p
 		}
@@ -146,15 +274,27 @@ func (c *core) do(ctx context.Context, method, path string, query url.Values, bo
 	}
 }
 
+// transportError says what kind of failure the lack of an answer is.
+func transportError(ctx context.Context, err error) error {
+	var timeout net.Error
+	switch {
+	case errors.Is(err, context.Canceled) && ctx.Err() != nil:
+		return err
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &timeout) && timeout.Timeout():
+		return fmt.Errorf("%w: %w", openadr.ErrTimeout, err)
+	}
+	return err
+}
+
 // roundTrip sends one HTTP request and reads the whole response.
-func (c *core) roundTrip(ctx context.Context, method, target, token, contentType string, body []byte) ([]byte, int, error) {
+func (c *core) roundTrip(ctx context.Context, method, target, token, contentType string, body []byte) ([]byte, int, http.Header, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, target, reader)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
@@ -168,17 +308,19 @@ func (c *core) roundTrip(ctx context.Context, method, target, token, contentType
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, transportError(ctx, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, c.maxBody+1))
 	if err != nil {
-		return nil, 0, fmt.Errorf("openadr: reading the response to %s %s: %w", method, req.URL.Path, err)
+		// The answer broke off: as much a failure of the transport as a
+		// connection that was never made, except that the VTN acted.
+		return nil, 0, nil, transportError(ctx, fmt.Errorf("openadr: reading the response to %s %s: %w", method, req.URL.Path, err))
 	}
 	if int64(len(respBody)) > c.maxBody {
-		return nil, 0, fmt.Errorf("openadr: the response to %s %s exceeds %d bytes", method, req.URL.Path, c.maxBody)
+		return nil, 0, nil, fmt.Errorf("%w: the response to %s %s exceeds %d bytes", openadr.ErrProtocol, method, req.URL.Path, c.maxBody)
 	}
-	return respBody, resp.StatusCode, nil
+	return respBody, resp.StatusCode, resp.Header, nil
 }
 
 // --- typed operations
@@ -197,7 +339,7 @@ func decodeObject[T any](oc wire.ObjectCodec[T], body []byte, err error) (T, err
 	}
 	v, _, err := oc.Unmarshal(body)
 	if err != nil {
-		return zero, fmt.Errorf("openadr: decoding the response: %w", err)
+		return zero, fmt.Errorf("%w: decoding the response: %w", openadr.ErrProtocol, err)
 	}
 	return v, nil
 }
@@ -251,7 +393,7 @@ func listObjects[T any](ctx context.Context, c *core, oc wire.ObjectCodec[T], co
 	}
 	vs, err := oc.UnmarshalList(body)
 	if err != nil {
-		return nil, fmt.Errorf("openadr: decoding the response: %w", err)
+		return nil, fmt.Errorf("%w: decoding the response: %w", openadr.ErrProtocol, err)
 	}
 	return vs, nil
 }
@@ -444,7 +586,7 @@ func (c *core) notifiers(ctx context.Context) (openadr.Notifiers, error) {
 	}
 	n, err := c.codec.UnmarshalNotifiers(body)
 	if err != nil {
-		return openadr.Notifiers{}, fmt.Errorf("openadr: decoding the response: %w", err)
+		return openadr.Notifiers{}, fmt.Errorf("%w: decoding the response: %w", openadr.ErrProtocol, err)
 	}
 	return n, nil
 }
@@ -466,7 +608,7 @@ func (c *core) topics(ctx context.Context, of TopicSet) (openadr.Topics, error) 
 	}
 	t, err := c.codec.UnmarshalTopics(body)
 	if err != nil {
-		return openadr.Topics{}, fmt.Errorf("openadr: decoding the response: %w", err)
+		return openadr.Topics{}, fmt.Errorf("%w: decoding the response: %w", openadr.ErrProtocol, err)
 	}
 	return t, nil
 }

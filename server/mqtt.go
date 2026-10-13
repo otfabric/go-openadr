@@ -118,6 +118,7 @@ func (s *Server) publish(ctx context.Context, op openadr.Operation, sub subject)
 			s.logNotify(sub, err)
 			return
 		}
+		s.notified(MechanismMQTT, sub, op)
 		s.mqtt.Publisher.Publish(prefix+topic, body)
 	}
 	single := op != openadr.OperationCreate // an object has no topic for its own creation

@@ -108,9 +108,12 @@ func (s *Server) notify(ctx context.Context, op openadr.Operation, sub subject) 
 			case sent[oo.CallbackURL]:
 			case oo.Mechanism == openadr.MechanismWebSocket:
 				if s.sockets != nil {
-					s.sockets.send(rec.ClientID, body)
+					s.sockets.send(rec.ClientID, body, func() { s.notified(MechanismWebSocket, sub, op) })
 				}
 			case s.webhooks != nil:
+				// Counted before it is handed over: a receiver is never
+				// ahead of the metrics.
+				s.notified(MechanismWebhook, sub, op)
 				s.webhooks.Send(oo.CallbackURL, oo.BearerToken, body)
 			}
 			// The callback URL of a WebSocket entry is empty.

@@ -83,7 +83,7 @@ const (
 // another machine on the network already uses is not detected.
 func Advertise(a Advertisement) (*Advertiser, error) {
 	if a.Port < 1 || a.Port > 65535 {
-		return nil, errors.New("discovery: Advertisement.Port is required")
+		return nil, fmt.Errorf("%w: Advertisement.Port is required", ErrInvalidAdvertisement)
 	}
 	if a.Instance == "" {
 		a.Instance = "OpenADR 3 VTN"
@@ -111,7 +111,7 @@ func Advertise(a Advertisement) (*Advertiser, error) {
 	}
 	for _, p := range a.ProgramNames {
 		if p == "" || strings.Contains(p, ",") {
-			return nil, fmt.Errorf("discovery: the program name %q is empty or holds a comma", p)
+			return nil, fmt.Errorf("%w: the program name %q is empty or holds a comma", ErrInvalidAdvertisement, p)
 		}
 	}
 	requiresAuth := "True"
@@ -128,7 +128,7 @@ func Advertise(a Advertisement) (*Advertiser, error) {
 	for _, entry := range text {
 		if len(entry) > 255 {
 			key, _, _ := strings.Cut(entry, "=")
-			return nil, fmt.Errorf("discovery: %s does not fit the 255 bytes of a TXT entry", key)
+			return nil, fmt.Errorf("%w: %s does not fit the 255 bytes of a TXT entry", ErrInvalidAdvertisement, key)
 		}
 	}
 
@@ -154,7 +154,7 @@ func Advertise(a Advertisement) (*Advertiser, error) {
 		ad.ports = append(ad.ports, advertisedOn{link: l, conn: conn})
 	}
 	if len(ad.ports) == 0 {
-		return nil, fmt.Errorf("discovery: cannot listen for Multicast DNS: %w", failed)
+		return nil, fmt.Errorf("%w: cannot listen: %w", ErrNoNetwork, failed)
 	}
 	for _, p := range ad.ports {
 		ad.wg.Add(1)

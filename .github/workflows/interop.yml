@@ -25,11 +25,11 @@ permissions:
   packages: read
 
 env:
-  # otfabric/openadr-interop v0.2.0: OpenLEADR openleadr-rs v0.2.7,
+  # otfabric/openadr-interop v0.3.0: OpenLEADR openleadr-rs v0.2.7,
   # ElaadNL openadr3-client 2.4.0.
   # Keep in step with the Makefile and interop/harness_test.go.
-  OPENADR_INTEROP_OPENLEADR_IMAGE: ${{ inputs.openleadr_image || 'ghcr.io/otfabric/openadr-interop-openleadr@sha256:a8fbdd858b15c4ccf797cd80695ab5b4abc11d1dcf6890efb7a8a03e98ef5f6c' }}
-  OPENADR_INTEROP_ELAADNL_IMAGE: ${{ inputs.elaadnl_image || 'ghcr.io/otfabric/openadr-interop-elaadnl@sha256:a976273dab5481cb2e7c90af6a6200aad7ecb0ebbffa8a8022f6a48a2d64ccaa' }}
+  OPENADR_INTEROP_OPENLEADR_IMAGE: ${{ inputs.openleadr_image || 'ghcr.io/otfabric/openadr-interop-openleadr@sha256:780fd3c7f39d3c3ddb80f8de372c22ff4e88f5e33bb29e4dc082b2fcaaa3a40e' }}
+  OPENADR_INTEROP_ELAADNL_IMAGE: ${{ inputs.elaadnl_image || 'ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3e10097737c75de0d1d4b359e72a8b76a01ad8ab939844fad5aaf71dc75a20c8' }}
 
 jobs:
   interop:
@@ -38,10 +38,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.23.x"
 
@@ -92,7 +92,7 @@ jobs:
 
       - name: Upload failure artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: interop-logs
           path: artifacts/

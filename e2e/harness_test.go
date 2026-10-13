@@ -49,6 +49,8 @@ type options struct {
 	// sender replaces the settings of the webhook sender; its HTTP client
 	// is always the one that trusts the test servers.
 	sender *webhook.SenderConfig
+	// metrics is given to the VTN.
+	metrics server.Metrics
 }
 
 // stack is a running VTN with clients for one Business Logic client
@@ -95,6 +97,7 @@ func start(t testing.TB, o options) *stack {
 	cfg := server.Config{
 		Store: s.Store, TokenURL: s.URL + "/auth/token",
 		AllowAnonymous: o.anonymous, ResourceGroups: o.groups, WebSocket: o.websocket, DisableCompression: o.noCompression,
+		Metrics: o.metrics,
 	}
 	if o.jwt {
 		s.idp = newIdentityProvider(t)

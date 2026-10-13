@@ -149,3 +149,41 @@ func TestValidateExtensions(t *testing.T) {
 		}
 	}
 }
+
+// Every failure a caller can meet matches a sentinel, and only its own.
+func TestSentinels(t *testing.T) {
+	all := []error{ErrBadRequest, ErrUnauthorized, ErrForbidden, ErrNotFound, ErrConflict, ErrTooManyRequests,
+		ErrServer, ErrNotImplemented, ErrUnavailable, ErrInvalid, ErrConfiguration, ErrTimeout, ErrProtocol, ErrClosed}
+	for status, want := range map[int][]error{
+		400: {ErrBadRequest}, 401: {ErrUnauthorized}, 403: {ErrForbidden}, 404: {ErrNotFound}, 409: {ErrConflict},
+		429: {ErrTooManyRequests}, 500: {ErrServer}, 501: {ErrNotImplemented, ErrServer},
+		502: {ErrUnavailable, ErrServer}, 503: {ErrUnavailable, ErrServer}, 504: {ErrUnavailable, ErrServer},
+		507: {ErrServer}, 405: nil, 413: nil, 426: nil,
+	} {
+		err := error(&Error{Method: "GET", Path: "/x", StatusCode: status})
+		for _, sentinel := range all {
+			wanted := false
+			for _, w := range want {
+				wanted = wanted || w == sentinel
+			}
+			if errors.Is(err, sentinel) != wanted {
+				t.Errorf("a %d matches %v: %v, want %v", status, sentinel, !wanted, wanted)
+			}
+		}
+	}
+	invalid := error(&ValidationError{Field: "f", Reason: "r"})
+	if !errors.Is(invalid, ErrInvalid) || errors.Is(invalid, ErrBadRequest) {
+		t.Error("a ValidationError matches ErrInvalid and nothing else")
+	}
+	if err := (Program{}).Validate(); !errors.Is(err, ErrInvalid) {
+		t.Errorf("Validate: %v", err)
+	}
+	// Each has a text of its own, which begins as every error here does.
+	seen := map[string]bool{}
+	for _, sentinel := range all {
+		if !strings.HasPrefix(sentinel.Error(), "openadr: ") || seen[sentinel.Error()] {
+			t.Errorf("sentinel %q", sentinel)
+		}
+		seen[sentinel.Error()] = true
+	}
+}

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	openadr "github.com/otfabric/go-openadr"
 )
 
 // TokenSource supplies the bearer token for a request. Implementations
@@ -60,6 +62,23 @@ func (e *TokenError) Error() string {
 		msg += ": " + e.Description
 	}
 	return msg
+}
+
+// Is matches the sentinel of package openadr for the status: a client the
+// token endpoint does not know, or will not serve, is openadr.ErrUnauthorized
+// (the status is 400 with invalid_client, or 401, or 403); 429 is
+// openadr.ErrTooManyRequests, and a 5xx openadr.ErrServer.
+func (e *TokenError) Is(target error) bool {
+	switch {
+	case e.StatusCode == http.StatusUnauthorized, e.StatusCode == http.StatusForbidden,
+		e.StatusCode == http.StatusBadRequest && (e.Code == "invalid_client" || e.Code == "unauthorized_client" || e.Code == "access_denied"):
+		return target == openadr.ErrUnauthorized
+	case e.StatusCode == http.StatusTooManyRequests:
+		return target == openadr.ErrTooManyRequests
+	case e.StatusCode >= 500:
+		return target == openadr.ErrServer
+	}
+	return false
 }
 
 // credentialSource obtains tokens with the client-credentials flow and
@@ -116,7 +135,7 @@ func (s *credentialSource) Token(ctx context.Context) (string, error) {
 	if len(s.creds.Scopes) > 0 {
 		form.Set("scope", strings.Join(s.creds.Scopes, " "))
 	}
-	body, status, err := s.core.roundTrip(ctx, http.MethodPost, s.tokenURL, "", "application/x-www-form-urlencoded", []byte(form.Encode()))
+	body, status, _, err := s.core.roundTrip(ctx, http.MethodPost, s.tokenURL, "", "application/x-www-form-urlencoded", []byte(form.Encode()))
 	if err != nil {
 		return "", err
 	}
@@ -133,10 +152,10 @@ func (s *credentialSource) Token(ctx context.Context) (string, error) {
 		return "", &TokenError{StatusCode: status, Code: resp.Error, Description: resp.ErrorDescription}
 	}
 	if decodeErr != nil || resp.AccessToken == "" {
-		return "", errors.New("openadr: the token endpoint answered 200 without an access_token")
+		return "", fmt.Errorf("%w: the token endpoint answered 200 without an access_token", openadr.ErrProtocol)
 	}
 	if !strings.EqualFold(resp.TokenType, "Bearer") {
-		return "", fmt.Errorf("openadr: the token endpoint issued a %q token, not a bearer token", resp.TokenType)
+		return "", fmt.Errorf("%w: the token endpoint issued a %q token, not a bearer token", openadr.ErrProtocol, resp.TokenType)
 	}
 	s.token, s.expires = resp.AccessToken, time.Time{}
 	if resp.ExpiresIn > 0 {
@@ -157,16 +176,20 @@ func (s *credentialSource) Invalidate(token string) {
 // discover asks the VTN for its token endpoint.
 func (s *credentialSource) discover(ctx context.Context) (string, error) {
 	c := s.core
-	body, status, err := c.roundTrip(ctx, http.MethodGet, c.url("auth/server", nil), "", "", nil)
+	body, status, header, err := c.roundTrip(ctx, http.MethodGet, c.url("auth/server", nil), "", "", nil)
 	if err != nil {
 		return "", err
 	}
 	if status != http.StatusOK {
-		return "", fmt.Errorf("openadr: discovering the token endpoint: GET /auth/server answered %d", status)
+		apiErr := &openadr.Error{Method: http.MethodGet, Path: "/auth/server", StatusCode: status, RetryAfter: parseRetryAfter(header, time.Now())}
+		if p, err := c.codec.UnmarshalProblem(body); err == nil {
+			apiErr.Problem = p
+		}
+		return "", fmt.Errorf("openadr: discovering the token endpoint: %w", apiErr)
 	}
 	tokenURL, err := c.codec.UnmarshalAuthServer(body)
 	if err != nil {
-		return "", fmt.Errorf("openadr: discovering the token endpoint: %w", err)
+		return "", fmt.Errorf("%w: discovering the token endpoint: %w", openadr.ErrProtocol, err)
 	}
 	// The VTN may name its own endpoint relative to the API.
 	ref, err := url.Parse(tokenURL)
@@ -177,7 +200,7 @@ func (s *credentialSource) discover(ctx context.Context) (string, error) {
 	// The client secret goes to this URL: do not let a VTN reached over
 	// TLS send it somewhere in the clear.
 	if c.base.Scheme == "https" && resolved.Scheme != "https" {
-		return "", fmt.Errorf("openadr: discovering the token endpoint: the VTN named %q, which is not https", tokenURL)
+		return "", fmt.Errorf("%w: discovering the token endpoint: the VTN named %q, which is not https", openadr.ErrProtocol, tokenURL)
 	}
 	return resolved.String(), nil
 }

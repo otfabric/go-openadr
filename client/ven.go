@@ -4,6 +4,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/wire"
@@ -23,7 +24,7 @@ type VEN struct {
 func NewVEN(cfg Config) (*VEN, error) {
 	c, err := newCore(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", openadr.ErrConfiguration, err)
 	}
 	return &VEN{core: c}, nil
 }

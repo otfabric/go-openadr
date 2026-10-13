@@ -19,11 +19,11 @@ import (
 	"time"
 )
 
-// The reference images of otfabric/openadr-interop v0.2.0, by multi-arch
+// The reference images of otfabric/openadr-interop v0.3.0, by multi-arch
 // index digest. Keep in step with the Makefile and .github/workflows/interop.yml.
 var defaultImages = map[string]string{
-	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:a8fbdd858b15c4ccf797cd80695ab5b4abc11d1dcf6890efb7a8a03e98ef5f6c",
-	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:a976273dab5481cb2e7c90af6a6200aad7ecb0ebbffa8a8022f6a48a2d64ccaa",
+	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:780fd3c7f39d3c3ddb80f8de372c22ff4e88f5e33bb29e4dc082b2fcaaa3a40e",
+	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3e10097737c75de0d1d4b359e72a8b76a01ad8ab939844fad5aaf71dc75a20c8",
 
 	// MQTT brokers, as their makers publish them, for brokers_test.go:
 	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition
@@ -32,6 +32,10 @@ var defaultImages = map[string]string{
 	"nanomq":    "emqx/nanomq@sha256:4c01fb8421b0c5cdf9ad17a913bcdcdb13c6a25947e17caae2b09a338aa669f5",
 	"hivemq":    "hivemq/hivemq-ce@sha256:bac6d4d1d815bffe4bc9a7fca8d06ea12b32d34f84ef2f1851ff4548560ee67b",
 	"emqx":      "emqx/emqx@sha256:5ecbf93d04e34aaf4096af074e93b773d0838c8ea668cfabdec7976b272d9606",
+
+	// The base of the containers of mdns_test.go: Alpine Linux, in which
+	// Avahi is installed and this module's own probe runs.
+	"alpine": "alpine@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8",
 }
 
 func image(adapter string) string {

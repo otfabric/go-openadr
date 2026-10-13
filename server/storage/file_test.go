@@ -169,7 +169,7 @@ func TestFileStopsOnWriteFailure(t *testing.T) {
 	if err := f.Programs().Create(ctx, openadr.Program{Metadata: meta("p2"), Name: "two"}); err == nil || errors.Is(err, openadr.ErrConflict) {
 		t.Fatalf("a write the journal could not take: %v", err)
 	}
-	if err := f.Programs().Create(ctx, openadr.Program{Metadata: meta("p3"), Name: "three"}); err == nil || !strings.Contains(err.Error(), "read-only") {
+	if err := f.Programs().Create(ctx, openadr.Program{Metadata: meta("p3"), Name: "three"}); !errors.Is(err, ErrReadOnly) || !strings.Contains(err.Error(), "read-only") {
 		t.Errorf("a write after the failure: %v", err)
 	}
 	if _, err := f.Programs().Get(ctx, "p1"); err != nil {
@@ -204,5 +204,16 @@ func TestFileConcurrentWrites(t *testing.T) {
 	// replays to the same state, order of creation included.
 	if got := dump(t, openFile(t, path)); !reflect.DeepEqual(got, want) {
 		t.Errorf("replay differs from the state that was written:\n got %+v\nwant %+v", got[0], want[0])
+	}
+}
+
+func TestFileClosed(t *testing.T) {
+	f := openFile(t, filepath.Join(t.TempDir(), "vtn.journal"))
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err := f.Programs().Create(context.Background(), openadr.Program{Metadata: meta("p1"), Name: "one"})
+	if !errors.Is(err, openadr.ErrClosed) || errors.Is(err, ErrReadOnly) {
+		t.Errorf("a write to a closed store: %v", err)
 	}
 }

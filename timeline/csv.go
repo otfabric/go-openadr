@@ -29,6 +29,25 @@ var columns = []string{"interval", "sub", "start", "end", "type", "values", "ran
 // "text", {"x":1,"y":2}), several as an array. randomize_start is an ISO
 // 8601 duration, or empty.
 func (t Table) WriteCSV(w io.Writer) error {
+	// A row that cannot be written is the table's fault; anything else is
+	// the writer's.
+	err := t.writeCSV(w)
+	var bad *rowError
+	if errors.As(err, &bad) {
+		return fmt.Errorf("%w: %w", openadr.ErrInvalid, err)
+	}
+	return err
+}
+
+// rowError is a row of a table that cannot be written.
+type rowError struct {
+	row int
+	err error
+}
+
+func (e *rowError) Error() string { return fmt.Sprintf("timeline: row %d: %v", e.row, e.err) }
+
+func (t Table) writeCSV(w io.Writer) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write(columns); err != nil {
 		return err
@@ -36,7 +55,7 @@ func (t Table) WriteCSV(w io.Writer) error {
 	for i, row := range t {
 		values, err := encodeValues(row.Values)
 		if err != nil {
-			return fmt.Errorf("timeline: row %d: %w", i, err)
+			return &rowError{row: i, err: err}
 		}
 		end, randomize := "", ""
 		if !row.End.IsZero() {
@@ -63,6 +82,14 @@ func (t Table) WriteCSV(w io.Writer) error {
 // are ignored. A row without interval gets the number of its line, from 0.
 // A cell of values that is not JSON is taken as a string.
 func ReadCSV(r io.Reader) (Table, error) {
+	table, err := readCSV(r)
+	if err != nil && !errors.Is(err, ErrTooLarge) {
+		err = fmt.Errorf("%w: %w", openadr.ErrInvalid, err)
+	}
+	return table, err
+}
+
+func readCSV(r io.Reader) (Table, error) {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1
 	header, err := cr.Read()

@@ -24,8 +24,26 @@ jobs:
     name: Examples
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.23.x"
       - run: make build examples
+
+  # The module has no dependencies, and the examples that need a database
+  # driver are a module of their own: both are checked here.
+  storage:
+    name: Example stores (SQLite, PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: examples/storage/go.mod
+          cache-dependency-path: examples/storage/go.sum
+      - run: make nodeps
+      # PostgreSQL is started by the tests, in Docker; without it they fail.
+      - run: make storage
+        env:
+          OPENADR_STORAGE_REQUIRE: "1"

@@ -28,16 +28,44 @@ Errors a client method can return:
 | The VTN answered 403: the token lacks the scope, or the client may not do this | `*openadr.Error`, matches `openadr.ErrForbidden` | yes |
 | The VTN answered 404: no such object, or none the client may see | `*openadr.Error`, matches `openadr.ErrNotFound` | yes |
 | The VTN answered 409: a name is taken, a referenced object is missing, or dependents exist | `*openadr.Error`, matches `openadr.ErrConflict` | yes |
-| The VTN answered with any other status outside 2xx (500, 501, ...) | `*openadr.Error`; matches no sentinel | yes |
-| The object, or an object ID, violates the schema | `*openadr.ValidationError` | no |
-| The token endpoint refused the client | wraps `*client.TokenError` | no API request |
-| The token endpoint could not be discovered or answered nonsense | an error that says so | no API request |
+| The VTN, or a gateway before it, answered 429 | `*openadr.Error`, matches `openadr.ErrTooManyRequests`; `RetryAfter` says how long to wait, if the answer did | yes; nothing was done |
+| The VTN answered 501: it does not have the operation | `*openadr.Error`, matches `openadr.ErrNotImplemented` and `openadr.ErrServer` | yes |
+| A gateway answered 502 or 504, or the VTN 503 | `*openadr.Error`, matches `openadr.ErrUnavailable` and `openadr.ErrServer` | yes; with 503 nothing was done |
+| The VTN answered with any other 5xx | `*openadr.Error`, matches `openadr.ErrServer` | yes |
+| The VTN answered with another status outside 2xx (405, 413, 426) | `*openadr.Error`; matches no sentinel | yes |
+| The object, or an object ID, violates the schema | `*openadr.ValidationError`, matches `openadr.ErrInvalid` | no |
+| The token endpoint refused the client | wraps `*client.TokenError`, which matches `openadr.ErrUnauthorized` | no API request |
+| The token endpoint failed (429, 5xx) | wraps `*client.TokenError`, which matches `openadr.ErrTooManyRequests` or `openadr.ErrServer` | no API request |
+| The token endpoint could not be discovered: `GET /auth/server` was refused | wraps an `*openadr.Error` for that request | no API request |
+| The token endpoint answered nonsense, or the VTN named one that is not https | matches `openadr.ErrProtocol` | no API request |
 | No connection, TLS failure, connection lost | the error of `net/http` (`*url.Error`) | unknown |
-| The context ended | wraps `context.Canceled` or `context.DeadlineExceeded` | unknown |
-| The answer could not be decoded | an error starting "openadr: decoding the response", wrapping a `*openadr.ValidationError` when one property is at fault | yes, and the VTN acted on it |
-| The answer is larger than `Config.MaxResponseBytes` | an error that says so | yes, and the VTN acted on it |
+| The call ran out of time: the context's deadline, the HTTP client's timeout, a network timeout | matches `openadr.ErrTimeout`, and `context.DeadlineExceeded` where that is what happened | unknown |
+| The context was cancelled | matches `context.Canceled` | unknown |
+| The answer could not be decoded | matches `openadr.ErrProtocol`, and wraps a `*openadr.ValidationError` when one property is at fault | yes, and the VTN acted on it |
+| The answer is larger than `Config.MaxResponseBytes` | matches `openadr.ErrProtocol` | yes, and the VTN acted on it |
 
-Always test with `errors.Is` and `errors.As`, never by comparing strings.
+Always test with `errors.Is` and `errors.As`, never by comparing strings:
+the text of an error is for people, and changes.
+
+### The sentinels
+
+All in package `openadr`, unless a package is named.
+
+| Sentinel | Matched by |
+|---|---|
+| `ErrBadRequest`, `ErrUnauthorized`, `ErrForbidden`, `ErrNotFound`, `ErrConflict`, `ErrTooManyRequests` | an `*Error` with status 400, 401, 403, 404, 409, 429; `ErrNotFound` and `ErrConflict` also by what a store returns, and `ErrUnauthorized` by a `*client.TokenError` for credentials that are refused |
+| `ErrServer` | an `*Error` with any 5xx |
+| `ErrNotImplemented`, `ErrUnavailable` | an `*Error` with 501; with 502, 503 or 504. Both also match `ErrServer` |
+| `ErrInvalid` | every `*ValidationError`; and what `timeline` returns for intervals or a CSV file that cannot be laid out or read |
+| `ErrConfiguration` | what a constructor returns for a configuration it cannot work with: `client.NewVEN`, `client.NewBL`, `server.New`, `auth.NewIssuer`, `auth.NewJWTValidator`, `mqtt.NewPublisher`, `mqtt.NewSubscriber`, `websocket.NewSubscriber` |
+| `ErrTimeout` | a call of a client that ran out of time |
+| `ErrProtocol` | an answer that is not what the protocol says it is |
+| `ErrClosed` | the use of something after it was closed: `Next` on a closed notification stream, `Ready` on a closed subscriber, a write to a closed `storage.File`; and what the webhook sender reports for a notification it gave up on because it was closed |
+| `auth.ErrInvalidToken` | what a `Validator` returns for a token that is unknown, malformed or expired |
+| `storage.ErrCorrupt` | `storage.OpenFile` on a journal it cannot replay |
+| `storage.ErrReadOnly` | every write to a `storage.File` after one the journal could not take |
+| `timeline.ErrTooLarge` | a table of more than about a million rows |
+| `discovery.ErrNoNetwork`, `discovery.ErrInvalidAdvertisement` | `Browse` and `Advertise` where Multicast DNS cannot be spoken; `Advertise` for an advertisement that cannot be announced. (`discovery` shares no errors with the rest: it imports nothing of the module.) |
 
 ## Answers of the VTN (`*openadr.Error`)
 
@@ -127,10 +155,18 @@ from a `TokenSource` that has an `Invalidate` method). A VTN that answers 401
 has not acted on the request, so this is safe for every method, writes
 included.
 
-Nothing else is retried. In particular a create that fails in transport may
-or may not have reached the VTN: the client does not send it again, because
-a second create could make a second object. Search for the object, or accept
-a 409 on the name, before repeating it.
+Nothing else is retried unless the client is given a policy
+(`Config.RetryPolicy`), and then only what another attempt can cure and
+what is safe to send twice: [OBSERVABILITY.md](OBSERVABILITY.md#retries)
+has the table. In particular a create that fails in transport may or may
+not have reached the VTN: the client does not send it again, with or
+without a policy, unless `Config.RetryCreates` says so, because a second
+create could make a second object. Search for the object, or accept a 409
+on the name, before repeating it.
+
+A call that was retried returns the error of its last attempt. When the
+context ends while it waits for another attempt, that is the error it
+returns too, not the context's.
 
 `client.Each` stops at the first error and yields it with a zero value.
 
@@ -208,9 +244,9 @@ logger, and are nothing a caller hears of.
 
 `storage.OpenFile` returns an error that matches `storage.ErrCorrupt` for a
 journal it cannot replay. A `storage.File` whose journal can no longer be
-written returns a plain error for that write and every later one ("the
-store is read-only until restarted"); the VTN answers 500 for them and keeps
-serving reads.
+written returns an error that matches `storage.ErrReadOnly` for that write
+and every later one; the VTN answers 500 for them and keeps serving reads.
+A write to one that was closed matches `openadr.ErrClosed`.
 
 `auth.Validator` implementations report:
 
@@ -265,8 +301,8 @@ A WebSocket has no retries. A notification for a client whose queue is full
 is not sent: the VTN closes that connection with code 1013, so that the
 client notices and catches up, rather than leave it behind without a word.
 
-`server.New`, `client.NewVEN`, `client.NewBL` and `auth.NewIssuer` return a
-plain error for an invalid configuration.
+Every constructor returns an error that matches `openadr.ErrConfiguration`
+for a configuration it cannot work with, and says what is wrong with it.
 
 ## What is not an error
 

@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover fuzz check clean interop test-interop e2e chaos
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover fuzz check clean interop test-interop e2e chaos nodeps storage
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -20,10 +20,10 @@ GOFMT_CI = $(shell GOTOOLCHAIN=go$(GO_MOD_VERSION).0 go env GOROOT)/bin/gofmt
 # Output directory for generated binaries
 BIN_DIR := bin
 # Library packages: tests and coverage (exclude examples and test helpers)
-TEST_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/interop$$')
+TEST_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/interop$$' | grep -v '/interop/')
 # Coverage is measured over the library packages, whichever package's tests exercise them:
 # the end-to-end tests in the module root drive the client and the server.
-COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/interop$$' | paste -sd, -)
+COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/interop$$' | grep -v '/interop/' | paste -sd, -)
 
 all: build ## Default target: build the examples
 
@@ -31,12 +31,13 @@ build: ## Build the examples into ./bin
 	@echo "Building examples"
 	@mkdir -p $(BIN_DIR)
 	@for dir in examples/*/; do \
+		[ -f "$$dir/go.mod" ] && continue; \
 		name="$$(basename "$$dir")"; \
 		go build -o "$(BIN_DIR)/example-$$name" "./$$dir"; \
 	done
 
 # The self-contained examples: each starts both sides and exits by itself.
-RUN_EXAMPLES := quickstart notifications prices websocket resourcegroups discovery
+RUN_EXAMPLES := quickstart notifications prices websocket resourcegroups discovery observability
 
 examples: ## Run the self-contained examples (each must exit successfully)
 	@for e in $(RUN_EXAMPLES); do \
@@ -85,6 +86,19 @@ chaos: ## Run the parallel and failure-injection tests CHAOS_COUNT times (defaul
 	@echo "Running the parallel and chaos tests $(CHAOS_COUNT) times"
 	@go test -count=$(CHAOS_COUNT) -race -timeout=30m -run='^(TestParallel|TestChaos)' ./e2e/...
 
+nodeps: ## Fail if the module requires anything outside the standard library
+	@echo "Checking that the module has no dependencies"
+	@deps="$$(go list -m all | tail -n +2)"; \
+	if [ -n "$$deps" ]; then echo "go.mod requires:"; echo "$$deps"; exit 1; fi
+
+# examples/storage is a module of its own: it has the SQLite and PostgreSQL
+# drivers this module must not depend on, and needs a newer Go for them.
+# PostgreSQL runs in Docker, or is the server named by OPENADR_POSTGRES_DSN;
+# OPENADR_STORAGE_REQUIRE=1 makes its absence a failure instead of a skip.
+storage: ## Test the SQLite and PostgreSQL example stores (PostgreSQL needs Docker)
+	@echo "Testing the example stores"
+	@cd examples/storage && go vet ./... && go test -count=1 -race ./... && go build -o /dev/null ./vtn
+
 test: ## Run the library tests with the race detector
 	@echo "Running tests"
 	@go test -count=1 -race $(TEST_PKGS)
@@ -109,7 +123,7 @@ fuzz: ## Run the parser fuzz targets for FUZZTIME each (default 30s)
 	@go test -run='^$$' -fuzz='^FuzzParseMessage$$' -fuzztime=$(FUZZTIME) ./discovery
 	@go test -run='^$$' -fuzz='^FuzzReadCSV$$' -fuzztime=$(FUZZTIME) ./timeline
 
-# Reference implementations for 'make interop': otfabric/openadr-interop v0.2.0
+# Reference implementations for 'make interop': otfabric/openadr-interop v0.3.0
 # (the OpenLEADR VTN v0.2.7 with a Mosquitto broker, and the ElaadNL
 # openadr3-client 2.4.0), pinned by multi-arch index digest.
 # Keep in step with interop/harness_test.go and .github/workflows/interop.yml.
@@ -120,8 +134,8 @@ fuzz: ## Run the parser fuzz targets for FUZZTIME each (default 30s)
 # passing by skipping would say nothing.
 # Override to test other builds, e.g. the local ones of a checkout of that repository:
 #   make interop OPENADR_INTEROP_OPENLEADR_IMAGE=ghcr.io/otfabric/openadr-interop-openleadr:dev
-OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:a8fbdd858b15c4ccf797cd80695ab5b4abc11d1dcf6890efb7a8a03e98ef5f6c
-OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:a976273dab5481cb2e7c90af6a6200aad7ecb0ebbffa8a8022f6a48a2d64ccaa
+OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:780fd3c7f39d3c3ddb80f8de372c22ff4e88f5e33bb29e4dc082b2fcaaa3a40e
+OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3e10097737c75de0d1d4b359e72a8b76a01ad8ab939844fad5aaf71dc75a20c8
 
 test-interop: ## Run the interop suite: OpenLEADR and ElaadNL reference images, and four MQTT brokers (needs Docker)
 	@echo "Running interop tests against $(OPENADR_INTEROP_OPENLEADR_IMAGE) and $(OPENADR_INTEROP_ELAADNL_IMAGE)"
@@ -132,7 +146,7 @@ test-interop: ## Run the interop suite: OpenLEADR and ElaadNL reference images, 
 
 interop: test-interop ## Alias for test-interop
 
-check: fmt fmt-check lint lint-ci vet vuln test coverage examples ## Run format + lint + vet + vuln + test
+check: fmt fmt-check nodeps lint lint-ci vet vuln test coverage examples ## Run format + lint + vet + vuln + test
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"

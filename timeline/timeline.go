@@ -83,6 +83,15 @@ func isNow(t *time.Time) bool { return t != nil && t.Year() <= 1 }
 // event, or a resource of a report, carries it; it may be nil when every
 // interval has a period of its own.
 func Of(period *openadr.IntervalPeriod, intervals []openadr.Interval, o Options) (Table, error) {
+	rows, err := layOut(period, intervals, o)
+	if err != nil && !errors.Is(err, ErrTooLarge) {
+		// The intervals do not say when they are.
+		err = fmt.Errorf("%w: %w", openadr.ErrInvalid, err)
+	}
+	return rows, err
+}
+
+func layOut(period *openadr.IntervalPeriod, intervals []openadr.Interval, o Options) (Table, error) {
 	now := o.Now
 	if now.IsZero() {
 		now = time.Now()

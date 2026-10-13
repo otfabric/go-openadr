@@ -1,12 +1,21 @@
 # go-openadr — OpenADR 3 for Go
 
+[![Go Version](https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/otfabric/go-openadr.svg)](https://pkg.go.dev/github.com/otfabric/go-openadr)
-[![CI](https://github.com/otfabric/go-openadr/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-openadr/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![CI Status](https://github.com/otfabric/go-openadr/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-openadr/actions/workflows/ci.yml)
+[![Interop](https://github.com/otfabric/go-openadr/actions/workflows/interop.yml/badge.svg)](https://github.com/otfabric/go-openadr/actions/workflows/interop.yml)
+[![Code Coverage](https://codecov.io/gh/otfabric/go-openadr/graph/badge.svg)](https://codecov.io/gh/otfabric/go-openadr)
+[![Latest Release](https://img.shields.io/github/v/release/otfabric/go-openadr?label=release)](https://github.com/otfabric/go-openadr/releases)
 
 A Go implementation of [OpenADR 3](https://www.openadr.org/specification),
 the demand-response protocol between utilities or aggregators and the
-energy resources of their customers. It provides both sides of the REST API:
+energy resources of their customers. It follows the specification of the
+[OpenADR Alliance](https://www.openadr.org/specification), revision 3.1.0,
+whose documents are public: the OpenAPI definition, the Definition and the
+User Guide, in
+[grid-coordination/openadr3-specification](https://github.com/grid-coordination/openadr3-specification).
+It provides both sides of the REST API:
 
 - **`client`**: a VEN client and a Business Logic client for any OpenADR 3.1 VTN;
 - **`server`**: a VTN as an embeddable `http.Handler`;
@@ -88,8 +97,9 @@ OpenADR 3 (see [INTEROP.md](INTEROP.md)): the
 [OpenLEADR](https://github.com/OpenLEADR/openleadr-rs) VTN and client
 library, and the [ElaadNL openadr3-client](https://github.com/ElaadNL/openadr3-client).
 Both are good software, and each does things this module does not. The
-table shows where the three differ, so that you can pick the right one, and
-where this module still has to catch up.
+table shows where the three differ, so that you can pick the right one:
+where this module still has to catch up, and, in its lower half, what it
+has that the others do not show.
 
 | Capability | otfabric/go-openadr | OpenLEADR openleadr-rs | ElaadNL openadr3-client |
 |---|:---:|:---:|:---:|
@@ -112,8 +122,8 @@ where this module still has to catch up.
 | JSON Web Tokens from an external identity provider | ✅ static keys and JWKS | ✅ | n/a |
 | VTN without authentication | ✅ VTN option, and a client without credentials | — not documented | ✅ anonymous client |
 | Targeting with target hiding | ✅ | ✅ | n/a |
-| Persistent storage | ✅ journal file ² | ✅ PostgreSQL | n/a |
-| Storage behind an interface (bring your own) | ✅ | prepared, PostgreSQL only | n/a |
+| Persistent storage | ✅ journal file ²; SQLite and PostgreSQL stores as examples ⁷ | ✅ PostgreSQL | n/a |
+| Storage behind an interface (bring your own) | ✅ with a test suite for your store | prepared, PostgreSQL only | n/a |
 | Resource groups (proposed for OpenADR 3.2) | ✅ opt-in, as OpenLEADR has them ³ | ✅ | ✅ |
 | mDNS discovery of local VTNs | ✅ announce and browse ⁴ | ✅ | — |
 | Response compression | ✅ gzip, deflate ⁶ | ✅ gzip, br, deflate, zstd | — |
@@ -121,10 +131,19 @@ where this module still has to catch up.
 | Extra validation by plugin | — | — | ✅ |
 | Event intervals as tables | ✅ `timeline`, with CSV ⁵ | — | ✅ pandas, optional |
 | Cancellation and deadlines per call | ✅ `context.Context` | ✅ async | — timeouts |
-| Structured logging | ✅ `log/slog`, opt-in | ✅ | ✅ |
+| Structured logging | ✅ `log/slog`, opt-in, client and VTN | ✅ | ✅ |
+| Metrics hooks | ✅ client, VTN and notifications; no metrics library needed | — not documented | — |
+| Client retries with backoff | ✅ opt-in policy, `Retry-After` honoured | — not documented | — not documented |
+| Error categories to test for | ✅ sentinels for `errors.Is` | ✅ error enum | ✅ exceptions |
 | Dependencies | none (standard library) | many crates; PostgreSQL to run | several packages |
 | Run against the OpenADR Alliance test suite | — | ✅ 166 of 168 applicable, by its authors | — not documented |
 | Cross-tested against other implementations in CI | ✅ against both | — not documented | — not documented |
+| MQTT tested on several brokers | ✅ Mosquitto, NanoMQ, HiveMQ CE, EMQX | — not documented | — not documented |
+| mDNS tested against other implementations | ✅ Avahi, Apple mDNSResponder, OpenLEADR | — not documented | n/a |
+| Failure-injection tests (store, network, webhooks, broker, tokens, crash) | ✅ `make chaos` | — not documented | — not documented |
+| Fuzzed parsers | ✅ six targets | — not documented | — not documented |
+| Authorization matrix: every operation as every kind of client | ✅ 54 rows, five clients | — not documented | n/a |
+| The three roles as runnable programs (VTN, Business Logic, VEN) | ✅ examples, run together in the tests | ✅ VTN and a client CLI | — |
 
 ¹ The MQTT client is this module's own (MQTT 3.1.1, QoS 1). The VTN's
 publisher and the subscriber are tested on four brokers: Eclipse Mosquitto,
@@ -132,15 +151,15 @@ NanoMQ, HiveMQ Community Edition and EMQX. The subscriber is also tested
 with the notifications OpenLEADR publishes.
 
 ² One process, all objects in memory, every change appended to a file. Not
-a database: for a large VTN, implement `storage.Store` on one. A SQL store
-is planned.
+a database: for a large VTN, put `storage.Store` on one.
 
 ³ Neither is part of OpenADR 3.1.0. Both follow OpenLEADR's representation,
 and this module's clients are tested against OpenLEADR for both. Resource
 groups will change with the specification that adopts them.
 
 ⁴ This module's own Multicast DNS, over IPv4. Tested in both directions
-with Apple's mDNSResponder; not yet with Avahi or with OpenLEADR.
+with Avahi, with Apple's mDNSResponder and with OpenLEADR: each finds what
+this module announces, and this module finds what each announces.
 
 ⁵ Rows of Go values and CSV, not a data-frame library. It also applies the
 timing rules of the specification (defaults, "now", sub-intervals, events
@@ -156,9 +175,16 @@ correct it.
 ⁶ The two codings Go's standard library can write. br and zstd would each
 need a dependency, which this module does not take.
 
+⁷ [examples/storage](examples/storage/README.md) implements the store on
+SQLite and on PostgreSQL. It is a module of its own, so that the database
+drivers are not dependencies of go-openadr, and it is an example: read it,
+copy it, hold your own to the same test suite (`storagetest.Run`).
+
 **Choose go-openadr if** you want both sides of the protocol in one Go
 module without dependencies, a VTN you embed in your own service with your
-own identity provider and store, or webhook notifications.
+own identity provider and store, webhook notifications, or the hooks a
+service in production wants: metrics, logs, retries with backoff and errors
+to switch on.
 
 **Choose OpenLEADR if** you want a VTN to deploy as it is, backed by
 PostgreSQL, that its authors have run against the Alliance's test suite.
@@ -413,9 +439,12 @@ three keeps notifications for a client that is away.
 | [vtn](examples/vtn/main.go) | A standalone VTN with flags for every option, to point clients at. |
 | [ven](examples/ven/main.go) | A VEN for the command line: finds a VTN, registers, prints its schedule, reports, watches. |
 | [tariff](examples/tariff/main.go) | Business Logic for the command line: publishes a schedule from a CSV file, and reads the reports on it. |
+| [observability](examples/observability/main.go) | Metrics and logs of a client and a VTN, a retry policy at work against a gateway that fails, and failures told apart by `errors.Is`. |
+| [storage](examples/storage/README.md) | The VTN on SQLite and on PostgreSQL: the store interface implemented on a database. A module of its own. |
 
-The first six are self-contained and run as they are (`go run ./examples/quickstart`);
-CI runs them. The last three work together:
+The first six and `observability` are self-contained and run as they are
+(`go run ./examples/quickstart`); CI runs them. `vtn`, `ven` and `tariff`
+work together:
 
 ```sh
 # the VTN, with a client for each of the other two
@@ -489,9 +518,29 @@ start,end,type,values
   has not.
 - **Shutdown.** A VTN with WebSockets has connections of its own: call
   `Server.Close` when it stops, before the HTTP server's `Shutdown`.
-- **Logging.** The library is silent. The server logs internal errors, and
-  the webhook sender, the MQTT publisher and the subscribers failed
-  deliveries and lost connections, to the `slog.Logger` each is given, if any.
+- **Errors.** Every failure matches a sentinel of package `openadr` with
+  `errors.Is`: `ErrNotFound`, `ErrConflict`, `ErrUnavailable`,
+  `ErrTimeout`, `ErrInvalid` and the rest of [ERRORS.md](ERRORS.md).
+- **Retries.** None by default, beyond one retry with a fresh token after a
+  401. `client.Config.RetryPolicy` adds them with backoff, for what is
+  safe to repeat: see [OBSERVABILITY.md](OBSERVABILITY.md).
+- **Logging and metrics.** The library is silent and counts nothing unless
+  told to: each part takes a `slog.Logger` and a small metrics interface in
+  its configuration. See [OBSERVABILITY.md](OBSERVABILITY.md).
+- **Storage.** The VTN keeps its objects behind `storage.Store`: in memory,
+  in a journal file, or on a database of yours
+  ([examples/storage](examples/storage/README.md) has SQLite and PostgreSQL).
+
+## Specification
+
+- [OpenADR Alliance: specification](https://www.openadr.org/specification):
+  the official home of OpenADR 3.
+- [grid-coordination/openadr3-specification](https://github.com/grid-coordination/openadr3-specification):
+  the documents themselves, per revision. This module implements
+  [3.1.0](https://github.com/grid-coordination/openadr3-specification/tree/main/3.1.0):
+  the OpenAPI document (`openadr3.yaml`), the Definition and the User Guide.
+- [docs/CONFORMANCE.md](docs/CONFORMANCE.md): which of it this module
+  covers, and how it reads the parts that leave room.
 
 ## Documentation
 
@@ -499,6 +548,7 @@ start,end,type,values
   signatures do not show.
 - [ERRORS.md](ERRORS.md): every error a caller can get, and how to tell them
   apart.
+- [OBSERVABILITY.md](OBSERVABILITY.md): logging, metrics and retries.
 - [INTEROP.md](INTEROP.md): what has been tested against which other
   implementation, and how to repeat it.
 - [docs/CONFORMANCE.md](docs/CONFORMANCE.md): operation coverage, and how
@@ -522,6 +572,7 @@ make check    # format, lint, vet, vulnerability scan, tests with -race, coverag
 make fuzz     # the parser fuzz targets
 make e2e      # this module's clients against this module's VTN, every feature
 make chaos    # many clients at once, and failures injected: store, network, webhooks, broker, tokens, crashes
+make storage  # the SQLite and PostgreSQL example stores, a module of their own (PostgreSQL needs Docker)
 make interop  # against the OpenLEADR and ElaadNL reference images (needs Docker, see INTEROP.md)
 ```
 

@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	openadr "github.com/otfabric/go-openadr"
 )
 
 // JWTConfig configures a JWTValidator.
@@ -96,6 +98,14 @@ const refetchAfter = time.Minute
 // NewJWTValidator returns a validator for cfg. It does not fetch the key
 // set: that happens with the first token that needs it.
 func NewJWTValidator(cfg JWTConfig) (*JWTValidator, error) {
+	v, err := newJWTValidator(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", openadr.ErrConfiguration, err)
+	}
+	return v, nil
+}
+
+func newJWTValidator(cfg JWTConfig) (*JWTValidator, error) {
 	if len(cfg.Keys) == 0 && cfg.JWKSURL == "" {
 		return nil, errors.New("auth: a JWTValidator needs Keys or a JWKSURL")
 	}

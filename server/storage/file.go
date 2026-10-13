@@ -63,6 +63,12 @@ var fileCodec = v310.Codec()
 // ErrCorrupt reports a journal that cannot be replayed.
 var ErrCorrupt = errors.New("storage: the journal is corrupt")
 
+// ErrReadOnly is matched by every write to a File after one that could
+// not be written to the journal: the store then accepts no change until it
+// is opened again, so that memory is never more than one change ahead of
+// the file. Reads go on.
+var ErrReadOnly = errors.New("storage: the store is read-only")
+
 // OpenFile opens the store kept in the file at path, creating it when it
 // does not exist. The journal is replayed and then rewritten without the
 // changes that later ones made obsolete.
@@ -301,7 +307,7 @@ func (f *File) write(rec record) error {
 		// Memory now holds a change the file does not. Reads go on; no
 		// further change is accepted, so that the two cannot drift apart
 		// by more than this one.
-		f.broken = fmt.Errorf("storage: the journal could not be written, the store is read-only until restarted: %w", err)
+		f.broken = fmt.Errorf("%w until restarted: the journal could not be written: %w", ErrReadOnly, err)
 		return f.broken
 	}
 	return nil
@@ -320,7 +326,7 @@ func (f *File) Close() error {
 	}
 	f.file = nil
 	if f.broken == nil {
-		f.broken = errors.New("storage: the store is closed")
+		f.broken = fmt.Errorf("%w: the store", openadr.ErrClosed)
 	}
 	return err
 }

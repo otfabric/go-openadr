@@ -6,6 +6,7 @@ go-openadr/
 ├── client/              VEN and BL clients, OAuth2 token handling
 ├── server/              the VTN http.Handler and its access rules
 │   └── storage/         the persistence interface; Memory and File
+│       └── storagetest/ the test suite a store is held to
 ├── auth/                Identity, scopes, Validator; Issuer and JWTValidator
 ├── notification/
 │   ├── webhook/         Sender (VTN side) and Handler (client side)
@@ -22,6 +23,7 @@ go-openadr/
 ├── e2e/                 this module's clients against this module's VTN
 ├── interop/             against other implementations (build tag)
 └── examples/
+    └── storage/         a module of its own: the store on SQLite and PostgreSQL
 ```
 
 Dependencies point one way: `client` and `server` use the domain model and a
@@ -213,6 +215,37 @@ querier. The sockets are behind an interface, and the tests run both halves
 against each other on a network in memory, where loss and off-link queries
 can be arranged.
 
+## Errors, logs, metrics, retries
+
+**Errors** are categories first. A caller asks `errors.Is(err, openadr.ErrNotFound)`
+and gets the same answer whether the error is an HTTP status of a VTN, what
+a store returned, or a wrapped cause three layers down. The sentinels live
+in the root package because every other package already imports it; the
+types that carry detail (`*Error`, `*ValidationError`, `*TokenError`,
+`*ConstraintError`) match them with an `Is` method. `discovery` has
+sentinels of its own, since it imports nothing of the module.
+
+**Logs and metrics** are hooks, not machinery. Each part that does
+something a program cannot see from a return value takes a `*slog.Logger`
+and a metrics interface of a few callbacks in its configuration, and does
+nothing with either when they are nil. There is no global logger, no
+registry and no metrics library: an implementation of the interface is the
+adapter to whatever the program uses. Operations are named by route
+(`GET /programs/{id}`), on both sides the same, so that they can be labels.
+
+On the client, a call goes through one place (`core.call`): it is where a
+call is counted, logged and retried, and so a call is one unit to all
+three, whatever HTTP requests it took. On the VTN it is the wrapper around
+the mux (`server/observe.go`), which also knows the one case where the end
+of the handler is not the end of the request: a WebSocket.
+
+**Retries** are split in two. *Whether* a failed request may be sent again
+is a property of HTTP and of the operation, and the client decides it: a
+policy can never make it repeat a create whose fate it does not know. *How
+often and how long to wait* is the policy's, an interface of one method.
+The default policy does not retry, so that a program that wants its own
+loop around the client is not surprised by a second one inside.
+
 ## Tests
 
 - Unit tests sit next to the code.
@@ -221,6 +254,8 @@ can be arranged.
   yet. A bug both sides share is invisible there.
 - `e2e/matrix_test.go` is the access control in one table: every operation
   as every kind of client.
+- `server/storage/storagetest` is the contract of a store as a test, run
+  against the two stores here and the two in `examples/storage`.
 - `e2e/chaos_test.go` runs many clients at once, and injects failures: a
   store that fails one call in five, a network that cuts connections, a
   webhook that fails most of the time, a broker that drops everyone, tokens
@@ -230,6 +265,11 @@ can be arranged.
   implementation, from the images of otfabric/openadr-interop.
 - That repository's conformance suite checks the VTN against the
   specification's own OpenAPI document.
+
+`examples/storage` is a second module in the repository, with its own
+`go.mod`: it needs database drivers, and the main module's `go.mod` must
+stay without a `require`. `make nodeps` fails when it does not, and `go get`
+of the main module never sees the drivers.
 
 Not there yet: durable delivery of notifications, which a journal of
 pending deliveries in the store would give.

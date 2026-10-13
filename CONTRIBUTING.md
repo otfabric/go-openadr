@@ -45,6 +45,9 @@ make e2e
 # Run the parallel and failure-injection tests several times over (CHAOS_COUNT=5 by default)
 make chaos
 
+# Test the SQLite and PostgreSQL example stores (their own module; PostgreSQL needs Docker)
+make storage
+
 # Run the interop suite against the OpenLEADR and ElaadNL reference images (needs Docker)
 make interop
 ```
@@ -57,7 +60,7 @@ Run `make` (or `make help`) for the full list of targets.
 
 - Follow standard Go conventions (`gofmt`, `go vet`)
 - Start every Go file with `// SPDX-License-Identifier: MIT`
-- No dependencies outside the standard library
+- No dependencies outside the standard library: `go.mod` has no `require`, and `make nodeps` (part of `make check`) fails when it gets one. An example that needs a dependency is a module of its own, as `examples/storage` is
 - Property names of the specification appear in error messages and wire structures as the specification writes them (`programName`, `venID`); everything else follows Go naming
 - Respect the package boundaries in [ARCHITECTURE.md](ARCHITECTURE.md): the root package knows neither HTTP nor JSON, the JSON of a revision stays in `internal/wire`, `client` and `server` do not import each other, and `server` knows a notification binding only through an interface
 
@@ -72,6 +75,9 @@ Run `make` (or `make help`) for the full list of targets.
 - A new feature gets an end-to-end test in `e2e/`, through the public API of both sides over HTTPS, whether or not another implementation can exercise it
 - Tests must pass with `-race` and must not depend on timing beyond generous upper bounds
 - A change to how the VTN or a client behaves when something fails belongs in `e2e/chaos_test.go`, which injects the failure and asserts what survives it: consistency of the store, privacy between clients, recovery when the failure is over. These tests are random and follow a seed. A failing one prints `OPENADR_CHAOS_SEED=<seed>`: run it again with that in the environment before changing anything, and run `make chaos` before submitting, since one green run of a random test says little
+- An error a caller may want to tell apart matches a sentinel with `errors.Is`: wrap one of package `openadr` (`fmt.Errorf("%w: ...", openadr.ErrInvalid)`), or give a type an `Is` method. A constructor's errors match `openadr.ErrConfiguration`. Tests compare with `errors.Is`, not with text
+- Whatever a part does that its caller cannot see from a return value (a retry, a dropped notification, a lost connection) goes to its logger and its metrics, both optional and both nil by default. Log lines and metric labels name operations (`GET /events/{id}`), never IDs, bodies, tokens or secrets
+- A change to `storage.Store`, or to what a store must do, changes `storagetest`, which every store has to pass: those of this module, and those in `examples/storage` (`make storage`)
 - A parser of bytes from elsewhere (a network packet, a file) gets a fuzz target, listed in the `fuzz` target of the Makefile
 - What is not part of OpenADR 3.1.0 stays off by default, is named as an extension wherever it appears, and is tested against the implementation it is shared with
 - A change to the client, the VTN or the wire format must keep `make interop` green (the Interop workflow runs it on every push). The `interop` package holds this repository's scenarios and assertions; the reference implementations belong to [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop) and are consumed as images only
@@ -79,7 +85,7 @@ Run `make` (or `make help`) for the full list of targets.
 
 ### Documentation
 
-Update the document that owns the topic: [API.md](API.md) for the behavioural contract, [ERRORS.md](ERRORS.md) for error behaviour, [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for protocol coverage and readings of the specification, [SECURITY.md](SECURITY.md) for what an operator has to know before turning something on, [INTEROP.md](INTEROP.md) for what was tested against what, and add an entry to [RELEASE.md](RELEASE.md). A feature that another implementation also has, or lacks, changes a row of the comparison in [README.md](README.md): keep it to what its sources and documentation show.
+Update the document that owns the topic: [API.md](API.md) for the behavioural contract, [ERRORS.md](ERRORS.md) for error behaviour, [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for protocol coverage and readings of the specification, [OBSERVABILITY.md](OBSERVABILITY.md) for logging, metrics and retries, [SECURITY.md](SECURITY.md) for what an operator has to know before turning something on, [INTEROP.md](INTEROP.md) for what was tested against what, and add an entry to [RELEASE.md](RELEASE.md). A feature that another implementation also has, or lacks, changes a row of the comparison in [README.md](README.md): keep it to what its sources and documentation show.
 
 Claim what a test shows and no more. "Tested against OpenLEADR" names the version and the test; what was only tested between this module's own two sides says so.
 

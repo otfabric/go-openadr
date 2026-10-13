@@ -40,6 +40,18 @@ import (
 // Service is the DNS-SD service type of an OpenADR 3 VTN.
 const Service = "_openadr3._tcp"
 
+// Errors of this package. It shares none with the rest of the module,
+// which it does not import.
+var (
+	// ErrNoNetwork is matched when Multicast DNS cannot be spoken on this
+	// machine: no interface with multicast and an IPv4 address, or no
+	// socket that could be opened on any.
+	ErrNoNetwork = errors.New("discovery: no network for Multicast DNS")
+	// ErrInvalidAdvertisement is matched by an Advertisement that cannot
+	// be announced.
+	ErrInvalidAdvertisement = errors.New("discovery: invalid advertisement")
+)
+
 var (
 	serviceName = name{"_openadr3", "_tcp", "local"}
 	// metaName is the name a browser of all service types asks for.
@@ -202,7 +214,7 @@ func (realNetwork) links() ([]link, error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, errors.New("discovery: no network interface with multicast and an IPv4 address")
+		return nil, fmt.Errorf("%w: no interface with multicast and an IPv4 address", ErrNoNetwork)
 	}
 	return out, nil
 }
@@ -246,7 +258,7 @@ func hostLabel(host string) string {
 
 func checkLabel(what, label string) error {
 	if label == "" || len(label) > 63 {
-		return fmt.Errorf("discovery: %s must be 1 to 63 bytes", what)
+		return fmt.Errorf("%w: %s must be 1 to 63 bytes", ErrInvalidAdvertisement, what)
 	}
 	return nil
 }

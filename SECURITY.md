@@ -131,6 +131,21 @@ The MQTT client in this module is its own implementation of MQTT 3.1.1. It is fu
 
 `storage.File` keeps the VTN's objects in one file, in the clear, including the bearer tokens of subscriptions. It is created with mode 0600. Protect the directory and the backups accordingly.
 
+The same holds for a store on a database, such as those in `examples/storage`: the documents it keeps include the bearer tokens of subscriptions. Those examples are examples: they are not covered by the support of this module, and their database drivers are theirs to keep up to date.
+
+### Logs and metrics
+
+Nothing is logged or counted unless a logger or a metrics implementation is configured. When one is:
+
+- Bodies, bearer tokens, client secrets and the query of a callback URL are never logged
+- A debug line of a call or request names the operation (`GET /events/{id}`), not the path. An error line names the path, which holds an object ID; object IDs are not secrets in OpenADR, but they are in your logs then
+- The labels given to metrics are operations, statuses, mechanisms and object types: a fixed set that a client cannot widen. A request to a path the VTN does not have is counted as `other`
+- An error passed to a metrics callback is the error the caller gets, with its path and the VTN's detail. Label by category (`errors.Is`), do not use its text as a label
+
+### Retries
+
+A retry policy makes a client send a request again. The client only does so where a second request cannot do twice what was asked once, and waits as a VTN's `Retry-After` says. `Config.RetryCreates` lifts the first of those for creates: read [OBSERVABILITY.md](OBSERVABILITY.md#retries) before setting it. A policy without a limit on attempts, against a VTN that is down, is a client that never stops: give calls a context with a deadline.
+
 ### Input handling
 
 - Request bodies are limited in size (`server.Config.MaxBodyBytes`, 1 MiB by default) and checked against the schema before they reach the store; response bodies are limited in the client (`client.Config.MaxResponseBytes`, 16 MiB by default)

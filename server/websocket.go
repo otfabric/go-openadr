@@ -77,11 +77,18 @@ func newSockets(cfg WebSocketConfig) *sockets {
 	return &sockets{cfg: cfg, byClient: map[string][]*socket{}}
 }
 
-// send queues a notification for every connection of a client.
-func (ss *sockets) send(clientID string, body []byte) {
+// send queues a notification for every connection of a client. queued is
+// called for each connection it is queued for, before it is: by the time
+// a client reads a notification, it has been accounted for.
+func (ss *sockets) send(clientID string, body []byte, queued func()) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	for _, c := range ss.byClient[clientID] {
+		// Only this function fills the queues, and it holds the lock:
+		// room that is there now is still there a line further.
+		if len(c.queue) < cap(c.queue) {
+			queued()
+		}
 		select {
 		case c.queue <- body:
 		default:
@@ -168,7 +175,27 @@ func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request, id auth.Ide
 	}
 	defer ss.release(c)
 
-	conn, status, err := ws.Accept(w, r)
+	// The WebSocket counts as open from the moment the connection is this
+	// handler's, which is before the client is told: whoever looks at the
+	// metrics after a client has seen its WebSocket open finds it there.
+	opened := false
+	conn, status, err := ws.AcceptAfter(w, r, func() {
+		opened = true
+		if s.socketMetrics != nil {
+			s.socketMetrics.OnSocketOpened()
+		}
+	})
+	if opened && s.socketMetrics != nil {
+		defer func() {
+			reason := SocketClosed
+			select {
+			case <-c.drop:
+				reason = map[int]string{ws.CloseTryAgainLater: SocketSlow, ws.CloseGoingAway: SocketShutdown}[c.why]
+			default:
+			}
+			s.socketMetrics.OnSocketClosed(reason)
+		}()
+	}
 	if err != nil {
 		if status != 0 {
 			s.problem(w, r, status, err.Error())

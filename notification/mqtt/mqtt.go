@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -83,6 +84,28 @@ func (b Broker) connect(stop <-chan struct{}, o imqtt.Options, report func(error
 	}
 }
 
+// Metrics receives a callback for what a Publisher or a Subscriber does.
+// A Publisher calls OnPublished and OnDropped, a Subscriber OnReceived,
+// and both the two about the connection. The callbacks run on the
+// goroutines of the Publisher or Subscriber and must not block.
+// Implementations must be safe for concurrent use.
+type Metrics interface {
+	// OnConnected is called when a connection to the broker is made, and,
+	// for a Subscriber, the subscriptions with it.
+	OnConnected()
+	// OnDisconnected is called when a connection is lost or given up, with
+	// the reason.
+	OnDisconnected(err error)
+	// OnPublished is called when the broker has confirmed a notification.
+	OnPublished()
+	// OnDropped is called when a notification is not queued, because the
+	// queue is full: the broker has been away for too long.
+	OnDropped()
+	// OnReceived is called for every notification a Subscriber hands to
+	// its Notify function.
+	OnReceived()
+}
+
 // PublisherConfig configures a Publisher.
 type PublisherConfig struct {
 	Broker
@@ -92,6 +115,9 @@ type PublisherConfig struct {
 	// Logger receives connection failures and dropped notifications. Nil
 	// disables logging.
 	Logger *slog.Logger
+	// Metrics receives a callback for what happens; see Metrics. Nil
+	// disables them.
+	Metrics Metrics
 }
 
 // Publisher sends notifications to a broker, in the order they were given,
@@ -124,7 +150,7 @@ type message struct {
 // broker: the connection is made in the background.
 func NewPublisher(cfg PublisherConfig) (*Publisher, error) {
 	if err := checkURL(cfg.URL); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", openadr.ErrConfiguration, err)
 	}
 	if cfg.Queue <= 0 {
 		cfg.Queue = 1024
@@ -150,6 +176,9 @@ func (p *Publisher) Publish(topic string, body []byte) {
 	case p.queue <- message{topic: topic, body: body}:
 	default:
 		p.warn("mqtt: queue full, notification dropped", slog.String("topic", topic))
+		if p.cfg.Metrics != nil {
+			p.cfg.Metrics.OnDropped()
+		}
 	}
 }
 
@@ -201,12 +230,21 @@ func (p *Publisher) run() {
 				if conn == nil {
 					return // closed while the broker was away
 				}
+				if p.cfg.Metrics != nil {
+					p.cfg.Metrics.OnConnected()
+				}
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			err := conn.Publish(ctx, m.topic, m.body)
 			cancel()
 			if err == nil {
+				if p.cfg.Metrics != nil {
+					p.cfg.Metrics.OnPublished()
+				}
 				break
+			}
+			if p.cfg.Metrics != nil {
+				p.cfg.Metrics.OnDisconnected(err)
 			}
 			p.warn("mqtt: publishing failed, reconnecting", slog.String("topic", m.topic), slog.Any("error", err))
 			_ = conn.Close()
@@ -234,6 +272,9 @@ type SubscriberConfig struct {
 	// Logger receives connection failures and messages that are not
 	// notifications. Nil disables logging.
 	Logger *slog.Logger
+	// Metrics receives a callback for what happens; see Metrics. Nil
+	// disables them.
+	Metrics Metrics
 }
 
 // Subscriber receives the notifications a VTN publishes on a broker. It
@@ -262,6 +303,14 @@ var codec = v310.Codec()
 // NewSubscriber returns a running Subscriber. It does not wait for the
 // broker; use Ready for that.
 func NewSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
+	s, err := newSubscriber(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", openadr.ErrConfiguration, err)
+	}
+	return s, nil
+}
+
+func newSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
 	if err := checkURL(cfg.URL); err != nil {
 		return nil, err
 	}
@@ -284,7 +333,7 @@ func NewSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
 // Ready waits until the Subscriber is connected and subscribed: from then
 // on, what the VTN publishes is received.
 func (s *Subscriber) Ready(ctx context.Context) error {
-	closed := errors.New("mqtt: the subscriber is closed")
+	closed := fmt.Errorf("%w: the MQTT subscriber", openadr.ErrClosed)
 	select {
 	case <-s.done:
 		return closed
@@ -352,6 +401,9 @@ func (s *Subscriber) run() {
 		s.calling.Lock()
 		defer s.calling.Unlock()
 		if ctx.Err() == nil {
+			if s.cfg.Metrics != nil {
+				s.cfg.Metrics.OnReceived()
+			}
 			s.cfg.Notify(ctx, topic, n)
 		}
 	}
@@ -378,6 +430,11 @@ func (s *Subscriber) run() {
 			}
 			continue
 		}
+		// Reported before Ready returns: whoever was told the subscriber
+		// is connected finds it in the metrics.
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.OnConnected()
+		}
 		s.mu.Lock()
 		s.sessions++
 		close(s.connected)
@@ -385,6 +442,9 @@ func (s *Subscriber) run() {
 
 		select {
 		case <-conn.Done():
+			if s.cfg.Metrics != nil {
+				s.cfg.Metrics.OnDisconnected(conn.Err())
+			}
 			s.warn("mqtt: connection to the broker lost", slog.Any("error", conn.Err()))
 		case <-s.stop:
 			_ = conn.Close()

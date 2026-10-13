@@ -4,6 +4,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/wire"
@@ -20,7 +21,7 @@ type BL struct {
 func NewBL(cfg Config) (*BL, error) {
 	c, err := newCore(cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %w", openadr.ErrConfiguration, err)
 	}
 	return &BL{core: c}, nil
 }

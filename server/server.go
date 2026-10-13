@@ -89,8 +89,15 @@ type Config struct {
 	// response of 1 KiB or more is compressed, with gzip or deflate, for a
 	// client that accepts one of them.
 	DisableCompression bool
-	// Logger receives internal errors. Nil disables logging.
+	// Logger receives internal errors, with the method and the path of the
+	// request and never its body or token; and at debug level one line
+	// per request, with its operation, status and duration. Nil disables
+	// logging.
 	Logger *slog.Logger
+	// Metrics receives a callback for every request, and, when it
+	// implements them, for notifications and WebSockets; see Metrics. Nil
+	// disables them.
+	Metrics Metrics
 	// MaxBodyBytes limits the size of a request body; 1 MiB when zero.
 	MaxBodyBytes int64
 	// Now replaces the clock, for tests.
@@ -143,13 +150,25 @@ type Server struct {
 	compress  bool
 	codec     *wire.Codec
 	logger    *slog.Logger
-	maxBody   int64
-	now       func() time.Time
-	mux       *http.ServeMux
+	metrics   Metrics
+	// The optional extensions of metrics, nil when it has not got them.
+	notifications NotificationMetrics
+	socketMetrics SocketMetrics
+	maxBody       int64
+	now           func() time.Time
+	mux           *http.ServeMux
 }
 
 // New returns a Server for cfg.
 func New(cfg Config) (*Server, error) {
+	s, err := newServer(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", openadr.ErrConfiguration, err)
+	}
+	return s, nil
+}
+
+func newServer(cfg Config) (*Server, error) {
 	switch {
 	case cfg.Store == nil:
 		return nil, errors.New("server: Config.Store is required")
@@ -184,10 +203,13 @@ func New(cfg Config) (*Server, error) {
 		compress:  !cfg.DisableCompression,
 		codec:     v310.Codec(),
 		logger:    cfg.Logger,
+		metrics:   cfg.Metrics,
 		maxBody:   cfg.MaxBodyBytes,
 		now:       cfg.Now,
 		mux:       http.NewServeMux(),
 	}
+	s.notifications, _ = cfg.Metrics.(NotificationMetrics)
+	s.socketMetrics, _ = cfg.Metrics.(SocketMetrics)
 	if cfg.WebSocket != nil {
 		s.sockets = newSockets(*cfg.WebSocket)
 	}
@@ -203,7 +225,7 @@ func New(cfg Config) (*Server, error) {
 
 // ServeHTTP implements http.Handler.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.observe(w, r)
 }
 
 // handler is an API operation, called for an authenticated and authorized

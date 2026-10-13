@@ -17,7 +17,7 @@ package websocket
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -44,6 +44,20 @@ type SubscriberConfig struct {
 	Backoff time.Duration
 	// Logger receives connection failures. Nil disables logging.
 	Logger *slog.Logger
+	// Metrics receives a callback for what happens; see Metrics. Nil
+	// disables them.
+	Metrics Metrics
+}
+
+// Metrics receives a callback for what a Subscriber does. The callbacks
+// run on the Subscriber's goroutine and must not block.
+type Metrics interface {
+	// OnConnected is called when the WebSocket is open.
+	OnConnected()
+	// OnDisconnected is called when it has ended, with the reason.
+	OnDisconnected(err error)
+	// OnReceived is called for every notification handed to Notify.
+	OnReceived()
 }
 
 // Subscriber receives the notifications a VTN sends over a WebSocket. It
@@ -72,9 +86,9 @@ type Subscriber struct {
 func NewSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
 	switch {
 	case cfg.Dial == nil:
-		return nil, errors.New("websocket: a Subscriber needs Dial")
+		return nil, fmt.Errorf("%w: websocket: a Subscriber needs Dial", openadr.ErrConfiguration)
 	case cfg.Notify == nil:
-		return nil, errors.New("websocket: a Subscriber needs Notify")
+		return nil, fmt.Errorf("%w: websocket: a Subscriber needs Notify", openadr.ErrConfiguration)
 	}
 	if cfg.KeepAlive <= 0 {
 		cfg.KeepAlive = 30 * time.Second
@@ -90,7 +104,7 @@ func NewSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
 // Ready waits until the Subscriber is connected: from then on, what the
 // VTN sends is received.
 func (s *Subscriber) Ready(ctx context.Context) error {
-	closed := errors.New("websocket: the subscriber is closed")
+	closed := fmt.Errorf("%w: the WebSocket subscriber", openadr.ErrClosed)
 	select {
 	case <-s.done:
 		return closed
@@ -189,7 +203,15 @@ func (s *Subscriber) run() {
 			return
 		default:
 		}
+		// From here Close finds the stream, and ends it.
 		s.stream = stream
+		s.mu.Unlock()
+		// Reported before Ready returns, and not under the lock: whoever
+		// was told the subscriber is connected finds it in the metrics.
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.OnConnected()
+		}
+		s.mu.Lock()
 		s.sessions++
 		close(s.connected)
 		s.mu.Unlock()
@@ -200,10 +222,16 @@ func (s *Subscriber) run() {
 				if ctx.Err() == nil {
 					s.warn("websocket: connection to the VTN lost", err)
 				}
+				if s.cfg.Metrics != nil {
+					s.cfg.Metrics.OnDisconnected(err)
+				}
 				break
 			}
 			s.calling.Lock()
 			if ctx.Err() == nil {
+				if s.cfg.Metrics != nil {
+					s.cfg.Metrics.OnReceived()
+				}
 				s.cfg.Notify(ctx, n)
 			}
 			s.calling.Unlock()

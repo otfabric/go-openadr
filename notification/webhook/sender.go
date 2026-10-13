@@ -23,6 +23,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	openadr "github.com/otfabric/go-openadr"
 )
 
 // SenderConfig configures a Sender. The zero value is a Sender for
@@ -53,6 +55,26 @@ type SenderConfig struct {
 	Workers int
 	// Logger receives failed and dropped deliveries. Nil disables logging.
 	Logger *slog.Logger
+	// Metrics receives a callback for every notification; see Metrics. Nil
+	// disables them.
+	Metrics Metrics
+}
+
+// Metrics receives a callback for what becomes of each notification given
+// to a Sender: exactly one of the three. The callbacks run on the
+// Sender's goroutines, or for OnDropped on the caller's, and must not
+// block. Implementations must be safe for concurrent use.
+type Metrics interface {
+	// OnDelivered is called when a webhook has confirmed a notification:
+	// after how many attempts, and how long after the first began.
+	OnDelivered(attempts int, duration time.Duration)
+	// OnFailed is called when a notification is given up on: its attempts
+	// are used up, the webhook refused it for good, or the Sender was
+	// closed while it waited.
+	OnFailed(attempts int, duration time.Duration, err error)
+	// OnDropped is called when a notification is not even queued: the
+	// queue of its webhook is full.
+	OnDropped()
 }
 
 // Sender delivers notifications to webhooks. Notifications for one callback
@@ -236,6 +258,9 @@ func (s *Sender) Send(callbackURL, bearerToken string, body []byte) {
 	case s.queues[int(h.Sum32()%uint32(len(s.queues)))] <- delivery{url: callbackURL, token: bearerToken, body: body}:
 	default:
 		s.log("webhook: queue full, notification dropped", callbackURL, nil)
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.OnDropped()
+		}
 	}
 }
 
@@ -275,20 +300,32 @@ func (s *Sender) work(queue chan delivery) {
 }
 
 func (s *Sender) deliver(d delivery) {
+	start := time.Now()
+	failed := func(attempts int, err error) {
+		s.log("webhook: notification not delivered", d.url, err)
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.OnFailed(attempts, time.Since(start), err)
+		}
+	}
 	wait := s.cfg.Backoff
 	for attempt := 1; ; attempt++ {
-		retry, err := s.post(d)
+		retry, after, err := s.post(d)
 		if err == nil {
+			if s.cfg.Metrics != nil {
+				s.cfg.Metrics.OnDelivered(attempt, time.Since(start))
+			}
 			return
 		}
 		if !retry || attempt >= s.cfg.Attempts {
-			s.log("webhook: notification not delivered", d.url, err)
+			failed(attempt, err)
 			return
 		}
+		// A webhook that says when to come back is taken at its word, up
+		// to the longest wait there is.
 		select {
-		case <-time.After(wait):
+		case <-time.After(min(max(wait, after), s.cfg.MaxBackoff)):
 		case <-s.stop:
-			s.log("webhook: notification not delivered", d.url, errors.New("the sender was closed"))
+			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
 			return
 		}
 		if wait *= 2; wait > s.cfg.MaxBackoff {
@@ -297,16 +334,17 @@ func (s *Sender) deliver(d delivery) {
 	}
 }
 
-// post sends one request. retry says whether another attempt can help.
-func (s *Sender) post(d delivery) (retry bool, err error) {
+// post sends one request. retry says whether another attempt can help, and
+// after how long the webhook asked to wait first, if it did.
+func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
 	if _, err := s.checkURL(d.url); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url, bytes.NewReader(d.body))
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if d.token != "" {
@@ -314,18 +352,21 @@ func (s *Sender) post(d delivery) (retry bool, err error) {
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return true, err
+		return true, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		return false, nil
+		return false, 0, nil
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout:
-		return true, fmt.Errorf("the webhook answered %d", resp.StatusCode)
+		if seconds, err := time.ParseDuration(resp.Header.Get("Retry-After") + "s"); err == nil && seconds > 0 {
+			after = seconds
+		}
+		return true, after, fmt.Errorf("the webhook answered %d", resp.StatusCode)
 	default:
 		// A redirect, or a refusal that will not change by asking again.
-		return false, fmt.Errorf("the webhook answered %d", resp.StatusCode)
+		return false, 0, fmt.Errorf("the webhook answered %d", resp.StatusCode)
 	}
 }
 

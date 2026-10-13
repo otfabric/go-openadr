@@ -127,6 +127,15 @@ func IsUpgrade(r *http.Request) bool {
 // error says so: the caller answers the request, with the status Accept
 // returns.
 func Accept(w http.ResponseWriter, r *http.Request) (*Conn, int, error) {
+	return AcceptAfter(w, r, nil)
+}
+
+// AcceptAfter is Accept, with a function that is called when the
+// connection has been taken over and before the client is told so. What
+// it does is done by the time the client can know that the WebSocket is
+// open: a server that keeps a record of its connections is never behind
+// what its clients have seen.
+func AcceptAfter(w http.ResponseWriter, r *http.Request, before func()) (*Conn, int, error) {
 	switch {
 	case r.Method != http.MethodGet:
 		return nil, http.StatusMethodNotAllowed, errors.New("websocket: the handshake is a GET")
@@ -147,6 +156,9 @@ func Accept(w http.ResponseWriter, r *http.Request) (*Conn, int, error) {
 	}
 	// The deadlines of the HTTP server are not those of the WebSocket.
 	_ = conn.SetDeadline(time.Time{})
+	if before != nil {
+		before()
+	}
 	answer := "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: " + accept(key) + "\r\n\r\n"
 	if _, err = brw.WriteString(answer); err == nil {
 		err = brw.Flush()

@@ -20,6 +20,9 @@ is the authoritative text for each symbol; this document is the map.
 - [Concurrency](#concurrency)
 - [Limits](#limits)
 
+Logging, metrics and retries have a document of their own:
+[OBSERVABILITY.md](OBSERVABILITY.md).
+
 ## Package `openadr`
 
 `import openadr "github.com/otfabric/go-openadr"`
@@ -108,6 +111,12 @@ client-provided properties against the 3.1.0 schema and returns a
 `*ValidationError`. `ValidID` checks an object ID. `Error`, `Problem` and the
 sentinels are described in [ERRORS.md](ERRORS.md).
 
+Every failure the module reports matches a sentinel of this package with
+`errors.Is`: the categories of a VTN's answers (`ErrNotFound`,
+`ErrConflict`, `ErrUnavailable`, ...) and those that are not an answer
+(`ErrInvalid`, `ErrConfiguration`, `ErrTimeout`, `ErrProtocol`,
+`ErrClosed`).
+
 ## Package `client`
 
 `import "github.com/otfabric/go-openadr/client"`
@@ -123,6 +132,10 @@ type Config struct {
 	Tokens           TokenSource   // ... any other source of bearer tokens
 	UserAgent        string
 	MaxResponseBytes int64         // default 16 MiB
+	RetryPolicy      RetryPolicy   // default NoRetry()
+	RetryCreates     bool          // let the policy retry a create whose fate is not known
+	Metrics          Metrics       // callbacks per call
+	Logger           *slog.Logger  // calls at debug, token renewals at info, retries at warn
 }
 ```
 
@@ -194,6 +207,31 @@ With `Credentials`, the client performs the OAuth2 client-credentials grant:
 - A token is reused until 10 seconds before it expires; one without a stated lifetime until the VTN rejects it. Concurrent calls wait for one token request instead of each making their own.
 - A 401 from the VTN discards the token and the request is sent once more with a fresh one.
 
+### Retries, metrics and logging
+
+```go
+type RetryPolicy interface { ShouldRetry(attempt int, err error) (retry bool, wait time.Duration) }
+
+func NoRetry() RetryPolicy
+func ExponentialBackoff(base, maxDelay time.Duration, maxAttempts int) RetryPolicy
+func NewExponentialBackoff(ExponentialBackoffConfig) RetryPolicy   // {BaseDelay, MaxDelay, MaxAttempts, RetryOnTimeout, NoJitter}
+
+type Metrics interface {
+	OnRequest(op string)
+	OnResponse(op string, duration time.Duration)
+	OnError(op string, duration time.Duration, err error)
+	OnTimeout(op string, duration time.Duration)
+}
+type AttemptMetrics interface { OnAttempt(op string, attempt int, duration time.Duration, err error) }   // optional
+```
+
+- **Nothing is retried by default.** With a policy, the client asks it only about failures another attempt can cure (no answer, 429, 502, 503, 504) and only for requests that are safe to send twice: a read, an update and a delete always; a create only when it certainly did not happen, unless `RetryCreates`. A policy cannot widen that. The table is in [OBSERVABILITY.md](OBSERVABILITY.md#retries).
+- **`Retry-After`** of a 429 or 503 is honoured: the client waits at least that long. It is in `openadr.Error.RetryAfter`.
+- **A call's context bounds all its attempts** and the waits between them.
+- **`Metrics`** is told of every call, once when it begins and once when it ends; a call is what a method does, token request and retries included. `op` is method and path with `{id}` for an ID, a small fixed set. A value that is also an `AttemptMetrics` is told of every attempt.
+- **`Logger`** gets one debug line per call, an info line when a token is renewed after a 401, and a warning per retry. Never bodies, tokens or secrets.
+- All of it applies to opening a notification stream as well.
+
 `Tokens` takes any `TokenSource` instead; `StaticToken` is one that always
 returns the same token. With neither, requests carry no `Authorization`
 header.
@@ -217,6 +255,7 @@ type Config struct {
 	MaxBodyBytes int64           // default 1 MiB
 	Now          func() time.Time
 
+	Metrics            Metrics          // callbacks per request, and for notifications and WebSockets
 	AllowAnonymous     bool             // answer requests without a token
 	DisableCompression bool             // no gzip, no deflate
 	WebSocket          *WebSocketConfig // optional, not of 3.1.0: notifications over WebSockets
@@ -242,7 +281,8 @@ which no longer knows of those connections.
 - **`TokenURL`** is what clients are told, so it is the address as *they* see it, proxies and path prefixes included.
 - **Without `TokenHandler`**, `POST /auth/token` answers 501, for a VTN whose tokens come from elsewhere.
 - **IDs and timestamps** are the VTN's: 32 hexadecimal characters from `crypto/rand`, and `Now()` in UTC.
-- **Logging** is silent without a `Logger`. With one, only failures that become a 500 are logged, with method and path, never bodies or tokens.
+- **Logging** is silent without a `Logger`. With one, failures that become a 500 are logged, with method and path, never bodies or tokens; and at debug level one line per request, with its operation, status and duration.
+- **`Metrics`** is `OnRequest(op)` and `OnResponse(op, status, duration)`, with `op` the route (`GET /programs/{id}`), or `other` for a request that is no operation. A value that also implements `NotificationMetrics` (`OnNotification(mechanism, object, operation)`) or `SocketMetrics` (`OnSocketOpened()`, `OnSocketClosed(reason)`) is told of those too. See [OBSERVABILITY.md](OBSERVABILITY.md).
 
 Which operations exist, who may call them and how the VTN reads the
 specification where it leaves room is in [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
@@ -275,6 +315,13 @@ type Collection[T, F any] interface {
 
 func NewMemory() *Memory
 func OpenFile(path string, opts FileOptions) (*File, error)
+
+// for a store of your own:
+func Encode[T Object](v T) ([]byte, error)    // an object as JSON
+func Decode[T Object](data []byte) (T, error)
+
+// in package server/storage/storagetest:
+func Run(t *testing.T, cfg Config)            // Config{New, Reopen}
 ```
 
 A `Store` enforces what has to be decided atomically with a write, and
@@ -291,6 +338,13 @@ collection that is always empty.
 
 Everything about who may see or write what stays in the server, so every
 backend behaves the same.
+
+**A store of your own.** The interface is the whole contract, and three
+things help with it:
+
+- `Encode` and `Decode` turn any object a store keeps (the six kinds of the API, and `SubscriptionRecord`) into JSON and back. The types of package `openadr` have no JSON form of their own, on purpose; this is the form the API gives them, it is stable across releases, and it lets a store keep an object as one document beside the few columns it searches by.
+- `storagetest.Run` is the suite the stores of this module pass: the rules above, the order of a search, concurrent writers, every property of every kind of object through a write and a read, and, with `Reopen`, across a restart. A store that passes it behaves under the VTN as `Memory` does.
+- [examples/storage](examples/storage/README.md) is the interface on SQLite and on PostgreSQL, in a module of its own so that the drivers are not dependencies of this one.
 
 - **Ownership of values:** neither the caller nor the store modifies a value, or anything it points to, after handing it over. A store may return the very slices it holds.
 - **IDs** are assigned by the caller, in `Metadata.ID`.
@@ -319,6 +373,7 @@ type SenderConfig struct {
 	Attempts      int            // default 4
 	Backoff       time.Duration  // before the second attempt, then doubled; default 1 s
 	MaxBackoff    time.Duration  // the longest wait between two attempts; default 1 minute
+	Metrics       Metrics        // OnDelivered, OnFailed, OnDropped: one per notification
 	Queue         int            // per worker, default 256
 	Workers       int            // default 4
 	Logger        *slog.Logger   // failed and dropped deliveries
@@ -328,7 +383,7 @@ type SenderConfig struct {
 - **Lifecycle.** `NewSender` starts the workers. `Close` stops accepting, and waits until what is queued is delivered or given up on, or until its context ends; after that `Send` does nothing.
 - **`Send` never blocks.** A notification for a full queue is dropped and logged.
 - **Order.** Notifications for one callback URL are delivered one at a time, in the order they were sent, retries included. A webhook that is slow or down delays the callbacks that share its worker, and no others.
-- **Retries.** A network failure, a 5xx, a 408 and a 429 are tried again, `Attempts` times in all. Any other answer outside 2xx, redirects included, is final.
+- **Retries.** A network failure, a 5xx, a 408 and a 429 are tried again, `Attempts` times in all. A webhook that sends `Retry-After` with such an answer is waited for that long, up to `MaxBackoff`. Any other answer outside 2xx, redirects included, is final.
 - **At least once, not durable.** A webhook may see a notification twice; a notification is lost when its attempts are used up or the process stops.
 - **Which URLs.** https only, no credentials in the URL, and with the default client only public addresses, checked on the address that is connected to, so that a name which resolves into the VTN's own network is refused. `AllowInsecure` lifts the scheme and address rules, for tests and closed networks. A client given in `HTTPClient` is used as it is.
 - **`Verify`** sends `GET <url>?echo=<random>` and requires 200 with that value as the body. Its error is worded for the client that named the URL, and does not say what the VTN's network answered.
@@ -364,11 +419,11 @@ MQTT 3.1.1 client. The broker is not part of the module.
 ```go
 type Broker struct { URL, ClientID, Username, Password string; TLS *tls.Config; Backoff time.Duration }
 
-func NewPublisher(PublisherConfig) (*Publisher, error)     // PublisherConfig{Broker, Queue, Logger}
+func NewPublisher(PublisherConfig) (*Publisher, error)     // PublisherConfig{Broker, Queue, Logger, Metrics}
 func (*Publisher) Publish(topic string, body []byte)
 func (*Publisher) Close(ctx) error
 
-func NewSubscriber(SubscriberConfig) (*Subscriber, error)  // SubscriberConfig{Broker, Topics, Notify, Logger}
+func NewSubscriber(SubscriberConfig) (*Subscriber, error)  // SubscriberConfig{Broker, Topics, Notify, Logger, Metrics}
 func (*Subscriber) Ready(ctx) error
 func (*Subscriber) Sessions() int
 func (*Subscriber) Close() error
@@ -391,7 +446,7 @@ Notifications over a WebSocket, for the client side. Not part of OpenADR
 the wire.
 
 ```go
-func NewSubscriber(SubscriberConfig) (*Subscriber, error)  // SubscriberConfig{Dial, Notify, KeepAlive, Backoff, Logger}
+func NewSubscriber(SubscriberConfig) (*Subscriber, error)  // SubscriberConfig{Dial, Notify, KeepAlive, Backoff, Logger, Metrics}
 func (*Subscriber) Ready(ctx) error
 func (*Subscriber) Sessions() int
 func (*Subscriber) Close() error
@@ -493,11 +548,12 @@ type VTN struct {
 func (VTN) URL() string
 ```
 
-- **`Browse`** asks on every network interface with multicast and an IPv4 address, waits `Timeout` (3 s) for answers, and returns the VTNs that gave a host, a port and a TXT record, by instance name. With `First` it returns at the first. Finding none is not an error. It asks from a port of its own, as a one-shot resolver, so it works beside the resolver of the system and needs no privilege.
+- **`Browse`** asks on every network interface with multicast and an IPv4 address, waits `Timeout` (3 s) for answers, and returns the VTNs that gave a host, a port and a TXT record, by instance name. With `First` it returns at the first. Finding none is not an error. It asks in both ways there are: from a port of its own, as a one-shot resolver, which works beside the resolver of the system and needs no privilege; and, where the Multicast DNS port can be shared, from that port, because some responders (OpenLEADR's) answer to the whole network only.
 - **`VTN.URL`** is the `local_url` the VTN announced, or else `https://host:port/base_path`. The host is a `.local` name; `Addrs` are for a system that cannot resolve those, which includes Go's own resolver on some platforms.
 - **`RequiresAuth`** is false only when the VTN says `requires_auth=False`; a VTN that does not say is taken to want a token.
 - **`Advertise`** announces a VTN until `Close`, which also says goodbye. `Port` is required; the host name defaults to the machine's, `Version` to 3.1.0, and `LocalURL` to `https://<host>.local:<port>/<base path>`. `NoAuth` announces a VTN with `AllowAnonymous`. It shares port 5353 with the resolver of the system, and fails where that is not possible.
-- **Limits.** IPv4 multicast only (IPv6 addresses are announced and reported). No probing: a name that is already in use on the network is not detected. Not every network carries multicast: containers and many cloud networks do not.
+- **Limits.** IPv4 multicast only (IPv6 addresses are announced and reported). No probing: a name that is already in use on the network is not detected. Not every network carries multicast: many cloud networks do not.
+- **Tested with** Avahi, Apple's mDNSResponder and OpenLEADR, in both directions: see [INTEROP.md](INTEROP.md).
 - **Trust.** Multicast DNS proves nothing about who answers. See [SECURITY.md](SECURITY.md).
 
 ## Beyond OpenADR 3.1.0

@@ -32,15 +32,25 @@ type NotificationStream struct {
 	stop    chan struct{}
 }
 
-// stream opens the WebSocket at notifiers/ws.
+// stream opens the WebSocket at notifiers/ws. Opening it is a call like
+// any other: counted, logged, and tried again as the retry policy has it.
 func (c *core) stream(ctx context.Context) (*NotificationStream, error) {
+	var out *NotificationStream
+	err := c.call(ctx, "GET /notifiers/ws", http.MethodGet, func() (err error) {
+		out, err = c.openStream(ctx)
+		return err
+	})
+	return out, err
+}
+
+func (c *core) openStream(ctx context.Context) (*NotificationStream, error) {
 	for attempt := 0; ; attempt++ {
 		header := http.Header{}
 		token := ""
 		if c.tokens != nil {
 			var err error
 			if token, err = c.tokens.Token(ctx); err != nil {
-				return nil, fmt.Errorf("openadr: obtaining a token: %w", err)
+				return nil, fmt.Errorf("%w: obtaining a token: %w", errNotSent, err)
 			}
 			header.Set("Authorization", "Bearer "+token)
 		}
@@ -74,9 +84,9 @@ func (c *core) stream(ctx context.Context) (*NotificationStream, error) {
 		var refused *ws.HandshakeError
 		if !errors.As(err, &refused) {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return nil, transportError(ctx, ctx.Err())
 			}
-			return nil, err
+			return nil, transportError(ctx, err)
 		}
 		if refused.StatusCode == http.StatusUnauthorized && attempt == 0 && token != "" {
 			if inv, ok := c.tokens.(interface{ Invalidate(token string) }); ok {
@@ -130,6 +140,12 @@ func (s *NotificationStream) Next() (openadr.Notification, error) {
 	for {
 		message, err := s.conn.ReadMessage()
 		if err != nil {
+			select {
+			case <-s.stop:
+				// Ended by Close, on this side.
+				return openadr.Notification{}, fmt.Errorf("%w: the notification stream: %w", openadr.ErrClosed, err)
+			default:
+			}
 			return openadr.Notification{}, fmt.Errorf("openadr: the notification stream ended: %w", err)
 		}
 		// A message that is not a notification is passed over: the stream

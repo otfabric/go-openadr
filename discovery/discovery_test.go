@@ -561,3 +561,39 @@ func TestRealNetwork(t *testing.T) {
 	}
 	t.Skip("multicast does not reach this machine's own sockets")
 }
+
+// A responder that answers every query to the whole network and never
+// directly, whatever port the query came from, as that of OpenLEADR does:
+// a browser that only waited for a direct answer would not hear it.
+func TestBrowseHearsMulticastAnswers(t *testing.T) {
+	n := newFakeNet("10.0.0.1", "10.0.0.2")
+	sock := n.open(n.hosts[0], 5353, true)
+	defer func() { _ = sock.Close() }()
+	instance := append(name{"Loud"}, serviceName...)
+	host := name{"loud", "local"}
+	go func() {
+		buf := make([]byte, maxMessage)
+		for {
+			k, _, err := sock.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			q, err := parseMessage(buf[:k])
+			if err != nil || q.response || len(q.questions) == 0 || !q.questions[0].name.equal(serviceName) {
+				continue
+			}
+			reply := message{response: true, answers: []record{
+				{name: serviceName, rtype: typePTR, ttl: 4500, target: instance},
+				{name: instance, rtype: typeSRV, unique: true, ttl: 120, target: host, port: 3000},
+				{name: instance, rtype: typeTXT, unique: true, ttl: 4500, text: []string{"version=3.1", "local_url=http://loud.local.:3000/"}},
+				{name: host, rtype: typeA, unique: true, ttl: 120, addr: netip.MustParseAddr("10.0.0.1")},
+			}}
+			b, _ := reply.marshal()
+			_, _ = sock.WriteTo(b, group)
+		}
+	}()
+	vtns := browse(t, n.host(1), Options{Timeout: 5 * time.Second, First: true})
+	if len(vtns) != 1 || vtns[0].Instance != "Loud" || vtns[0].Port != 3000 || vtns[0].URL() != "http://loud.local.:3000/" || !vtns[0].RequiresAuth {
+		t.Errorf("found %+v", vtns)
+	}
+}

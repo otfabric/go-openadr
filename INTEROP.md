@@ -15,11 +15,13 @@ specific tests against specific versions.
 | go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ CE 2026.5, EMQX 6.3.1 | Passing, run locally | `make interop` |
 | go-openadr WebSocket subscriber | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
 | go-openadr BL and VEN, resource groups | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
+| go-openadr `discovery`, both directions | OpenLEADR v0.2.7, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
-| the specification-driven suite of openadr-interop v0.2.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
+| the specification-driven suite of openadr-interop v0.3.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
 
 Last run: 2026-10-13, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.2.0, pinned by
+macOS), against the published images of openadr-interop v0.3.0, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -31,7 +33,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.2.0, pinned by
+Needs Docker. The images are those of openadr-interop v0.3.0, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -140,11 +142,45 @@ whose battery it is sees both groups, the outer one with the inner as its
 only child; another VEN sees neither, and is refused the group by ID; a VEN
 that tries to create a group is answered 403.
 
-## Discovery with the resolver of the system
+## Discovery: Avahi, OpenLEADR and Apple's mDNSResponder
 
-Not automated, because it needs a machine with a Multicast DNS responder
-and a network that carries multicast. On macOS, with `examples/discovery`
-or the `-advertise` flag of `examples/vtn`:
+Package `discovery` speaks Multicast DNS with code of its own, so it is
+tested against the implementations a VEN or a VTN will meet on a network.
+Multicast does not cross from a test process into a container network, so
+this module's side runs in a container too: `interop/mdns_test.go` builds
+`interop/mdnsprobe`, a few lines around `discovery.Advertise` and
+`discovery.Browse`, for Linux and runs it on a container network of its own
+beside the other implementation.
+
+**Avahi** (0.8, as Alpine Linux 3.22 packages it), in both directions:
+
+- this module announces a VTN, and `avahi-browse -r` finds and resolves it:
+  instance name, host name, address, port and every key of the TXT record;
+  `avahi-resolve` resolves the host name this module announced; and a
+  browse of all service types lists `_openadr3._tcp`;
+- Avahi publishes a VTN (`avahi-publish -s`), and `Browse` finds it, with
+  host, port, addresses and TXT record;
+- with both on the network, one `Browse` returns both.
+
+**OpenLEADR** v0.2.7, in both directions. The reference image has OpenLEADR
+built with its `mdns` feature since openadr-interop v0.3.0 (the feature
+`serverMdns`), which is the one pinned here.
+
+- OpenLEADR's VTN announces itself, and `Browse` finds it: host, port,
+  address and its TXT record;
+- this module announces a VTN, and OpenLEADR's client library
+  (`discover_local_vtns`, run as its own example program) finds it by the
+  `local_url` of its TXT record.
+
+What OpenLEADR announces differs from the Definition in ways that needed no
+change here but that a client should expect: `version` is `3.1`, not
+`3.1.0`; `local_url` has the trailing dot of the host name
+(`http://vtn.local.:8080/`); and there is no `requires_auth` and no
+`program_names`. This module takes a VTN that does not say to require
+authentication.
+
+**Apple's mDNSResponder**, by hand, because it needs a Mac. With
+`examples/discovery` or the `-advertise` flag of `examples/vtn`:
 
 ```sh
 dns-sd -B _openadr3._tcp local.                     # finds what discovery.Advertise announces
@@ -153,13 +189,9 @@ dns-sd -R "Some VTN" _openadr3._tcp local. 9443 version=3.1.0 base_path=oa3 requ
                                                     # is found by discovery.Browse
 ```
 
-Both directions worked on 2026-10-13 with the mDNSResponder of macOS: the
-system's browser listed and resolved the VTN this module announced, with
-every TXT key, and `Browse` found a service the system registered, with its
-port, TXT record and addresses. `go test ./discovery` with
+Both directions worked on 2026-10-13. `go test ./discovery` with
 `OPENADR_TEST_MDNS=1` checks this module's two halves against each other on
-the machine's real sockets. Not yet tried: Avahi, and the discovery of
-OpenLEADR.
+the machine's real sockets.
 
 ## The ElaadNL client against this module's VTN
 
@@ -192,6 +224,12 @@ Each of these was found by an interoperability run and changed this module.
   ElaadNL client hands the value to its OAuth2 library and failed. The schema
   says `format: uri`. `server.New` now requires an absolute URL.
 
+- **A responder that answers only by multicast** (OpenLEADR). `Browse`
+  asked as a one-shot resolver, from a port of its own, and waited for an
+  answer to that port; Avahi and Apple answer such a query directly,
+  OpenLEADR's responder answers to the whole network and nothing else, and
+  was not found. `Browse` now also listens, and asks, on the Multicast DNS
+  port.
 - **A callback URL is absent for a WebSocket** (OpenLEADR). `callbackUrl`
   was written always, as 3.1.0 requires it; it is now left out when a
   subscription names another mechanism. For a webhook nothing changed.
@@ -227,7 +265,6 @@ groups, against another implementation.** They are tested between this
 module's two sides only (`e2e/`): OpenLEADR does not deliver to webhooks,
 and the reference client's contract has no subscription, notification or
 resource group operations yet. A client without credentials against another
-VTN, and another anonymous client against this one. Discovery against Avahi
-and against OpenLEADR. TLS between the implementations (the references run
+VTN, and another anonymous client against this one. TLS between the implementations (the references run
 over plain HTTP on loopback). OpenADR 3.0.x. Any VTN other than OpenLEADR,
 and any client other than ElaadNL's and the conformance suite.

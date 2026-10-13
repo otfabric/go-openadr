@@ -99,9 +99,14 @@ func (f *found) vtns() ([]VTN, []question) {
 // Browse asks the local network for VTNs and returns those that answered
 // within the timeout, by instance name. Finding none is not an error.
 //
-// It asks as a one-shot resolver does (RFC 6762, section 5.1), from a port
-// of its own: it does not need the Multicast DNS port, and it works beside
-// the resolver of the system.
+// It asks in both ways there are. As a one-shot resolver (RFC 6762,
+// section 5.1), from a port of its own, to which a responder answers
+// directly: that needs nothing but a socket, and works beside the resolver
+// of the system. And, where the Multicast DNS port can be shared, as a
+// Multicast DNS querier, from that port, hearing what is answered to the
+// whole network: some responders, OpenLEADR's among them, answer no other
+// way. A machine on which the port cannot be shared still finds the
+// responders that answer directly.
 func Browse(ctx context.Context, o Options) ([]VTN, error) {
 	if o.Timeout <= 0 {
 		o.Timeout = 3 * time.Second
@@ -128,9 +133,13 @@ func Browse(ctx context.Context, o Options) ([]VTN, error) {
 			continue
 		}
 		conns = append(conns, conn)
+		// The Multicast DNS port as well, where it can be had.
+		if member, err := network.member(l); err == nil {
+			conns = append(conns, member)
+		}
 	}
 	if len(conns) == 0 {
-		return nil, fmt.Errorf("discovery: cannot open a socket to ask from: %w", failed)
+		return nil, fmt.Errorf("%w: cannot open a socket to ask from: %w", ErrNoNetwork, failed)
 	}
 	answers := make(chan message)
 	var readers sync.WaitGroup

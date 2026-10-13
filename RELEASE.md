@@ -1,5 +1,77 @@
 # go-openadr Releases
 
+## v0.3.0
+
+**Date:** 2026-10-13
+**Previous release:** v0.2.0
+
+## Summary
+
+What a library is expected to give a program that runs in production, in
+line with go-modbus and go-opcua: errors that can be told apart without
+reading their text, hooks for logging and for metrics on both sides, and a
+retry policy for the clients. And the storage interface gets what it takes
+to bring your own: a public way to serialize objects, a test suite for a
+store, and two stores on a database as examples, SQLite and PostgreSQL, in
+a module of their own so that this one still depends on nothing.
+
+**Upgrade notes**
+
+- Nothing is retried, logged or counted that was not before: every new behaviour is behind a field of a configuration that is nil or zero by default.
+- **The text of some errors changed**, because they now wrap a sentinel: an error of a constructor begins with "openadr: invalid configuration:", an answer that cannot be decoded with "openadr: protocol error:", a call that ran out of time with "openadr: timeout:". Code that compared error strings has to use `errors.Is`; code that already did is unaffected, and `errors.As` finds the same types as before.
+- A failed discovery of the token endpoint (`GET /auth/server` refused) now wraps an `*openadr.Error`, where it was a plain error.
+- `openadr.Error` has a new field, `RetryAfter`, and `client.Config`, `server.Config`, `webhook.SenderConfig`, `mqtt.PublisherConfig`, `mqtt.SubscriberConfig` and `websocket.SubscriberConfig` have new fields. Code that builds these with unkeyed fields has to be adjusted.
+- The webhook sender now waits as long as a webhook's `Retry-After` says, up to `MaxBackoff`, where it waited its own backoff only.
+
+## Changes
+
+### Added
+
+- **Error sentinels** — every failure matches a category with `errors.Is`. New in package `openadr`: `ErrTooManyRequests` (429), `ErrServer` (any 5xx), `ErrNotImplemented` (501), `ErrUnavailable` (502, 503, 504), `ErrInvalid` (every `*ValidationError`, and what `timeline` refuses), `ErrConfiguration` (what a constructor refuses), `ErrTimeout`, `ErrProtocol` (an answer that is not what the protocol says) and `ErrClosed`. Also `storage.ErrReadOnly`, `discovery.ErrNoNetwork` and `discovery.ErrInvalidAdvertisement`. A `*client.TokenError` matches `ErrUnauthorized`, `ErrTooManyRequests` or `ErrServer` by its status.
+- **`openadr.Error.RetryAfter`** — how long a VTN, or a gateway before it, asked the client to wait.
+- **Retry policy for the clients** — `client.Config.RetryPolicy`, with `NoRetry` (the default), `ExponentialBackoff` and `NewExponentialBackoff` (backoff with jitter, a limit on attempts, optionally retrying timeouts), or an implementation of the one-method interface. The client decides what may be retried at all, and a policy cannot widen it: failures another attempt can cure (no answer, 429, 502, 503, 504), and requests that are safe to send twice. A create is repeated only when it certainly did not happen, unless `Config.RetryCreates`. `Retry-After` is honoured, the call's context bounds everything, and a token that cannot be had is retried like the call it was for.
+- **Metrics hooks** — interfaces of a few callbacks, with no metrics library behind them. `client.Metrics` (and the optional `client.AttemptMetrics`) per call of a client; `server.Metrics` per request of a VTN, with the optional `server.NotificationMetrics` and `server.SocketMetrics`; `webhook.Metrics`, `mqtt.Metrics` and `websocket.Metrics` for what becomes of notifications and connections. Operations are named by route (`GET /programs/{id}`), a fixed set that is fit to be a label.
+- **Logging on the client** — `client.Config.Logger`: every call at debug level, a token renewed after a 401 at info, every retry at warn. And on the VTN, one debug line per request. Never bodies, tokens or secrets, and operations, not paths.
+- **For a store of your own** — `storage.Encode` and `storage.Decode` turn any object a store keeps into JSON and back, in a form that is stable across releases; the domain types have no JSON form of their own, so until now a store outside the module had no way to serialize them. `storagetest.Run` (`server/storage/storagetest`) is the suite the stores of this module pass, for yours.
+- **The VTN on SQLite and on PostgreSQL** (`examples/storage`) — `storage.Store` implemented on `database/sql`, opened on a SQLite file or a PostgreSQL server, with a runnable VTN for each. **A module of its own**: the database drivers are in `examples/storage/go.mod` and nowhere else.
+- **`webhook.SenderConfig.Metrics`**, and the sender honours a webhook's `Retry-After`.
+- **`interop/mdnsprobe`** — a few lines around `discovery.Advertise` and `discovery.Browse`, to put them on a network beside another implementation.
+- **`OBSERVABILITY.md`**, and `examples/observability`: metrics and logs of a client and a VTN, a retry policy at work against a gateway that fails, failures told apart by `errors.Is`.
+- **Metrics are not behind what a client has seen.** The opening of a WebSocket is reported (`OnResponse`, `OnSocketOpened`) before the handshake is answered, a notification (`OnNotification`) before it is handed to the sender, the broker or the WebSocket, and a subscriber's `OnConnected` before its `Ready` returns. A reading taken right after an effect was observed includes it.
+- `make storage`, `make nodeps` (part of `make check`: fails when `go.mod` requires anything), and a CI job for both.
+
+### Changed
+
+- The comparison in the README has rows for metrics hooks, client retries and error categories, the storage rows say what is there now, and its lower half lists what this module has that the others do not show: brokers and mDNS implementations tested against, failure injection, fuzzing, the authorization matrix. The README has the badges of the other OT Fabric libraries, and links to the specification.
+- `PLAN.md`: the SQL store and the metrics hooks are no longer open.
+
+### Fixed
+
+- **`discovery.Browse` did not find responders that answer only by multicast**, which OpenLEADR's does. It asked as a one-shot resolver and waited for a direct answer, which Avahi and Apple's mDNSResponder give. It now also listens and asks on the Multicast DNS port, where that can be shared. Found by the new test against OpenLEADR.
+
+### Verification
+
+- `make check`: as before, with coverage of 91.8% of the library's statements and seven self-contained examples.
+- Unit tests of the retry rules as a table (which method is repeated after which failure, with and without `RetryCreates`), of `Retry-After` in both its forms, of the backoff with and without jitter, of timeouts by the context and by the HTTP client, of the metrics and the log of a client call by call, and of every sentinel against every status.
+- `make e2e`: 43 end-to-end tests. New: sixteen clients opening WebSockets, reading and closing at once, each checking after every step that the VTN's metrics already include what it has just seen; a client with a retry policy on a network that cuts a third of its connections, whose calls succeed without its caller doing anything and whose creates end in exactly one object each; both ends of a WebSocket reporting the same to their metrics; the sentinels across packages.
+- `storagetest.Run` against four stores: memory, journal file, SQLite and PostgreSQL. It covers the rules of a store, the order of a search, concurrent writers, every property of every kind of object through a write and a read, and a restart.
+- `make storage`: beside the suite, a VTN on each database driven by the module's clients across a restart, and for PostgreSQL two stores on one database, as two VTN processes would be. PostgreSQL 18 in a container; SQLite through `modernc.org/sqlite`.
+- The three example programs (`vtn`, `tariff`, `ven`) against the VTN of `examples/storage` on both databases, by hand: a tariff published, the VTN restarted, the prices read and reported on.
+- **Discovery against Avahi and OpenLEADR**, in both directions each, on a container network (`interop/mdns_test.go`, part of `make interop`): Avahi 0.8 finds and resolves what this module announces, with every key of the TXT record, and this module finds what Avahi publishes; this module finds the VTN OpenLEADR v0.2.7 announces, and OpenLEADR's client library finds the one this module announces. The OpenLEADR half needs a reference image built with OpenLEADR's mDNS, which openadr-interop has from v0.3.0.
+- `make interop` is green against the reference images of openadr-interop v0.3.0 (OpenLEADR v0.2.7 with mDNS, ElaadNL openadr3-client 2.4.0), pinned by digest, and the four MQTT brokers; everything of v0.2.0 passes unchanged on them.
+- The whole suite on Linux with Go 1.23 and Go 1.26, in containers.
+
+### Known limitations
+
+- **The stores in `examples/storage` are examples.** They serialize writes, have no migrations, and are not covered by the compatibility promises of the module. They need Go 1.26, which the SQLite driver decides.
+- A retried create of an object without a unique name (an event, a report, a subscription) can leave two, which is why `RetryCreates` is off by default and why the policy never repeats a create whose fate is not known without it.
+- Operations are named from the path of a request, so an object whose ID is a word of the API (`events`, `vens`) is named wrongly in the client's metrics. The VTN's metrics use its routes and are not affected.
+- The VTN does not send `Retry-After` itself, and does no rate limiting: both belong to a gateway before it.
+- No ready-made adapters for Prometheus or OpenTelemetry: the interfaces are a few lines to implement, and an adapter would be a dependency.
+- Unchanged: notifications are not durable, and the VTN's side of the extensions has met no other implementation's client.
+
+---
+
 ## v0.2.0
 
 **Date:** 2026-10-13

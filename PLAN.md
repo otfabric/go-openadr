@@ -92,12 +92,12 @@ Logic retrieves the report.
 | VEN interoperability | Successful tests against at least one independent VTN | Passing locally against OpenLEADR v0.2.7; not in CI yet |
 | VTN interoperability | Successful tests with at least one independent VEN | Passing locally with the ElaadNL openadr3-client 2.4.0; not in CI yet |
 | Authentication | OAuth2 and authorization scenarios pass | Passing: `e2e/` matrix, JWT forgery tests, interop with both peers |
-| Persistence | VTN data survives restart | Passing with `storage.File` (`e2e` restart test). SQL store open |
+| Persistence | VTN data survives restart | Passing with `storage.File` (`e2e` restart test), and with the SQLite and PostgreSQL stores of `examples/storage` (`make storage`) |
 | Notifications | Webhook and MQTT tested independently | MQTT and WebSocket subscribers: against OpenLEADR. Webhooks, and the VTN's side of MQTT and WebSockets: between this module's two sides only |
 | Automated testing | Unit, integration, conformance and interoperability CI | Unit, e2e and interop in CI; the conformance suite runs in openadr-interop's CI against its references, and by hand against this VTN |
 | Go quality | Race detector, `go vet`, linting and relevant fuzz tests pass | Passing (`make check`, `make fuzz`) |
 | Documentation | GoDoc, runnable VEN/VTN examples and compatibility matrix | GoDoc; nine examples, six of them run in CI; comparison matrix in README.md and test matrix in INTEROP.md |
-| Release management | Semantic versioning, changelog and reproducible test results | Releases v0.0.1, v0.1.0 and v0.2.0, with notes in RELEASE.md; reference images pinned by digest |
+| Release management | Semantic versioning, changelog and reproducible test results | Releases v0.0.1 to v0.3.0, with notes in RELEASE.md; reference images pinned by digest |
 
 `openadr-interop` is designed with certification preparation in mind, but a
 passing result is not an official certification. The OpenADR Alliance has a
@@ -144,18 +144,20 @@ Open, carried over from M1 to M3:
    openadr-interop needs subscription and notification operations for it.
    (Done in v0.2.0: the publisher and the subscriber on Mosquitto, NanoMQ,
    HiveMQ CE and EMQX. Open: with TLS and logins.)
-2. **A SQL store**, as a module of its own (the pure-Go SQLite driver needs
-   Go 1.26; this module supports 1.23 and has no dependencies), and with it
-   durable delivery of notifications.
+2. **Durable delivery of notifications.** (The SQL store that was to come
+   with it is there since v0.3.0, as an example in a module of its own:
+   `examples/storage`, on SQLite and PostgreSQL.)
 
 Open, M4 proper:
 
 3. **The extensions and the new behaviour in openadr-interop**: resource
    groups, WebSockets, a non-authenticating VTN and compression in the
    container contract and the conformance suite, so that this module's VTN
-   side of them meets another implementation's client. Discovery against
-   Avahi and OpenLEADR.
-4. Soak tests over hours, metrics hooks, rate limiting hooks.
+   side of them meets another implementation's client. (Discovery
+   against Avahi and OpenLEADR: done in v0.3.0.)
+4. Soak tests over hours, rate limiting hooks. (Metrics hooks, logging on
+   the client, a retry policy and error sentinels throughout: done in
+   v0.3.0, in line with go-modbus and go-opcua.)
 5. API review before v1.0.0. Known candidates: `storage.Store` grew a
    method in v0.2.0 and should stop doing so; resource groups will follow
    whatever the specification adopts.

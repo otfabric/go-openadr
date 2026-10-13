@@ -10,11 +10,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	openadr "github.com/otfabric/go-openadr"
 )
 
 // Client is an OAuth2 client known to an Issuer.
@@ -55,6 +58,14 @@ type grant struct {
 
 // NewIssuer returns an Issuer for the given clients.
 func NewIssuer(cfg IssuerConfig) (*Issuer, error) {
+	is, err := newIssuer(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", openadr.ErrConfiguration, err)
+	}
+	return is, nil
+}
+
+func newIssuer(cfg IssuerConfig) (*Issuer, error) {
 	is := &Issuer{
 		clients: make(map[string]Client, len(cfg.Clients)),
 		ttl:     cfg.TokenTTL,
