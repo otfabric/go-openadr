@@ -10,15 +10,69 @@ energy resources of their customers. It provides both sides of the REST API:
 
 - **`client`**: a VEN client and a Business Logic client for any OpenADR 3.1 VTN;
 - **`server`**: a VTN as an embeddable `http.Handler`;
-- **`openadr`** (the module root): the domain model both share.
+- **`openadr`** (the module root): the domain model both share;
+- **`notification/webhook`**, **`notification/mqtt`** and
+  **`notification/websocket`**: the ways a VTN tells its clients, each for
+  both sides;
+- **`timeline`**: the intervals of an event or a report as a table, with
+  the timing rules of the specification applied, and as CSV;
+- **`discovery`**: finding a VTN on the local network, and being found.
+
+## The three roles
+
+An OpenADR 3 system has three kinds of participant, and this module has a
+part for each:
+
+| Role | What it does | Here |
+|---|---|---|
+| **VTN** (virtual top node) | The server in the middle. It stores programs, events and reports, authenticates the other two, decides who may see what, and notifies of changes. It does not make prices or decisions. | `server`, an `http.Handler` to embed; [examples/vtn](examples/vtn/main.go) runs one |
+| **Business Logic** (BL) | The utility's or aggregator's side: whatever application creates programs and publishes events, a tariff say, and reads the reports that come back. A client of the VTN, not a protocol of its own. | `client.BL`; [examples/tariff](examples/tariff/main.go) publishes a price schedule from a CSV file |
+| **VEN** (virtual end node) | The customer's side: an energy management system, a charger, a gateway. It reads the events meant for it, hands them to whatever controls the equipment, and reports back, on metered usage for example. Also a client of the VTN. | `client.VEN`; [examples/ven](examples/ven/main.go) prints its schedule and reports |
+
+```mermaid
+%%{init: {"flowchart": {"htmlLabels": false}}}%%
+flowchart TB
+    BL["`**Business Logic**
+    utility or aggregator
+    examples/tariff`"]
+    VTN["`**VTN**
+    OpenADR server
+    examples/vtn`"]
+    VEN["`**VEN**
+    customer site
+    examples/ven`"]
+    EQ["`battery, charger
+    or heat pump`"]
+
+    BL -->|"programs, events"| VTN
+    VTN -->|"reports"| BL
+    VTN -->|"programs, events"| VEN
+    VEN -->|"reports"| VTN
+    VEN --- EQ
+
+    style VTN stroke-width:3px
+```
+
+The arrows show which way the data goes, not who calls whom: every request
+is made by one of the two clients, to the VTN. The clients never talk to
+each other, and the VTN reaches a client by itself only to notify it of a
+change. [Examples](#examples) runs this loop as three programs, step by
+step.
 
 **Status: pre-release.** OpenADR 3.1.0 only. All 45 operations of the
 specification are implemented in the VTN, with OAuth2 client credentials or
 JSON Web Tokens, scopes, object ownership, targeting, and notifications by
-webhook and by MQTT. The API may still change. The clients are tested
-against the OpenLEADR VTN, MQTT notifications included, and the VTN with the
-ElaadNL client; webhooks, and the VTN's side of MQTT, are so far tested
-between this module's own two sides only. See [INTEROP.md](INTEROP.md) for the evidence,
+webhook and by MQTT; a VTN can also serve clients that do not authenticate,
+compress its answers, and announce itself on the local network. Two things
+go beyond the specification, both shared with OpenLEADR and both off unless
+asked for: notifications over a WebSocket, and resource groups. The API may
+still change.
+
+The clients are tested against the OpenLEADR VTN — MQTT and WebSocket
+notifications and resource groups included — and the VTN with the ElaadNL
+client; webhooks, and the VTN's side of MQTT and of WebSockets, are so far
+tested between this module's own two sides only. See
+[INTEROP.md](INTEROP.md) for the evidence,
 [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for exactly what is covered and
 [PLAN.md](PLAN.md) for what comes next.
 
@@ -47,38 +101,50 @@ where this module still has to catch up.
 | OpenADR 3.1.0 | ✅ | ✅ | ✅ |
 | OpenADR 3.0.1 | — planned | — | ✅ |
 | Programs, events, reports, VENs, resources | ✅ | ✅ | ✅ |
-| Subscriptions | ✅ | — | ✅ |
+| Subscriptions | ✅ | ✅ delivered over WebSocket | ✅ |
 | Webhook notifications | ✅ sender and receiver | — | — not documented |
 | MQTT notifications | ✅ publisher and subscriber ¹ | ✅ | ✅ client, optional extra |
 | MQTT topic operations (12) | ✅ | ✅ 11, none for subscriptions | ✅ |
-| WebSocket notifications (not in the specification) | — | ✅ | — |
+| WebSocket notifications (not in the specification) | ✅ VTN and client ³ | ✅ VTN, experimental | — |
 | OAuth2 client credentials, token caching and renewal | ✅ | ✅ | ✅ |
 | Token endpoint discovery (`/auth/server`) | ✅ | ✅ | ✅ |
 | Built-in token service for the VTN | ✅ in memory, for tests and small setups | ✅ users in the database | n/a |
 | JSON Web Tokens from an external identity provider | ✅ static keys and JWKS | ✅ | n/a |
-| VTN without authentication | — | — not documented | ✅ anonymous client |
+| VTN without authentication | ✅ VTN option, and a client without credentials | — not documented | ✅ anonymous client |
 | Targeting with target hiding | ✅ | ✅ | n/a |
 | Persistent storage | ✅ journal file ² | ✅ PostgreSQL | n/a |
 | Storage behind an interface (bring your own) | ✅ | prepared, PostgreSQL only | n/a |
-| Resource groups (proposed for OpenADR 3.2) | — | ✅ | ✅ |
-| mDNS discovery of local VTNs | — | ✅ | — |
-| Response compression | — | ✅ | — |
+| Resource groups (proposed for OpenADR 3.2) | ✅ opt-in, as OpenLEADR has them ³ | ✅ | ✅ |
+| mDNS discovery of local VTNs | ✅ announce and browse ⁴ | ✅ | — |
+| Response compression | ✅ gzip, deflate ⁶ | ✅ gzip, br, deflate, zstd | — |
 | Typed, validated models | ✅ | ✅ | ✅ pydantic |
 | Extra validation by plugin | — | — | ✅ |
-| Event intervals as tables | — | — | ✅ pandas, optional |
+| Event intervals as tables | ✅ `timeline`, with CSV ⁵ | — | ✅ pandas, optional |
 | Cancellation and deadlines per call | ✅ `context.Context` | ✅ async | — timeouts |
 | Structured logging | ✅ `log/slog`, opt-in | ✅ | ✅ |
 | Dependencies | none (standard library) | many crates; PostgreSQL to run | several packages |
 | Run against the OpenADR Alliance test suite | — | ✅ 166 of 168 applicable, by its authors | — not documented |
 | Cross-tested against other implementations in CI | ✅ against both | — not documented | — not documented |
 
-¹ The MQTT client is this module's own (MQTT 3.1.1, QoS 1). The subscriber
-is tested on Mosquitto with the notifications OpenLEADR publishes; the
-publisher has met this module's test broker only.
+¹ The MQTT client is this module's own (MQTT 3.1.1, QoS 1). The VTN's
+publisher and the subscriber are tested on four brokers: Eclipse Mosquitto,
+NanoMQ, HiveMQ Community Edition and EMQX. The subscriber is also tested
+with the notifications OpenLEADR publishes.
 
 ² One process, all objects in memory, every change appended to a file. Not
 a database: for a large VTN, implement `storage.Store` on one. A SQL store
 is planned.
+
+³ Neither is part of OpenADR 3.1.0. Both follow OpenLEADR's representation,
+and this module's clients are tested against OpenLEADR for both. Resource
+groups will change with the specification that adopts them.
+
+⁴ This module's own Multicast DNS, over IPv4. Tested in both directions
+with Apple's mDNSResponder; not yet with Avahi or with OpenLEADR.
+
+⁵ Rows of Go values and CSV, not a data-frame library. It also applies the
+timing rules of the specification (defaults, "now", sub-intervals, events
+that repeat), which the table of the ElaadNL client leaves to its user.
 
 ✅ = available · — = not available or not documented · n/a = does not apply
 to a client library. For openleadr-rs v0.2.7 and openadr3-client 2.4.0, the
@@ -87,13 +153,15 @@ documentation as of October 2026. If you spot an inaccuracy, please
 [open an issue](https://github.com/otfabric/go-openadr/issues) and we will
 correct it.
 
+⁶ The two codings Go's standard library can write. br and zstd would each
+need a dependency, which this module does not take.
+
 **Choose go-openadr if** you want both sides of the protocol in one Go
 module without dependencies, a VTN you embed in your own service with your
 own identity provider and store, or webhook notifications.
 
 **Choose OpenLEADR if** you want a VTN to deploy as it is, backed by
-PostgreSQL, that its authors have run against the Alliance's test suite, or
-if you need resource groups or mDNS today.
+PostgreSQL, that its authors have run against the Alliance's test suite.
 
 **Choose the ElaadNL client if** you write a VEN or Business Logic in
 Python, or need OpenADR 3.0.1.
@@ -188,6 +256,67 @@ go run ./examples/quickstart
 [examples/vtn](examples/vtn/main.go) is a standalone VTN to point other
 clients at.
 
+### Public information
+
+A VTN whose programs are for everyone, a price list say, can let clients in
+without a token, as the specification provides:
+
+```go
+vtn, err := server.New(server.Config{ /* ... */ AllowAnonymous: true})
+```
+
+Such a client reads the programs and events that have no targets, and
+nothing else; a request that carries a token is checked as always. A client
+is anonymous by having no credentials: `client.NewVEN(client.Config{BaseURL: url})`.
+[examples/prices](examples/prices/main.go) runs both.
+
+### Finding a VTN on the local network
+
+A VTN at a customer site, a gateway, announces itself with DNS-SD over
+Multicast DNS, and a VEN on the same network finds it without being
+configured:
+
+```go
+ad, err := discovery.Advertise(discovery.Advertisement{Port: 8443, BasePath: "openadr3"})
+defer ad.Close()
+```
+
+```go
+vtns, err := discovery.Browse(ctx, discovery.Options{First: true})
+if err == nil && len(vtns) > 0 {
+    ven, err = client.NewVEN(client.Config{BaseURL: vtns[0].URL(), Credentials: credentials})
+}
+```
+
+What is found is an address to try, not a VTN to trust: see
+[SECURITY.md](SECURITY.md).
+
+## Intervals as a table
+
+An event writes its intervals compactly: a default start and duration, an
+interval that overrides one of them or follows the one before, a start that
+means "now", several values packed into one interval, a duration of the
+event that cuts the intervals short or repeats them. `timeline` applies
+those rules and returns rows with a start and an end:
+
+```go
+rows, err := timeline.OfEvent(event, timeline.Options{SubIntervals: true})
+if err != nil {
+    return err
+}
+for _, row := range rows.At(time.Now()) {      // what applies now
+    fmt.Println(row.Type, row.Values, "until", row.End)
+}
+err = rows.WriteCSV(os.Stdout)
+```
+
+The other way, a table read from CSV becomes the intervals of an event:
+
+```go
+table, err := timeline.ReadCSV(file)   // columns: start, end, type, values
+event := openadr.Event{ProgramID: programID, Intervals: table.Intervals()}
+```
+
 ## Notifications
 
 A client that would rather be told than poll subscribes with a webhook:
@@ -245,6 +374,97 @@ sub, err := mqtt.NewSubscriber(mqtt.SubscriberConfig{
 The broker is yours to run, and its access control decides who can read
 which topic: see [SECURITY.md](SECURITY.md).
 
+A third way needs neither an address the VTN can reach nor a broker: the
+client opens a WebSocket and is told there. This is not part of OpenADR
+3.1.0; it is an extension of OpenLEADR, which this module's VTN offers when
+it is given `server.Config.WebSocket`, and `GET /notifiers` says whether a
+VTN has it.
+
+```go
+_, err = ven.CreateSubscription(ctx, openadr.Subscription{
+    ClientName: "site-42",
+    ObjectOperations: []openadr.ObjectOperation{{
+        Objects:    []openadr.ObjectType{openadr.ObjectEvent},
+        Operations: []openadr.Operation{openadr.OperationCreate, openadr.OperationUpdate},
+        Mechanism:  openadr.MechanismWebSocket,      // in place of a callback URL
+    }},
+})
+sub, err := websocket.NewSubscriber(websocket.SubscriberConfig{
+    Dial:   ven.NotificationStream,
+    Notify: func(ctx context.Context, n openadr.Notification) { /* ... */ },
+})
+```
+
+The subscriber reconnects by itself. Whichever way it is notified, a client
+that must not miss a change searches after every reconnect: none of the
+three keeps notifications for a client that is away.
+[examples/websocket](examples/websocket/main.go) runs both sides.
+
+## Examples
+
+| Example | What it shows |
+|---|---|
+| [quickstart](examples/quickstart/main.go) | The basic workflow in one process: program, event, report. |
+| [notifications](examples/notifications/main.go) | Subscriptions and webhooks, both sides. |
+| [websocket](examples/websocket/main.go) | Notifications over a WebSocket, both sides. |
+| [prices](examples/prices/main.go) | A VTN with a public tariff, a client without credentials, the prices as a table. |
+| [resourcegroups](examples/resourcegroups/main.go) | Resource groups, as Business Logic and as a VEN see them. |
+| [discovery](examples/discovery/main.go) | Announcing a VTN on the local network, and finding it. |
+| [vtn](examples/vtn/main.go) | A standalone VTN with flags for every option, to point clients at. |
+| [ven](examples/ven/main.go) | A VEN for the command line: finds a VTN, registers, prints its schedule, reports, watches. |
+| [tariff](examples/tariff/main.go) | Business Logic for the command line: publishes a schedule from a CSV file, and reads the reports on it. |
+
+The first six are self-contained and run as they are (`go run ./examples/quickstart`);
+CI runs them. The last three work together:
+
+```sh
+# the VTN, with a client for each of the other two
+go run ./examples/vtn -client utility:utility-secret:bl -client site-42:site-42-secret:ven -websocket &
+
+# Business Logic publishes a tariff
+BL_CLIENT_SECRET=utility-secret go run ./examples/tariff -url http://127.0.0.1:8080 -client-id utility -program day-ahead -csv prices.csv
+
+# the VEN reads it and reports its usage (with -watch it stays and is told of changes)
+VEN_CLIENT_SECRET=site-42-secret go run ./examples/ven -url http://127.0.0.1:8080 -client-id site-42 -report
+
+# Business Logic reads the report
+BL_CLIENT_SECRET=utility-secret go run ./examples/tariff -url http://127.0.0.1:8080 -client-id utility -program day-ahead -reports
+```
+
+What goes over the wire while they run:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant BL as Business Logic (examples/tariff)
+    participant VTN as VTN (examples/vtn)
+    participant VEN as VEN (examples/ven)
+
+    BL->>VTN: POST /programs
+    BL->>VTN: POST /events, the 24 prices
+    VEN->>VTN: POST /vens, registers itself
+    VEN->>VTN: GET /events
+    VTN-->>VEN: the events it may see
+    Note over VEN: lays the prices out as a table,<br/>acts on them
+    VEN->>VTN: POST /reports, usage per interval
+    BL->>VTN: GET /reports
+    VTN-->>BL: what the VENs reported
+    Note over VTN,VEN: with -watch, the VEN subscribes and the VTN<br/>tells it of every later change to an event
+```
+
+Each first asks the VTN for a token (`GET /auth/server`, then the token
+endpoint), which the diagram leaves out. `TestThreeRolesAsPrograms` in
+`e2e/` runs exactly these four commands on every run of the tests, with a
+restart of the VTN in the middle.
+
+`prices.csv` has a header line and one line per period:
+
+```
+start,end,type,values
+2026-10-14T00:00:00Z,2026-10-14T01:00:00Z,PRICE,0.11
+2026-10-14T01:00:00Z,2026-10-14T02:00:00Z,PRICE,0.12
+```
+
 ## Things to know
 
 - **Concurrency.** Clients and the server are safe for concurrent use.
@@ -260,8 +480,17 @@ which topic: see [SECURITY.md](SECURITY.md).
   sent; a violation is an `*openadr.ValidationError` and no request is made.
   Payload types, units and other enumerations of the specification are plain
   strings and are not restricted, so private values work.
+- **Compression.** The VTN compresses answers of 1 KiB and more with gzip
+  or deflate for a client that accepts one, which the clients of this
+  module do (gzip).
+- **Extensions.** Resource groups and WebSocket notifications are not part
+  of OpenADR 3.1.0. A VTN has neither unless its configuration says so, and
+  the clients' methods for them are answered with 404 or 501 by a VTN that
+  has not.
+- **Shutdown.** A VTN with WebSockets has connections of its own: call
+  `Server.Close` when it stops, before the HTTP server's `Shutdown`.
 - **Logging.** The library is silent. The server logs internal errors, and
-  the webhook sender and the MQTT publisher and subscriber failed
+  the webhook sender, the MQTT publisher and the subscribers failed
   deliveries and lost connections, to the `slog.Logger` each is given, if any.
 
 ## Documentation
@@ -292,8 +521,13 @@ which shares no code with this one.
 make check    # format, lint, vet, vulnerability scan, tests with -race, coverage, examples
 make fuzz     # the parser fuzz targets
 make e2e      # this module's clients against this module's VTN, every feature
+make chaos    # many clients at once, and failures injected: store, network, webhooks, broker, tokens, crashes
 make interop  # against the OpenLEADR and ElaadNL reference images (needs Docker, see INTEROP.md)
 ```
+
+The tests of `e2e` are part of `make check`. Those that inject failures
+are random and follow a seed, which a failing test prints; see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

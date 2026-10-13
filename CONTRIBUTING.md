@@ -42,6 +42,9 @@ make build
 # Run this module's clients against this module's VTN, every feature
 make e2e
 
+# Run the parallel and failure-injection tests several times over (CHAOS_COUNT=5 by default)
+make chaos
+
 # Run the interop suite against the OpenLEADR and ElaadNL reference images (needs Docker)
 make interop
 ```
@@ -68,12 +71,17 @@ Run `make` (or `make help`) for the full list of targets.
 - A change to who may see or write what shows in the authorization matrix (`e2e/matrix_test.go`), which has a row for every operation and a column for every kind of client: change the number, and say why in the commit
 - A new feature gets an end-to-end test in `e2e/`, through the public API of both sides over HTTPS, whether or not another implementation can exercise it
 - Tests must pass with `-race` and must not depend on timing beyond generous upper bounds
+- A change to how the VTN or a client behaves when something fails belongs in `e2e/chaos_test.go`, which injects the failure and asserts what survives it: consistency of the store, privacy between clients, recovery when the failure is over. These tests are random and follow a seed. A failing one prints `OPENADR_CHAOS_SEED=<seed>`: run it again with that in the environment before changing anything, and run `make chaos` before submitting, since one green run of a random test says little
+- A parser of bytes from elsewhere (a network packet, a file) gets a fuzz target, listed in the `fuzz` target of the Makefile
+- What is not part of OpenADR 3.1.0 stays off by default, is named as an extension wherever it appears, and is tested against the implementation it is shared with
 - A change to the client, the VTN or the wire format must keep `make interop` green (the Interop workflow runs it on every push). The `interop` package holds this repository's scenarios and assertions; the reference implementations belong to [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop) and are consumed as images only
 - Where the specification leaves room and the VTN makes a choice, the choice is written down in [docs/CONFORMANCE.md](docs/CONFORMANCE.md) with the test that pins it
 
 ### Documentation
 
-Update the document that owns the topic: [API.md](API.md) for the behavioural contract, [ERRORS.md](ERRORS.md) for error behaviour, [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for protocol coverage and readings of the specification, [INTEROP.md](INTEROP.md) for what was tested against what, and add an entry to [RELEASE.md](RELEASE.md).
+Update the document that owns the topic: [API.md](API.md) for the behavioural contract, [ERRORS.md](ERRORS.md) for error behaviour, [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for protocol coverage and readings of the specification, [SECURITY.md](SECURITY.md) for what an operator has to know before turning something on, [INTEROP.md](INTEROP.md) for what was tested against what, and add an entry to [RELEASE.md](RELEASE.md). A feature that another implementation also has, or lacks, changes a row of the comparison in [README.md](README.md): keep it to what its sources and documentation show.
+
+Claim what a test shows and no more. "Tested against OpenLEADR" names the version and the test; what was only tested between this module's own two sides says so.
 
 `RELEASE.md` is read by the release automation: the newest release comes first, each release starts with `## vX.Y.Z` followed by `**Date:**` and `**Previous release:**`, and releases are separated by a line holding `---`.
 

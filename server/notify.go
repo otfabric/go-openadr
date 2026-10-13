@@ -47,7 +47,7 @@ func (s *Server) notify(ctx context.Context, op openadr.Operation, sub subject) 
 	if s.mqtt != nil {
 		s.publish(ctx, op, sub)
 	}
-	if s.webhooks == nil {
+	if s.webhooks == nil && s.sockets == nil {
 		return
 	}
 	records, err := s.store.Subscriptions().List(ctx, storage.SubscriptionFilter{})
@@ -100,14 +100,21 @@ func (s *Server) notify(ctx context.Context, op openadr.Operation, sub subject) 
 			s.logNotify(sub, err)
 			continue
 		}
-		// One request per callback, even when several entries of the
-		// subscription name it.
+		// One request per callback, and one message to the WebSocket, even
+		// when several entries of the subscription ask for it.
 		sent := map[string]bool{}
 		for _, oo := range matching {
-			if !sent[oo.CallbackURL] {
-				sent[oo.CallbackURL] = true
+			switch {
+			case sent[oo.CallbackURL]:
+			case oo.Mechanism == openadr.MechanismWebSocket:
+				if s.sockets != nil {
+					s.sockets.send(rec.ClientID, body)
+				}
+			case s.webhooks != nil:
 				s.webhooks.Send(oo.CallbackURL, oo.BearerToken, body)
 			}
+			// The callback URL of a WebSocket entry is empty.
+			sent[oo.CallbackURL] = true
 		}
 	}
 }
@@ -150,10 +157,22 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 	verified := map[string]bool{}
 	if old != nil {
 		for _, oo := range old.ObjectOperations {
-			verified[oo.CallbackURL] = true
+			if oo.Mechanism != openadr.MechanismWebSocket {
+				verified[oo.CallbackURL] = true
+			}
 		}
 	}
 	for i, oo := range sub.ObjectOperations {
+		field := fmt.Sprintf("objectOperations[%d]", i)
+		if oo.Mechanism == openadr.MechanismWebSocket {
+			if s.sockets == nil {
+				return &openadr.ValidationError{Field: field + ".mechanism", Reason: "is WEBSOCKET, and this VTN does not notify by WebSocket"}
+			}
+			continue
+		}
+		if s.webhooks == nil {
+			return &openadr.ValidationError{Field: field + ".mechanism", Reason: "is WEBHOOK, and this VTN does not notify by webhook"}
+		}
 		if verified[oo.CallbackURL] {
 			continue
 		}
@@ -161,7 +180,7 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return &openadr.ValidationError{Field: fmt.Sprintf("objectOperations[%d].callbackUrl", i), Reason: err.Error()}
+			return &openadr.ValidationError{Field: field + ".callbackUrl", Reason: err.Error()}
 		}
 		verified[oo.CallbackURL] = true
 	}

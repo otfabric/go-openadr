@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	openadr "github.com/otfabric/go-openadr"
 )
@@ -68,7 +69,7 @@ func periodTo(p *openadr.IntervalPeriod) *intervalPeriod {
 	}
 	out := &intervalPeriod{Duration: durationTo(p.Duration), RandomizeStart: durationTo(p.RandomizeStart)}
 	if p.Start != nil {
-		start := *p.Start
+		start := startTime(*p.Start)
 		out.Start = &start
 	}
 	return out
@@ -80,7 +81,7 @@ func periodFrom(field string, p *intervalPeriod) (*openadr.IntervalPeriod, error
 	}
 	out := &openadr.IntervalPeriod{}
 	if p.Start != nil {
-		start := *p.Start
+		start := time.Time(*p.Start)
 		out.Start = &start
 	}
 	var err error

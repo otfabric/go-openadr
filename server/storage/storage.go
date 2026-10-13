@@ -24,7 +24,9 @@ import (
 //     a resource to an existing VEN, and a subscription that names a program
 //     to an existing one;
 //   - a program that has events and a VEN that has resources cannot be
-//     deleted.
+//     deleted;
+//   - the children of a resource group exist, and a resource or resource
+//     group that is deleted leaves the groups it was a child of.
 //
 // A violation is reported as a *ConstraintError. Reports outlive the event
 // they refer to.
@@ -35,6 +37,10 @@ type Store interface {
 	VENs() Collection[openadr.VEN, VENFilter]
 	Resources() Collection[openadr.Resource, ResourceFilter]
 	Subscriptions() Collection[SubscriptionRecord, SubscriptionFilter]
+	// ResourceGroups holds what is not part of OpenADR 3.1.0; see
+	// openadr.ResourceGroup. A store whose VTN does not serve resource
+	// groups may return an empty collection that refuses every write.
+	ResourceGroups() Collection[openadr.ResourceGroup, ResourceGroupFilter]
 }
 
 // SubscriptionRecord is a subscription as the VTN keeps it: the object of
@@ -104,6 +110,12 @@ type ResourceFilter struct {
 	Name     string
 	VENID    string
 	ClientID string
+}
+
+// ResourceGroupFilter selects resource groups; empty fields match
+// everything.
+type ResourceGroupFilter struct {
+	Name string
 }
 
 // ConstraintError reports a write that would break one of the rules listed

@@ -262,3 +262,23 @@ func (r Resource) Validate() error {
 	}
 	return targets("targets", r.Targets)
 }
+
+// Validate checks the client-provided properties.
+func (g ResourceGroup) Validate() error {
+	if err := name("resourceGroupName", g.Name, true); err != nil {
+		return err
+	}
+	if err := valuesMaps("attributes", g.Attributes); err != nil {
+		return err
+	}
+	for i, c := range g.Children {
+		f := fmt.Sprintf("children[%d]", i)
+		if c.Type != ChildResource && c.Type != ChildResourceGroup {
+			return invalid(f+".type", "must be %s or %s", ChildResource, ChildResourceGroup)
+		}
+		if err := id(f+".id", c.ID); err != nil {
+			return err
+		}
+	}
+	return targets("targets", g.Targets)
+}

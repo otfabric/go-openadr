@@ -36,26 +36,50 @@ type Subscription struct {
 	Targets []string
 }
 
-// ObjectOperation selects operations on kinds of objects and names the
-// webhook that is to be told of them.
+// Mechanism is a way for a VTN to deliver the notifications of a
+// subscription.
+type Mechanism string
+
+const (
+	// MechanismWebhook delivers to the callback URL. It is what OpenADR
+	// 3.1.0 defines, and what the empty Mechanism means.
+	MechanismWebhook Mechanism = "WEBHOOK"
+	// MechanismWebSocket delivers over the WebSocket the subscriber has
+	// open with the VTN, and needs no callback URL. It is not part of
+	// OpenADR 3.1.0: it is an extension of OpenLEADR that this module
+	// shares. A VTN says in GET /notifiers whether it has it.
+	MechanismWebSocket Mechanism = "WEBSOCKET"
+)
+
+// ObjectOperation selects operations on kinds of objects and says how the
+// subscriber is to be told of them: by default, at a webhook.
 type ObjectOperation struct {
 	Objects    []ObjectType
 	Operations []Operation
+	// Mechanism is how to notify; empty for a webhook.
+	Mechanism Mechanism
 	// CallbackURL is the webhook. It has to use https, and the VTN checks
-	// that it answers before it accepts the subscription.
+	// that it answers before it accepts the subscription. It is required
+	// for a webhook and has no use otherwise.
 	CallbackURL string
 	// BearerToken, when set, is sent by the VTN with every notification so
 	// that the webhook can tell the VTN from anyone else.
 	BearerToken string
 }
 
-// Notification is what a VTN sends to a webhook.
+// Notification is what a VTN sends to a webhook, publishes by MQTT or
+// writes to a WebSocket.
 type Notification struct {
+	// ID identifies the operation the notification is about, for a VTN
+	// that sends one: OpenADR 3.1.0 has no such property, OpenLEADR does.
+	// A client that is notified over several channels can use it to tell
+	// that two notifications are the same.
+	ID         string
 	ObjectType ObjectType
 	Operation  Operation
 	// Object is the object the operation happened to, as the subscriber
-	// may see it: a Program, Event, Report, Subscription, VEN or Resource
-	// value, according to ObjectType.
+	// may see it: a Program, Event, Report, Subscription, VEN, Resource or
+	// ResourceGroup value, according to ObjectType.
 	Object any
 	// Targets are the targets of the object that the subscriber may see.
 	Targets []string
@@ -86,8 +110,17 @@ func (s Subscription) Validate() error {
 				return invalid(fmt.Sprintf("%s.operations[%d]", f, j), "is %q, not CREATE, READ, UPDATE or DELETE", op)
 			}
 		}
-		if n := len(oo.CallbackURL); n < minURLLen || n > maxURLLen {
-			return invalid(f+".callbackUrl", "must be %d to %d characters", minURLLen, maxURLLen)
+		switch oo.Mechanism {
+		case "", MechanismWebhook:
+			if n := len(oo.CallbackURL); n < minURLLen || n > maxURLLen {
+				return invalid(f+".callbackUrl", "must be %d to %d characters", minURLLen, maxURLLen)
+			}
+		case MechanismWebSocket:
+			if oo.CallbackURL != "" {
+				return invalid(f+".callbackUrl", "has no use with the mechanism %s", MechanismWebSocket)
+			}
+		default:
+			return invalid(f+".mechanism", "is %q, not %s or %s", oo.Mechanism, MechanismWebhook, MechanismWebSocket)
 		}
 	}
 	return targets("targets", s.Targets)
@@ -98,6 +131,9 @@ func (s Subscription) Validate() error {
 type Notifiers struct {
 	// Webhook says the VTN serves subscriptions with callback URLs.
 	Webhook bool
+	// WebSocket says the VTN serves subscriptions with MechanismWebSocket,
+	// which is not part of OpenADR 3.1.0.
+	WebSocket bool
 	// MQTT describes the VTN's MQTT broker; nil when it has none.
 	MQTT *MQTTBinding
 }

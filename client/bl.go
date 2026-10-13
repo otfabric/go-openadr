@@ -190,3 +190,38 @@ func (c *BL) Notifiers(ctx context.Context) (openadr.Notifiers, error) {
 func (c *BL) MQTTTopics(ctx context.Context, of TopicSet) (openadr.Topics, error) {
 	return c.core.topics(ctx, of)
 }
+
+// --- resource groups
+//
+// Resource groups are not part of OpenADR 3.1.0: see openadr.ResourceGroup.
+// A VTN that does not have them answers these calls with openadr.ErrNotFound.
+
+// ResourceGroups searches the resource groups.
+func (c *BL) ResourceGroups(ctx context.Context, q ResourceGroupQuery) ([]openadr.ResourceGroup, error) {
+	return listObjects(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", q.values())
+}
+
+// ResourceGroup returns the resource group with the given ID.
+func (c *BL) ResourceGroup(ctx context.Context, id string) (openadr.ResourceGroup, error) {
+	return getObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", id)
+}
+
+// CreateResourceGroup creates a resource group and returns it as the VTN
+// stored it. Its children have to exist.
+func (c *BL) CreateResourceGroup(ctx context.Context, g openadr.ResourceGroup) (openadr.ResourceGroup, error) {
+	return sendObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", "", g, wire.Request)
+}
+
+// UpdateResourceGroup replaces the resource group that has g.ID with g.
+func (c *BL) UpdateResourceGroup(ctx context.Context, g openadr.ResourceGroup) (openadr.ResourceGroup, error) {
+	if g.ID == "" {
+		return openadr.ResourceGroup{}, &openadr.ValidationError{Field: "id", Reason: "is required for an update"}
+	}
+	return sendObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", g.ID, g, wire.Request)
+}
+
+// DeleteResourceGroup deletes a resource group and returns it as it last
+// was. Its children stay.
+func (c *BL) DeleteResourceGroup(ctx context.Context, id string) (openadr.ResourceGroup, error) {
+	return deleteObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", id)
+}

@@ -33,7 +33,7 @@ env:
 
 jobs:
   interop:
-    name: OpenLEADR VTN + ElaadNL client
+    name: OpenLEADR VTN + ElaadNL client + MQTT brokers
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -64,6 +64,19 @@ jobs:
                 | jq -r --arg image "${image}" '"| \(.adapter) \(.adapterVersion) | `\($image)` | \(.upstream.name) \(.upstream.version) |"'
             done
           } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Mosquitto, NanoMQ, HiveMQ CE and EMQX, for interop/brokers_test.go.
+      # The test pulls what is missing; pulling here keeps the time out of
+      # the test's own limits and retries a slow registry.
+      - name: Pull MQTT broker images
+        run: |
+          sed -nE 's/^\t"(mosquitto|nanomq|hivemq|emqx)": +"([^"]+)",$/\2/p' interop/harness_test.go | while read -r image; do
+            for attempt in 1 2 3 4 5; do
+              docker pull --quiet "${image}" && break
+              [[ "${attempt}" == 5 ]] && { echo "::error::cannot pull ${image}"; exit 1; }
+              sleep $((attempt * 15))
+            done
+          done
 
       - name: Run the interop suite
         run: make interop

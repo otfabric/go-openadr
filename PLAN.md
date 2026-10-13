@@ -62,8 +62,8 @@ communication protocol and does not become an energy-management platform.
 | **M0 Foundation** | Domain models, version strategy, HTTP scaffolding | First authenticated API request against OpenLEADR | **Done.** The Go clients run against OpenLEADR v0.2.7 (`make interop`) |
 | **M1 Core REST** | VEN and BL clients, VTN handlers, CRUD, filtering, pagination, storage | Complete 3.1 REST resource API exercised | **Done**: all 45 operations, exercised by `e2e/` and, where the peers can, by `interop/`. Persistence is a journal file; a SQL store is open (see section 6) |
 | **M2 Security** | OAuth2, token discovery, scopes, targeting, resource ownership | Unauthorized access consistently rejected | **Done**: JWT validator, callback verification, and an authorization matrix of every operation as five kinds of client (`e2e/matrix_test.go`). The same matrix in openadr-interop's conformance suite: see that repository |
-| **M3 Notifications** | Webhook and MQTT for client and server | Notifications work with external peers | Both bindings done on both sides. MQTT works with an external peer: this module's subscriber receives OpenLEADR's notifications on Mosquitto, in `make interop`. Open: webhooks, and the VTN as MQTT publisher, with an external client |
-| **M4 Stabilization** | Production hardening, documentation, examples | OpenADR 3.1 release candidate | Not started |
+| **M3 Notifications** | Webhook and MQTT for client and server | Notifications work with external peers | Both bindings done on both sides, and a third, WebSockets, as OpenLEADR has it. MQTT and WebSockets work with an external peer: this module's subscribers receive OpenLEADR's notifications, in `make interop`. Open: webhooks, and the VTN as publisher, with an external client |
+| **M4 Stabilization** | Production hardening, documentation, examples | OpenADR 3.1 release candidate | **Started** in v0.2.0: the feature gaps against the other implementations closed (section 6), failure injection and load in `e2e/`, an example per feature, the documents revised. Open: see section 6 |
 | **M5 Version expansion** | OpenADR 3.0.1 | Both versions independently validated | Not started |
 
 M0 to M4 are about 3.1.0 only. M5 must not introduce compatibility behaviour
@@ -93,11 +93,11 @@ Logic retrieves the report.
 | VTN interoperability | Successful tests with at least one independent VEN | Passing locally with the ElaadNL openadr3-client 2.4.0; not in CI yet |
 | Authentication | OAuth2 and authorization scenarios pass | Passing: `e2e/` matrix, JWT forgery tests, interop with both peers |
 | Persistence | VTN data survives restart | Passing with `storage.File` (`e2e` restart test). SQL store open |
-| Notifications | Webhook and MQTT tested independently | MQTT subscriber: against OpenLEADR on Mosquitto. Webhooks and the MQTT publisher: between this module's two sides only |
+| Notifications | Webhook and MQTT tested independently | MQTT and WebSocket subscribers: against OpenLEADR. Webhooks, and the VTN's side of MQTT and WebSockets: between this module's two sides only |
 | Automated testing | Unit, integration, conformance and interoperability CI | Unit, e2e and interop in CI; the conformance suite runs in openadr-interop's CI against its references, and by hand against this VTN |
 | Go quality | Race detector, `go vet`, linting and relevant fuzz tests pass | Passing (`make check`, `make fuzz`) |
-| Documentation | GoDoc, runnable VEN/VTN examples and compatibility matrix | GoDoc and examples done; matrix started in INTEROP.md |
-| Release management | Semantic versioning, changelog and reproducible test results | Open |
+| Documentation | GoDoc, runnable VEN/VTN examples and compatibility matrix | GoDoc; nine examples, six of them run in CI; comparison matrix in README.md and test matrix in INTEROP.md |
+| Release management | Semantic versioning, changelog and reproducible test results | Releases v0.0.1, v0.1.0 and v0.2.0, with notes in RELEASE.md; reference images pinned by digest |
 
 `openadr-interop` is designed with certification preparation in mind, but a
 passing result is not an official certification. The OpenADR Alliance has a
@@ -119,21 +119,49 @@ redistributed in either repository.
 | 9 | openadr-interop | Integrate ElaadNL's Python VEN and BL clients into automated tests | Done: reference client image released in openadr-interop v0.1.0 |
 | 10 | Both | First end-to-end program → event → report workflow | Done in all three pairings: Go/Go, Go clients/OpenLEADR, ElaadNL client/Go VTN |
 
-## 6. Next: M4 hardening
+## 6. M4 hardening
 
-Carried over from M1 to M3:
+Done in v0.2.0:
+
+- **Feature gaps closed** against OpenLEADR and the ElaadNL client, as the
+  comparison in README.md showed them: a VTN without authentication,
+  response compression, discovery of local VTNs by mDNS, event intervals as
+  tables, and the two things outside the specification that OpenLEADR has,
+  resource groups and WebSocket notifications.
+- **Failure injection and load** in `e2e/` (`make chaos`): twelve clients
+  at once on both stores, a store that fails, a network that cuts
+  connections, webhooks and a broker that fail, tokens that expire, a
+  journal cut at any byte.
+- **End-to-end coverage of every feature**, and the authorization matrix
+  extended to the extensions.
+- **An example per feature**, and a VEN and a Business Logic for the
+  command line.
+
+Open, carried over from M1 to M3:
 
 1. **The VTN's notifications with an external client.** The ElaadNL client
    can subscribe by MQTT and manage subscriptions; the client contract of
    openadr-interop needs subscription and notification operations for it.
-   The VTN's publisher should also meet a production broker.
+   (Done in v0.2.0: the publisher and the subscriber on Mosquitto, NanoMQ,
+   HiveMQ CE and EMQX. Open: with TLS and logins.)
 2. **A SQL store**, as a module of its own (the pure-Go SQLite driver needs
    Go 1.26; this module supports 1.23 and has no dependencies), and with it
    durable delivery of notifications.
 
-M4 proper: load and soak tests, restart and failure injection in `e2e/`,
-metrics hooks, API review before v1.0.0, and the OpenADR Alliance's test
-suite if access can be had.
+Open, M4 proper:
+
+3. **The extensions and the new behaviour in openadr-interop**: resource
+   groups, WebSockets, a non-authenticating VTN and compression in the
+   container contract and the conformance suite, so that this module's VTN
+   side of them meets another implementation's client. Discovery against
+   Avahi and OpenLEADR.
+4. Soak tests over hours, metrics hooks, rate limiting hooks.
+5. API review before v1.0.0. Known candidates: `storage.Store` grew a
+   method in v0.2.0 and should stop doing so; resource groups will follow
+   whatever the specification adopts.
+6. The OpenADR Alliance's test suite, if access can be had.
+7. Extra validation by plugin, which the ElaadNL client has, if a profile
+   such as the Dutch Grid Aware Charging one needs it here.
 
 ## 7. References
 

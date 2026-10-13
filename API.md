@@ -12,7 +12,11 @@ is the authoritative text for each symbol; this document is the map.
 - [Package `server/storage`](#package-serverstorage)
 - [Package `notification/webhook`](#package-notificationwebhook)
 - [Package `notification/mqtt`](#package-notificationmqtt)
+- [Package `notification/websocket`](#package-notificationwebsocket)
+- [Package `timeline`](#package-timeline)
+- [Package `discovery`](#package-discovery)
 - [Package `auth`](#package-auth)
+- [Beyond OpenADR 3.1.0](#beyond-openadr-310)
 - [Concurrency](#concurrency)
 - [Limits](#limits)
 
@@ -37,6 +41,9 @@ type Resource struct { Metadata; ClientID, VENID, Name string; Attributes []Valu
 
 type Metadata struct { ID string; Created, Modified time.Time }
 ```
+
+`ResourceGroup` is a seventh kind of object, which is not part of OpenADR
+3.1.0: see [Beyond OpenADR 3.1.0](#beyond-openadr-310).
 
 - **One type per object**, for requests and answers alike. `Metadata` is the VTN's: leave it zero in an object to create, and expect the VTN to ignore whatever a request says there. An update names its object by `Metadata.ID`.
 - **`ClientID`** of a report, and of a VEN or resource a VEN creates, is written by the VTN from the token. Business Logic sets it when it creates a VEN or resource.
@@ -118,6 +125,9 @@ type Config struct {
 	MaxResponseBytes int64         // default 16 MiB
 }
 ```
+
+With neither `Credentials` nor `Tokens` the client sends no token, which is
+how the specification has a VEN talk to a VTN that does not authenticate.
 
 ### Lifecycle
 
@@ -206,15 +216,28 @@ type Config struct {
 	Logger       *slog.Logger    // optional: internal errors
 	MaxBodyBytes int64           // default 1 MiB
 	Now          func() time.Time
+
+	AllowAnonymous     bool             // answer requests without a token
+	DisableCompression bool             // no gzip, no deflate
+	WebSocket          *WebSocketConfig // optional, not of 3.1.0: notifications over WebSockets
+	ResourceGroups     bool             // optional, not of 3.1.0: serve /resource_groups
 }
+
+func (*Server) Close() error
 ```
 
 A `Server` is an `http.Handler` for the root of the API. It owns no
-listener, no goroutine and no state besides its `Store`: starting, TLS,
-timeouts and shutdown belong to the `http.Server` it is given to. To serve
-it under a path, wrap it in `http.StripPrefix`.
+listener and no state besides its `Store`: starting, TLS, timeouts and
+shutdown belong to the `http.Server` it is given to. To serve it under a
+path, wrap it in `http.StripPrefix`. The one thing it does own is the
+WebSockets of its clients, when it has `WebSocket`: `Close` ends them, and
+is to be called when the VTN stops, before the `http.Server` is shut down,
+which no longer knows of those connections.
 
-- **`Webhooks`** turns subscriptions on. Without it, `/subscriptions` and `GET /notifiers` answer 501. It is an interface (`Verify`, `Send`) that `*webhook.Sender` implements; the sender has workers of its own, and the embedding program closes it on shutdown, after the `http.Server`.
+- **`AllowAnonymous`** serves clients that do not authenticate, for public information. A request without an `Authorization` header is treated as a client with no ID that may read programs and events: it sees those without targets, and whatever it names in `targets`, nothing with them. Every operation on objects that belong to a client, every write and the WebSocket answer 401. A request *with* a token is validated as always, so a wrong token is still a 401. With `AllowAnonymous`, `Validator` and `TokenURL` may be left out, for a VTN that authenticates nobody: `GET /auth/server` then answers 501.
+- **Compression.** An answer of 1 KiB or more is compressed for a client whose `Accept-Encoding` allows gzip or deflate: the one the client gives the higher weight, gzip when they weigh the same, with `*` standing for whichever is not named. `deflate` is the zlib format, as HTTP defines it. br and zstd are not offered: the standard library cannot write them. Answers carry `Vary: Accept-Encoding`. Problem answers and the token endpoint are not compressed.
+
+- **`Webhooks`** turns subscriptions to webhooks on. Without it and without `WebSocket`, `/subscriptions` and `GET /notifiers` answer 501. It is an interface (`Verify`, `Send`) that `*webhook.Sender` implements; the sender has workers of its own, and the embedding program closes it on shutdown, after the `http.Server`.
 
 - **`TokenURL`** is what clients are told, so it is the address as *they* see it, proxies and path prefixes included.
 - **Without `TokenHandler`**, `POST /auth/token` answers 501, for a VTN whose tokens come from elsewhere.
@@ -225,7 +248,7 @@ Which operations exist, who may call them and how the VTN reads the
 specification where it leaves room is in [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
 
 - **`MQTT`** turns the MQTT binding on: `MQTTConfig{Publisher, URIs, Authentication, TopicPrefix}`. The publisher sends; `URIs` and `Authentication` are what `GET /notifiers` tells clients about the broker, so `URIs` are the broker's addresses as clients reach it. Without it the 12 topic operations answer 501. `*mqtt.Publisher` implements `MQTTPublisher`.
-- **`GET /notifiers`** is served when either binding is configured, and says which.
+- **`GET /notifiers`** is served when any binding is configured, and says which.
 
 ## Package `server/storage`
 
@@ -239,6 +262,7 @@ type Store interface {
 	VENs()      Collection[openadr.VEN, VENFilter]
 	Resources() Collection[openadr.Resource, ResourceFilter]
 	Subscriptions() Collection[SubscriptionRecord, SubscriptionFilter]
+	ResourceGroups() Collection[openadr.ResourceGroup, ResourceGroupFilter]   // not of 3.1.0
 }
 
 type Collection[T, F any] interface {
@@ -258,7 +282,12 @@ reports a violation as a `*ConstraintError`:
 
 - program names and VEN names are unique, and a resource name within its VEN;
 - an event refers to an existing program, a report to an existing event (when created, or moved to another event), a resource to an existing VEN, a subscription that names a program to an existing one;
-- a program that has events, and a VEN that has resources, cannot be deleted. Reports outlive their event.
+- a program that has events, and a VEN that has resources, cannot be deleted. Reports outlive their event;
+- the children of a resource group exist (a group may hold itself), and a resource or group that is deleted is taken out of the groups that held it.
+
+`ResourceGroups` was added to the interface in v0.2.0. A store of a VTN that
+does not serve resource groups still has to have the method; it may return a
+collection that is always empty.
 
 Everything about who may see or write what stays in the server, so every
 backend behaves the same.
@@ -289,6 +318,7 @@ type SenderConfig struct {
 	Timeout       time.Duration  // per request, default 10 s
 	Attempts      int            // default 4
 	Backoff       time.Duration  // before the second attempt, then doubled; default 1 s
+	MaxBackoff    time.Duration  // the longest wait between two attempts; default 1 minute
 	Queue         int            // per worker, default 256
 	Workers       int            // default 4
 	Logger        *slog.Logger   // failed and dropped deliveries
@@ -352,6 +382,163 @@ func (*Subscriber) Close() error
 - **Topics** come from the VTN: `MQTTTopics` on the clients, with one of the twelve sets (`client.EventsForVEN(venID)`, `client.AllEvents()`, ...). `Topics.All` is a filter for the other three; `Create` is empty for a single object.
 - **Authentication.** `GET /notifiers` says which method the broker wants. For `OAUTH2_BEARER_TOKEN`, put the announced user name in `Username` and the client's access token in `Password`; for `CERTIFICATE`, the certificate in `TLS`. The subscriber does not do this by itself.
 
+## Package `notification/websocket`
+
+`import "github.com/otfabric/go-openadr/notification/websocket"`
+
+Notifications over a WebSocket, for the client side. Not part of OpenADR
+3.1.0: see [Beyond OpenADR 3.1.0](#beyond-openadr-310) for what goes over
+the wire.
+
+```go
+func NewSubscriber(SubscriberConfig) (*Subscriber, error)  // SubscriberConfig{Dial, Notify, KeepAlive, Backoff, Logger}
+func (*Subscriber) Ready(ctx) error
+func (*Subscriber) Sessions() int
+func (*Subscriber) Close() error
+
+// in package client:
+func (*VEN) NotificationStream(ctx) (*NotificationStream, error)   // likewise on *BL
+func (*NotificationStream) Next() (openadr.Notification, error)
+func (*NotificationStream) KeepAlive(interval time.Duration)
+func (*NotificationStream) Close() error
+```
+
+- **`Dial`** is the `NotificationStream` method of a client: `websocket.SubscriberConfig{Dial: ven.NotificationStream, ...}`. The stream is opened with the client's HTTP client and token, at `notifiers/ws` under its base URL; a 401 is answered once with a fresh token, as for any call. The context given to `NotificationStream` bounds the opening, not the life of the stream.
+- **`Subscriber`** keeps a stream open: it reconnects when the stream ends, with `Backoff` doubling up to a minute, and pings the VTN every `KeepAlive` (30 s), giving up a connection on which nothing is heard for two and a half times as long. `Notify` is called for one notification at a time, in the order the VTN sends them, and not after `Close` has returned.
+- **What is missed.** A VTN keeps nothing for a client that is away, and disconnects one that reads too slowly. `Sessions` grows with every reconnect; a client that must not miss a change searches when it does.
+- **What a client is sent** is what its subscriptions with `Mechanism: openadr.MechanismWebSocket` select, as it may see it: the same rules as for a webhook.
+- **`NotificationStream`** is the stream itself, for a program that wants to do the reconnecting. `Next` passes over messages that are not notifications it knows; an error from it ends the stream. A VTN without WebSockets refuses the opening with an `*openadr.Error`: 501 from this module's VTN, 404 from another.
+
+## Package `timeline`
+
+`import "github.com/otfabric/go-openadr/timeline"`
+
+The intervals of an event or report as a table. Nothing here does I/O
+besides reading and writing CSV.
+
+```go
+type Row struct {
+	IntervalID     int32
+	Sub            int               // which of the sub-intervals of one payload
+	Start, End     time.Time         // a zero End: no end
+	RandomizeStart openadr.Duration
+	Type           string
+	Values         []openadr.Value
+}
+type Table []Row
+
+func OfEvent(openadr.Event, Options) (Table, error)
+func Of(period *openadr.IntervalPeriod, intervals []openadr.Interval, o Options) (Table, error)
+
+type Options struct { Now time.Time; SubIntervals bool; Until time.Time }
+
+func (Table) At(time.Time) Table
+func (Table) Span() (start, end time.Time)
+func (Table) Intervals() []openadr.Interval
+func (Table) WriteCSV(io.Writer) error
+func ReadCSV(io.Reader) (Table, error)
+```
+
+The rules it applies are those of the User Guide ("Event and Interval
+Timing"):
+
+- **Defaults.** An interval without a period, or without a start or a duration in it, takes them from the event; one without a start follows the interval before it.
+- **"Now".** A start in year 1 (the specification writes `0001-01-01`) on the event, or on the first interval of an event without a default, is `Options.Now`, which is the current time when zero. On a later interval it means "after the previous one". The clients read both spellings of the User Guide for it, `0001-01-01` and `0001-01-01T00:00:00`, which are not the date-times the schema asks for.
+- **No end.** A duration of `P9999Y` gives a row with a zero `End`. An interval cannot follow one that does not end: that is an error.
+- **Sub-intervals.** With `SubIntervals`, a payload with several values becomes as many rows of equal length. A payload that holds a point is left whole. Without it, a row holds all the values of its payload.
+- **The duration of the event** (`OfEvent` only). Shorter than the intervals, it leaves out what lies beyond it and cuts the row it ends in. Longer, it repeats the intervals. `P9999Y` repeats without end: the intervals are laid out once unless `Until` says how far to go. `Until` never extends an event.
+- **`RandomizeStart`** is carried on the row and not applied: the table shows the times as announced.
+- **Calendar durations** (`P1M`, `P1D`) are applied on the calendar, in the location of the start.
+- **Errors.** An interval for which no start or no duration can be found, a negative duration, and a table of more than about a million rows (`ErrTooLarge`).
+
+`Of` is the same for a list of intervals with a default period, which is
+what a resource of a report carries.
+
+`Intervals` is the way back: consecutive rows with one `IntervalID` become
+one interval with a period of its own that spans them, and their rows of one
+`Type` one payload. Rows that came from `Of`, with or without
+`SubIntervals`, give intervals that lay out the same again.
+
+**CSV.** A header line, then one line per row:
+
+```
+interval,sub,start,end,type,values,randomize_start
+0,0,2030-01-01T00:00:00Z,2030-01-01T01:00:00Z,PRICE,0.17,
+```
+
+Times are RFC 3339; `end` is empty for a row without end; `values` is JSON,
+one value as it is and several as an array; `randomize_start` is an ISO 8601
+duration. `ReadCSV` wants the header and the columns `start`, `type` and
+`values`, in any order, ignores columns it does not know, numbers the rows
+that have no `interval`, and takes a cell of `values` that is not JSON as a
+string.
+
+## Package `discovery`
+
+`import "github.com/otfabric/go-openadr/discovery"`
+
+DNS-SD over Multicast DNS, as the specification describes it for VTNs on a
+local network: service type `_openadr3._tcp`.
+
+```go
+func Browse(ctx, Options) ([]VTN, error)                // Options{Timeout, First}
+func Advertise(Advertisement) (*Advertiser, error)      // Advertisement{Instance, Host, Port, BasePath, Version,
+func (*Advertiser) Close() error                        //   LocalURL, ProgramNames, NoAuth, OpenAPIURL, Logger}
+
+type VTN struct {
+	Instance, Host string; Port int; Addrs []netip.Addr
+	Version, BasePath, LocalURL, OpenAPIURL string; ProgramNames []string; RequiresAuth bool
+	Text map[string]string
+}
+func (VTN) URL() string
+```
+
+- **`Browse`** asks on every network interface with multicast and an IPv4 address, waits `Timeout` (3 s) for answers, and returns the VTNs that gave a host, a port and a TXT record, by instance name. With `First` it returns at the first. Finding none is not an error. It asks from a port of its own, as a one-shot resolver, so it works beside the resolver of the system and needs no privilege.
+- **`VTN.URL`** is the `local_url` the VTN announced, or else `https://host:port/base_path`. The host is a `.local` name; `Addrs` are for a system that cannot resolve those, which includes Go's own resolver on some platforms.
+- **`RequiresAuth`** is false only when the VTN says `requires_auth=False`; a VTN that does not say is taken to want a token.
+- **`Advertise`** announces a VTN until `Close`, which also says goodbye. `Port` is required; the host name defaults to the machine's, `Version` to 3.1.0, and `LocalURL` to `https://<host>.local:<port>/<base path>`. `NoAuth` announces a VTN with `AllowAnonymous`. It shares port 5353 with the resolver of the system, and fails where that is not possible.
+- **Limits.** IPv4 multicast only (IPv6 addresses are announced and reported). No probing: a name that is already in use on the network is not detected. Not every network carries multicast: containers and many cloud networks do not.
+- **Trust.** Multicast DNS proves nothing about who answers. See [SECURITY.md](SECURITY.md).
+
+## Beyond OpenADR 3.1.0
+
+Two features are not in the specification. Both follow
+[OpenLEADR](https://github.com/OpenLEADR/openleadr-rs), so that the two
+implementations work together, and this module's clients are tested against
+OpenLEADR for both. A VTN of this module has neither unless configured to;
+a 3.1.0 client never meets them.
+
+**Resource groups** (`server.Config.ResourceGroups`), proposed for a later
+revision of OpenADR:
+
+```go
+type ResourceGroup struct { Metadata; Name string; Attributes []ValuesMap; Targets []string; Children []ResourceGroupChild }
+type ResourceGroupChild struct { Type ResourceGroupChildType; ID string }   // ChildResource or ChildResourceGroup
+```
+
+| | |
+|---|---|
+| Paths | `/resource_groups`, `/resource_groups/{id}`; `resourceGroupName`, `targets`, `skip`, `limit` on a search |
+| Object | `objectType` `RESOURCE_GROUP`; `resourceGroupName`, `targets`, `attributes`, `children: [{type, id}]` with `type` `ven_resource` or `resource_group` |
+| Business Logic | reads all and writes: `(*BL).ResourceGroups`, `ResourceGroup`, `CreateResourceGroup`, `UpdateResourceGroup`, `DeleteResourceGroup` |
+| A VEN | reads the groups that hold one of its own resources, directly or through other groups, and of their children only those resources and such groups: `(*VEN).ResourceGroups`, `ResourceGroup` |
+| Rules | children have to exist (409 otherwise); names are not unique; a group may hold itself, and groups each other; deleting a resource or a group takes it out of the groups that held it |
+| Notifications | none: a 3.1.0 subscription cannot name them |
+
+Expect this to change when a revision of the specification adopts resource
+groups.
+
+**WebSocket notifications** (`server.Config.WebSocket`):
+
+| | |
+|---|---|
+| Announced | `"WEBSOCKET": true` in the answer to `GET /notifiers` (`Notifiers.WebSocket`) |
+| Subscribing | an entry of `objectOperations` with `"mechanism": "WEBSOCKET"` and no `callbackUrl` (`ObjectOperation.Mechanism`); `WEBHOOK`, or no mechanism, is a webhook as in 3.1.0 |
+| Receiving | `GET /notifiers/ws` with the bearer token, upgraded to a WebSocket; each notification is one text message, the JSON of a 3.1.0 notification |
+| `Notification.ID` | OpenLEADR adds an `id` of the operation to its notifications; this module reads it and does not send one |
+| Connections | `WebSocketConfig{PingInterval, MaxPerClient, Queue}`: 4 per client (OpenLEADR: 1), then 409; a client that does not answer two pings, or lets 256 notifications queue up, is disconnected |
+| Not kept | what happens while a client is not connected is not sent later |
+
 ## Package `auth`
 
 `import "github.com/otfabric/go-openadr/auth"`
@@ -407,7 +594,7 @@ type JWTConfig struct {
 
 - `client.VEN` and `client.BL` are safe for concurrent use. Calls are independent HTTP exchanges; only the fetching of a token is serialized.
 - `server.Server` is safe for concurrent use, as `http.Handler` requires. A read by ID followed by a write is two steps on the store: two updates of one object at the same time both succeed, and the later one wins.
-- `storage.Memory`, `storage.File`, `auth.Issuer`, `auth.JWTValidator`, `webhook.Sender`, `mqtt.Publisher` and `mqtt.Subscriber` are safe for concurrent use. A `webhook.Handler` calls `Notify` from the goroutine of each request.
+- `storage.Memory`, `storage.File`, `auth.Issuer`, `auth.JWTValidator`, `webhook.Sender`, `mqtt.Publisher`, `mqtt.Subscriber`, `websocket.Subscriber` and `discovery.Advertiser` are safe for concurrent use. A `client.NotificationStream` is read by one goroutine at a time, and may be closed from any. A `webhook.Handler` calls `Notify` from the goroutine of each request.
 - The domain types are plain values. Copying one copies its slices by reference: do not modify an object that has been handed to a store.
 
 ## Limits
@@ -421,3 +608,9 @@ type JWTConfig struct {
 | Response body | 16 MiB | `client.Config.MaxResponseBytes` |
 | HTTP exchange | 30 s | the default `http.Client` of the client |
 | Numbers in payloads | `float64` | exact for integers up to 2^53 |
+| Compression | answers from 1 KiB | `server`; off with `Config.DisableCompression` |
+| WebSockets per client | 4 | `server.WebSocketConfig.MaxPerClient` |
+| Notifications queued per WebSocket | 256 | `server.WebSocketConfig.Queue` |
+| Message on a WebSocket | 4 MiB to a client, 64 KiB to the VTN | fixed |
+| Wait between webhook attempts | 1 minute at most | `webhook.SenderConfig.MaxBackoff` |
+| Rows of a table | about a million | `timeline.ErrTooLarge` |

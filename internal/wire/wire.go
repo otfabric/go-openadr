@@ -81,6 +81,9 @@ type Codec struct {
 
 	Subscriptions ObjectCodec[openadr.Subscription]
 
+	// ResourceGroups is not of the revision: see openadr.ResourceGroup.
+	ResourceGroups ObjectCodec[openadr.ResourceGroup]
+
 	// A notification carries one object, in the VTN's representation.
 	MarshalNotification   func(openadr.Notification) ([]byte, error)
 	UnmarshalNotification func([]byte) (openadr.Notification, error)

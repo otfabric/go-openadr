@@ -41,8 +41,11 @@ type SenderConfig struct {
 	// Attempts is how often a notification is sent at most; 4 when zero.
 	Attempts int
 	// Backoff is the wait before the second attempt, doubled for each one
-	// after; 1 second when zero.
+	// after, up to MaxBackoff; 1 second when zero.
 	Backoff time.Duration
+	// MaxBackoff is the longest wait between two attempts; 1 minute when
+	// zero.
+	MaxBackoff time.Duration
 	// Queue is the number of notifications that may wait per worker; 256
 	// when zero. A notification for a full queue is dropped.
 	Queue int
@@ -89,6 +92,9 @@ func NewSender(cfg SenderConfig) *Sender {
 	}
 	if cfg.Backoff <= 0 {
 		cfg.Backoff = time.Second
+	}
+	if cfg.MaxBackoff <= 0 {
+		cfg.MaxBackoff = time.Minute
 	}
 	if cfg.Queue <= 0 {
 		cfg.Queue = 256
@@ -285,7 +291,9 @@ func (s *Sender) deliver(d delivery) {
 			s.log("webhook: notification not delivered", d.url, errors.New("the sender was closed"))
 			return
 		}
-		wait *= 2
+		if wait *= 2; wait > s.cfg.MaxBackoff {
+			wait = s.cfg.MaxBackoff
+		}
 	}
 }
 

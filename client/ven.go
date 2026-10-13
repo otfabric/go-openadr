@@ -178,3 +178,20 @@ func (c *VEN) Notifiers(ctx context.Context) (openadr.Notifiers, error) {
 func (c *VEN) MQTTTopics(ctx context.Context, of TopicSet) (openadr.Topics, error) {
 	return c.core.topics(ctx, of)
 }
+
+// --- resource groups
+//
+// Resource groups are not part of OpenADR 3.1.0: see openadr.ResourceGroup.
+// A VTN that does not have them answers these calls with openadr.ErrNotFound.
+
+// ResourceGroups searches the resource groups that hold a resource of this
+// VEN, directly or through other groups. Of their children the VTN shows
+// those resources and such groups only.
+func (c *VEN) ResourceGroups(ctx context.Context, q ResourceGroupQuery) ([]openadr.ResourceGroup, error) {
+	return listObjects(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", q.values())
+}
+
+// ResourceGroup returns the resource group with the given ID.
+func (c *VEN) ResourceGroup(ctx context.Context, id string) (openadr.ResourceGroup, error) {
+	return getObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", id)
+}

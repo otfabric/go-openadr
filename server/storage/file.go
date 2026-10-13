@@ -131,6 +131,15 @@ func (f *File) apply(ctx context.Context, rec record) error {
 		return applyTo(ctx, f.mem.VENs(), fileCodec.VENs, rec)
 	case "resource":
 		return applyTo(ctx, f.mem.Resources(), fileCodec.Resources, rec)
+	case "resource-group":
+		return applyTo(ctx, f.mem.ResourceGroups(), fileCodec.ResourceGroups, rec)
+	case "restored-resource-group":
+		// From a snapshot: its children may come later in the file.
+		g, _, err := fileCodec.ResourceGroups.Unmarshal(rec.Object)
+		if err != nil {
+			return err
+		}
+		return f.mem.restoreResourceGroup(g)
 	case "subscription":
 		if rec.Op == "delete" {
 			_, err := f.mem.Subscriptions().Delete(ctx, rec.ID)
@@ -210,6 +219,13 @@ func (f *File) snapshot() ([]byte, error) {
 	for _, v := range resources {
 		b, err := fileCodec.Resources.Marshal(v, wire.Object)
 		if err := add(record{Kind: "resource"}, b, err); err != nil {
+			return nil, err
+		}
+	}
+	groups, _ := f.mem.ResourceGroups().List(ctx, ResourceGroupFilter{})
+	for _, v := range groups {
+		b, err := fileCodec.ResourceGroups.Marshal(v, wire.Object)
+		if err := add(record{Kind: "restored-resource-group"}, b, err); err != nil {
 			return nil, err
 		}
 	}
@@ -390,6 +406,11 @@ func (f *File) VENs() Collection[openadr.VEN, VENFilter] {
 // Resources implements Store.
 func (f *File) Resources() Collection[openadr.Resource, ResourceFilter] {
 	return journaled[openadr.Resource, ResourceFilter]{f: f, inner: f.mem.Resources(), kind: "resource", marshal: object(fileCodec.Resources)}
+}
+
+// ResourceGroups implements Store.
+func (f *File) ResourceGroups() Collection[openadr.ResourceGroup, ResourceGroupFilter] {
+	return journaled[openadr.ResourceGroup, ResourceGroupFilter]{f: f, inner: f.mem.ResourceGroups(), kind: "resource-group", marshal: object(fileCodec.ResourceGroups)}
 }
 
 // Subscriptions implements Store.

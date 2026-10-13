@@ -44,6 +44,7 @@ type Conn struct {
 	nextID  uint16
 	waiting map[uint16]chan Packet
 	err     error
+	closing bool
 	done    chan struct{}
 	// seen is closed and replaced whenever a packet arrives: the proof of
 	// life the keep-alive looks for.
@@ -179,6 +180,12 @@ func (c *Conn) shut(err error) {
 		return
 	default:
 	}
+	// Once the application has said goodbye, whatever ends the connection
+	// is that goodbye: a broker hangs up on a DISCONNECT, and the reader
+	// may notice before Close gets here.
+	if c.closing {
+		err = nil
+	}
 	c.err = err
 	close(c.done)
 	c.mu.Unlock()
@@ -192,6 +199,9 @@ func (c *Conn) Close() error {
 		return nil
 	default:
 	}
+	c.mu.Lock()
+	c.closing = true
+	c.mu.Unlock()
 	_ = c.write(Packet{Type: TypeDisconnect})
 	c.shut(nil)
 	return nil

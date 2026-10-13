@@ -9,12 +9,16 @@ go-openadr/
 ├── auth/                Identity, scopes, Validator; Issuer and JWTValidator
 ├── notification/
 │   ├── webhook/         Sender (VTN side) and Handler (client side)
-│   └── mqtt/            Publisher (VTN side) and Subscriber (client side)
+│   ├── mqtt/            Publisher (VTN side) and Subscriber (client side)
+│   └── websocket/       Subscriber (client side; the VTN side is in server)
+├── timeline/            intervals as a table; CSV
+├── discovery/           DNS-SD over Multicast DNS: Browse and Advertise
 ├── internal/
 │   ├── wire/            what a protocol revision has to provide
-│   │   └── v310/        the JSON of OpenADR 3.1.0
+│   │   └── v310/        the JSON of OpenADR 3.1.0, and of the extensions
 │   ├── mqtt/            an MQTT 3.1.1 client
-│   └── mqtttest/        a broker for tests
+│   ├── mqtttest/        a broker for tests
+│   └── ws/              the WebSocket protocol (RFC 6455), both ends
 ├── e2e/                 this module's clients against this module's VTN
 ├── interop/             against other implementations (build tag)
 └── examples/
@@ -22,6 +26,13 @@ go-openadr/
 
 Dependencies point one way: `client` and `server` use the domain model and a
 wire codec; nothing in the root package knows about HTTP or JSON.
+`timeline` and `discovery` stand apart: the first uses the domain model
+only, the second nothing of this module at all.
+
+The module has no dependencies outside the standard library. That is why it
+carries its own MQTT client, WebSocket framing and DNS codec: each is the
+small part of its protocol that OpenADR needs, each behind an internal or
+narrow API, and each fuzzed.
 
 ## Domain model and wire model
 
@@ -51,12 +62,17 @@ strings).
 
 ## The server
 
-`server.Server` holds no state. A request goes through:
+`server.Server` holds no state besides the WebSockets of its clients, when
+it has any. A request goes through:
 
 1. **Routing** (`net/http.ServeMux` patterns). Unknown paths and methods get
    a problem body like every other error.
 2. **Authentication.** The bearer token goes to the `auth.Validator`, which
-   returns an `auth.Identity`: a client ID and scopes.
+   returns an `auth.Identity`: a client ID and scopes. On a VTN that allows
+   it, a request without a token gets an identity with no client ID and
+   the scope to read programs and events. Nothing further down knows of
+   anonymous clients: having no client ID, such a client owns nothing and
+   was granted no targets, and the rules for everyone do the rest.
 3. **Scope check** against the scope the specification assigns to the
    operation. `read_all` includes the narrower read scopes.
 4. **The operation**, which applies ownership and targeting and calls the
@@ -151,12 +167,65 @@ this module so that it stays free of dependencies: CONNECT, PUBLISH and
 SUBSCRIBE at QoS 1, keep-alive, TLS. Reconnecting and resending live one
 level up, in `Publisher` and `Subscriber`, where the policy is.
 
+The WebSocket binding is a third delivery for the same decision: an entry
+of a subscription names its mechanism, and where a webhook entry hands the
+notification to the sender, a WebSocket entry hands it to the connections
+the subscriber has open (`server/websocket.go`). Each connection has a
+bounded queue and one goroutine that writes; a connection that does not
+keep up is closed, not waited for, so that one slow client costs nobody
+else anything. The server owns these connections, which is the one piece
+of state it has and the reason it has a `Close`.
+
+On the client side the stream is opened by the client itself
+(`client.NotificationStream`), because that is where the HTTP client, the
+base URL and the token are; `notification/websocket.Subscriber` adds what a
+program wants around it, reconnecting and keep-alive, and takes the opening
+as a function so that it depends on no client type.
+
+## Extensions
+
+Resource groups and WebSocket notifications are not OpenADR 3.1.0. They
+are kept apart so that the 3.1.0 surface stays what the specification says:
+
+- each is off unless `server.Config` turns it on, and a VTN without it
+  answers as one that never heard of it;
+- nothing of them appears in a 3.1.0 message unless used: no `mechanism`
+  on a webhook subscription, no `WEBSOCKET` in the notifiers of a VTN
+  without WebSockets;
+- their JSON is OpenLEADR's (`internal/wire/v310/experimental.go`), since
+  the point of an extension two implementations share is that they share it;
+- the store has a collection for resource groups whether they are served
+  or not, because an interface cannot be optional.
+
+## Tables and discovery
+
+`timeline` is a pure function of an event: the timing rules of the User
+Guide, applied once, in one place, with a test per rule. It returns rows
+rather than changing the event, so the event a program holds stays what the
+VTN sent.
+
+`discovery` has two halves that share a DNS codec and nothing else.
+`Browse` asks as a one-shot resolver, from a port of its own, and is
+answered directly; that needs no shared port and works beside the resolver
+of the system. `Advertise` has to listen on port 5353, shared with that
+resolver, one socket per network interface, and answers both kinds of
+querier. The sockets are behind an interface, and the tests run both halves
+against each other on a network in memory, where loss and off-link queries
+can be arranged.
+
 ## Tests
 
 - Unit tests sit next to the code.
 - `e2e/` runs this module's clients against this module's VTN over HTTPS,
   with every feature, including those no other implementation can exercise
   yet. A bug both sides share is invisible there.
+- `e2e/matrix_test.go` is the access control in one table: every operation
+  as every kind of client.
+- `e2e/chaos_test.go` runs many clients at once, and injects failures: a
+  store that fails one call in five, a network that cuts connections, a
+  webhook that fails most of the time, a broker that drops everyone, tokens
+  that expire, a journal cut at any byte. They assert what survives:
+  consistency, privacy, and recovery.
 - `interop/` (build tag `interop`) runs each side against another
   implementation, from the images of otfabric/openadr-interop.
 - That repository's conformance suite checks the VTN against the

@@ -11,20 +11,21 @@ import (
 	"testing"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/server"
 )
 
 // fixture is a VTN with one object of every kind, the VEN-side ones made by
 // ven-1.
 type fixture struct {
 	*stack
-	program, idle, event, report, ven, resource, subscription string
-	hook                                                      string
+	program, idle, event, report, ven, resource, subscription, group string
+	hook                                                             string
 }
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	ctx := context.Background()
-	f := fixture{stack: start(t, options{mqtt: true})}
+	f := fixture{stack: start(t, options{mqtt: true, groups: true, websocket: &server.WebSocketConfig{}})}
 	f.program = mustProgram(t, f.BL, openadr.Program{Name: "tariff"}).ID
 	f.idle = mustProgram(t, f.BL, openadr.Program{Name: "without-events"}).ID
 	f.event = mustEvent(t, f.BL, openadr.Event{ProgramID: f.program}).ID
@@ -46,6 +47,12 @@ func newFixture(t *testing.T) fixture {
 	hook := newHook(t, "")
 	f.hook = hook.URL
 	f.subscription = subscribe(t, f.VEN1.CreateSubscription, hook, "", openadr.Subscription{ObjectOperations: all(openadr.ObjectVEN)}).ID
+	group, err := f.BL.CreateResourceGroup(ctx, openadr.ResourceGroup{Name: "feeder-7",
+		Children: []openadr.ResourceGroupChild{{Type: openadr.ChildResource, ID: f.resource}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.group = group.ID
 	return f
 }
 
@@ -78,6 +85,8 @@ func TestAuthorizationMatrix(t *testing.T) {
 	resource := func(f fixture) string { return f.resource }
 	subscription := func(f fixture) string { return f.subscription }
 	hook := func(f fixture) string { return f.hook }
+	group := func(f fixture) string { return f.group }
+	const groupBody = `{"resourceGroupName":"renamed","children":[{"type":"ven_resource","id":"%s"}]}`
 
 	rows := []struct {
 		name string
@@ -144,6 +153,17 @@ func TestAuthorizationMatrix(t *testing.T) {
 		{"topics of a ven's events", get("/notifiers/mqtt/topics/vens/%s/events", ven), [5]int{401, 401, 200, 404, 200}},
 		{"topics of a ven's programs", get("/notifiers/mqtt/topics/vens/%s/programs", ven), [5]int{401, 401, 200, 404, 200}},
 		{"topics of a ven's resources", get("/notifiers/mqtt/topics/vens/%s/resources", ven), [5]int{401, 401, 200, 404, 200}},
+
+		// What is not of OpenADR 3.1.0. Resource groups are Business
+		// Logic's to write; a VEN reads those that hold a resource of its.
+		{"search resource groups", get("/resource_groups"), [5]int{401, 401, 200, 200, 200}},
+		{"read a resource group", get("/resource_groups/%s", group), [5]int{401, 401, 200, 404, 200}},
+		{"create a resource group", send("POST", "/resource_groups", groupBody, resource), [5]int{401, 401, 403, 403, 201}},
+		{"update a resource group", send("PUT", "/resource_groups/%s", groupBody, group, resource), [5]int{401, 401, 403, 403, 200}},
+		{"delete a resource group", send("DELETE", "/resource_groups/%s", "", group), [5]int{401, 401, 403, 403, 200}},
+		{"subscribe to a WebSocket", send("POST", "/subscriptions", `{"clientName":"c","objectOperations":[{"objects":["EVENT"],"operations":["CREATE"],"mechanism":"WEBSOCKET"}]}`), [5]int{401, 401, 201, 201, 201}},
+		// An ordinary request to the address of the WebSocket.
+		{"ask for the WebSocket without opening one", get("/notifiers/ws"), [5]int{401, 401, 426, 426, 426}},
 	}
 	// The 45 operations of OpenADR 3.1.0, less POST /auth/token, which is
 	// the token service's; plus the rows that show a second face of one.

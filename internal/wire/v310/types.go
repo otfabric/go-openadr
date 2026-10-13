@@ -100,13 +100,19 @@ type subscription struct {
 }
 
 type objectOperation struct {
-	Objects     []string `json:"objects"`
-	Operations  []string `json:"operations"`
-	CallbackURL string   `json:"callbackUrl"`
-	BearerToken string   `json:"bearerToken,omitempty"`
+	Objects    []string `json:"objects"`
+	Operations []string `json:"operations"`
+	// Not of 3.1.0, and absent for a webhook, which is what 3.1.0 has.
+	Mechanism string `json:"mechanism,omitempty"`
+	// Required by 3.1.0, where every subscription is to a webhook; absent
+	// for another mechanism.
+	CallbackURL string `json:"callbackUrl,omitempty"`
+	BearerToken string `json:"bearerToken,omitempty"`
 }
 
 type notification struct {
+	// Not of 3.1.0: read when a VTN sends it, never written.
+	ID         string          `json:"id,omitempty"`
 	ObjectType string          `json:"objectType"`
 	Operation  string          `json:"operation"`
 	Object     json.RawMessage `json:"object"`
@@ -114,8 +120,10 @@ type notification struct {
 }
 
 type notifiers struct {
-	Webhook bool         `json:"WEBHOOK"`
-	MQTT    *mqttBinding `json:"MQTT,omitempty"`
+	Webhook bool `json:"WEBHOOK"`
+	// Not of 3.1.0, and written only by a VTN that has it.
+	WebSocket bool         `json:"WEBSOCKET,omitempty"`
+	MQTT      *mqttBinding `json:"MQTT,omitempty"`
 }
 
 type mqttBinding struct {
@@ -152,8 +160,25 @@ type interval struct {
 	Payloads       []valuesMap     `json:"payloads"`
 }
 
+// startTime is the start of an interval period. The schema makes it a
+// date-time, and the User Guide writes "the beginning of time", which means
+// "now" or "after the previous interval", in two forms that are not one:
+// 0001-01-01 and 0001-01-01T00:00:00. Both are read as the zero time.
+type startTime time.Time
+
+func (t startTime) MarshalJSON() ([]byte, error) { return time.Time(t).MarshalJSON() }
+
+func (t *startTime) UnmarshalJSON(data []byte) error {
+	switch string(data) {
+	case `"0001-01-01"`, `"0001-01-01T00:00:00"`:
+		*t = startTime(time.Time{})
+		return nil
+	}
+	return (*time.Time)(t).UnmarshalJSON(data)
+}
+
 type intervalPeriod struct {
-	Start          *time.Time `json:"start,omitempty"`
+	Start          *startTime `json:"start,omitempty"`
 	Duration       *string    `json:"duration,omitempty"`
 	RandomizeStart *string    `json:"randomizeStart,omitempty"`
 }

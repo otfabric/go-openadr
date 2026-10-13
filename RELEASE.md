@@ -1,5 +1,95 @@
 # go-openadr Releases
 
+## v0.2.0
+
+**Date:** 2026-10-13
+**Previous release:** v0.1.0
+
+## Summary
+
+The gaps the comparison with OpenLEADR and the ElaadNL client showed are
+closed, and the module is put under load and failure. A VTN can serve
+clients that do not authenticate, compress its answers and announce itself
+on the local network; intervals can be read as a table; and the two things
+OpenLEADR has beyond the specification, resource groups and notifications
+over a WebSocket, are here too, off unless asked for and tested against
+OpenLEADR. The test suite now runs many clients at once and injects
+failures: a store that fails, connections that are cut, webhooks and a
+broker that do not answer, tokens that expire, a journal cut mid-write.
+
+Still no dependencies outside the standard library: the WebSocket framing
+and the Multicast DNS are this module's own, like its MQTT client.
+
+**Upgrade notes**
+
+- `storage.Store` has a new method, `ResourceGroups`. An implementation of the interface outside this module has to add it, also for a VTN that does not serve resource groups; it may return a collection that is always empty. `storage.Memory` and `storage.File` have it, and a journal written by v0.1.0 opens unchanged.
+- The VTN now compresses answers of 1 KiB and more, with gzip or deflate, for clients that ask for it, which Go's HTTP client and most others do without being told. `server.Config.DisableCompression` turns it off.
+- `openadr.ObjectOperation` has a new field, `Mechanism`, and `openadr.Notification` a new field, `ID`. Code that builds these with unkeyed fields has to be adjusted; the zero value of both means what it meant before.
+- A subscription to a webhook is unchanged on the wire. One by another mechanism is written without `callbackUrl`.
+- A VTN with `Config.WebSocket` has connections of its own: call `Server.Close` when it stops, before shutting down the HTTP server.
+- Everything new is off by default except compression. A v0.1.0 configuration gives the same VTN.
+
+## Changes
+
+### Added
+
+- **A VTN without authentication** — `server.Config.AllowAnonymous` answers requests that carry no token, as the specification provides for public information such as price lists. Such a client reads the programs and events that have no targets and nothing else; every other operation answers 401, and a request with a token is validated as before. With it, `Validator` and `TokenURL` may be left out, for a VTN that authenticates nobody. A client without `Credentials` sends no token, as it already did.
+- **Response compression** — gzip or deflate for answers of 1 KiB and more, negotiated with `Accept-Encoding` and its weights, with `Vary` set. These are the two codings the standard library can write; br and zstd, which OpenLEADR also has, would each need a dependency.
+- **MQTT on four brokers** (`interop/brokers_test.go`, part of `make interop`) — see Verification.
+- **Discovery of local VTNs** (`discovery`) — DNS-SD over Multicast DNS as the specification describes it. `Advertise` announces a VTN as `_openadr3._tcp` with the TXT record of the specification (`version`, `base_path`, `local_url`, `program_names`, `requires_auth`, `openapi_url`), answers queries, and says goodbye when closed. `Browse` finds the VTNs on the local network and returns their name, host, port, addresses and TXT record; `VTN.URL` is where its API is.
+- **Intervals as tables** (`timeline`) — `OfEvent` and `Of` lay out the intervals of an event or a report as rows with a start and an end, applying the timing rules of the User Guide: defaults of the event, intervals that follow each other or have a start of their own, a start that means "now", `P9999Y`, payloads that pack several values into sub-intervals, and an event duration that cuts the intervals short or repeats them. `Table.At` answers what applies at a time, `Table.Intervals` makes intervals of rows again, and `WriteCSV` and `ReadCSV` exchange a table with a spreadsheet.
+- **Resource groups** — `openadr.ResourceGroup`, served at `/resource_groups` by a VTN with `server.Config.ResourceGroups`, and `ResourceGroups`, `ResourceGroup`, `CreateResourceGroup`, `UpdateResourceGroup` and `DeleteResourceGroup` on the clients. Business Logic writes them and reads all; a VEN reads the groups that lead to a resource of its own, and of their children only those. **Not part of OpenADR 3.1.0**: proposed for a later revision, and implemented as OpenLEADR implements them.
+- **Notifications over a WebSocket** — a subscription entry can name `openadr.MechanismWebSocket` in place of a callback URL; a VTN with `server.Config.WebSocket` serves `GET /notifiers/ws` and sends each client what such entries select, as that client may see it. `(*VEN).NotificationStream` and `(*BL).NotificationStream` open the stream, and `notification/websocket.Subscriber` keeps one open, with keep-alive and reconnecting. `Notifiers.WebSocket` says whether a VTN has it. **Not part of OpenADR 3.1.0**: an extension of OpenLEADR, which this module shares.
+- **`Server.Close`** — ends the WebSockets of a VTN.
+- **`Notification.ID`** — the ID OpenLEADR gives the operation a notification is about, when a VTN sends one.
+- **`webhook.SenderConfig.MaxBackoff`** — the longest wait between two attempts to deliver a notification; one minute by default.
+- **Parallel and failure-injection tests** (`e2e/chaos_test.go`, `make chaos`) — see Verification.
+- **Examples** — `prices` (a public tariff, a client without credentials, the prices as a table), `websocket`, `resourcegroups` and `discovery`, each self-contained and run in CI; `ven`, a VEN for the command line that finds a VTN, registers, prints its schedule, reports and watches; and `tariff`, Business Logic that publishes a schedule from a CSV file and reads the reports on it. Together with `examples/vtn` they are the three roles of an OpenADR system as three programs, which the README now introduces. `examples/vtn` takes `-anonymous`, `-websocket`, `-resource-groups` and `-advertise`.
+
+### Changed
+
+- The start of an interval period is accepted as `0001-01-01` and as `0001-01-01T00:00:00`, the two ways the User Guide writes "now", which are not date-times of the schema. v0.1.0 rejected them.
+- `storage.Store` gained `ResourceGroups()`. A resource that is deleted leaves the resource groups that held it.
+- `GET /notifiers` and subscriptions are served when a VTN has any way to notify: a webhook sender, an MQTT publisher or WebSockets. A subscription that asks for a mechanism the VTN has not is refused with 400.
+- `callbackUrl` is left out of a subscription entry that is not to a webhook.
+- The README's comparison with OpenLEADR and the ElaadNL client is brought up to date, and corrected in one row: OpenLEADR has subscriptions, which it delivers over WebSockets.
+- API.md, ERRORS.md, SECURITY.md, ARCHITECTURE.md, INTEROP.md, docs/CONFORMANCE.md, PLAN.md and CONTRIBUTING.md are revised for all of the above.
+
+### Fixed
+
+- **The webhook sender's wait between attempts grew without bound.** It doubled after every failed attempt; with a large `Attempts` a notification could wait for hours behind a webhook that had long recovered, and after some thirty attempts the wait overflowed. It is now capped (`MaxBackoff`). With the default of four attempts nothing changes. Found by the new failure-injection test of webhooks.
+
+- **Closing an MQTT connection could report it as lost.** A broker hangs up when it is told goodbye; when the client noticed that before it had finished closing, the connection ended with "connection lost" where it had been closed, and a publish after `Close` returned that error in place of the one for a closed connection. Seen on Linux only, and rarely.
+
+### Verification
+
+- `make check`: formatting for Go 1.23 and the local toolchain, staticcheck, golangci-lint, vet, govulncheck, all tests with the race detector, coverage of 91.8% of the library's statements, and the six self-contained examples.
+- `make e2e`: 39 end-to-end tests of this module's clients against this module's VTN over HTTPS. Every feature above has one, through the public API of both sides. One of them builds and runs the three example programs as processes: a 24-hour tariff is published, the VTN is restarted and still has it, the VEN reads the prices and reports, and the publisher reads the report. The authorization matrix has 54 rows, the seven new ones for resource groups and WebSockets, each as five kinds of client.
+- **Parallel and failure injection**, with the race detector: twelve clients at once on every kind of object, on the memory and the journal store, with the store checked for consistency after and every notification for order; a store that fails one call in five, before or after doing it (clients are told 500 and nothing of the cause, nobody is notified of a change whose request failed, the store stays consistent, everything works after); a network that cuts a third of the connections mid-request (every create is retried to exactly one object; the WebSocket subscriber reconnects); a webhook that answers 500, hangs, hangs up or loses its answer (every notification arrives, in order, while the API does not wait); a broker that drops every connection every 15 ms; tokens that expire while eight goroutines use them; and a journal cut at 44 different bytes, each of which opens to a consistent store that takes writes.
+- Unit tests of the WebSocket protocol against frames written out by hand (fragments, control frames between them, masking in both directions, every violation and its close code); of the Multicast DNS codec against a compressed response as other implementations write one, and of both halves of `discovery` against each other on a network in memory, with loss, off-link queries, one-shot and multicast queriers; of `timeline` with a case per timing rule.
+- The whole suite also on Linux, in containers with Go 1.23 and Go 1.26, the parallel and failure-injection tests four times over on each: they must not depend on the speed of the machine, and two of them did until this was done.
+- Six fuzz targets, three of them new: WebSocket frames, DNS messages and CSV tables, beside durations, events and MQTT packets.
+- `make interop` is green against the reference images of openadr-interop v0.2.0 (OpenLEADR v0.2.7, ElaadNL openadr3-client 2.4.0), pinned by digest: everything of v0.1.0, and new, against OpenLEADR, **resource groups** (create, nest, read, update, delete as Business Logic; visibility as two VENs) and **WebSocket notifications** (this module's subscriber receives the create, update and delete of an event, and nothing it may not see).
+- **The MQTT client on brokers other people wrote**, which until now it had met only as a subscriber on Mosquitto: this module's VTN publishes to, and this module's subscriber receives from, Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition 2026.5 and EMQX 6.3.1, each in a container as its maker ships it. On each: create, update and delete in order, to Business Logic with every target and to a VEN with its own; nothing on a VEN's topic that is not for it; a burst of 200 without loss or reordering; an event of a thousand intervals; and a restart of the broker, after which publisher and subscriber are both back. All four passed without a change to the client.
+- `discovery` against the Multicast DNS responder of macOS, by hand, in both directions: the system's browser finds and resolves what `Advertise` announces, and `Browse` finds what the system registers.
+- The conformance suite of openadr-interop v0.2.0: 24 of 24 against the VTN, as before, also with every new option turned on.
+
+### Known limitations
+
+- **The VTN's side of the new features has met no other implementation's client**: WebSockets, resource groups, anonymous access and compression are tested from this module's own clients, and, for the first two, this module's clients against OpenLEADR's VTN. The reference client of openadr-interop has no operations for them yet.
+- **Resource groups and WebSocket notifications are not OpenADR 3.1.0** and may change: the first with the revision of the specification that adopts them, the second with OpenLEADR, which calls it experimental.
+- A WebSocket is authenticated when it is opened and not again: a client whose token is revoked receives until it disconnects or the VTN restarts. Nothing is kept for a client that is not connected, and one that does not read fast enough is disconnected.
+- An OpenLEADR VTN allows one WebSocket per client and frees the place of a closed one only when it next fails to send to it: a client that reconnects to it may be refused for a while. The subscriber keeps trying.
+- A notification is lost when the store fails while the VTN looks up whom to tell. The request that caused it has succeeded.
+- `discovery` speaks Multicast DNS over IPv4 only, does not probe for names that are already taken, and has been tried with one other responder, Apple's. Multicast DNS is not authenticated: a discovered VTN is an address to try, and the TLS certificate decides.
+- `AllowAnonymous` makes every program and event without targets public. There is no rate limiting in the VTN.
+- `timeline` cannot tell from an event whether several values in a payload are sub-intervals or belong together: the caller says (`Options.SubIntervals`). `RandomizeStart` is carried, not applied.
+- Nobody is notified of changes to resource groups.
+- The brokers are tested without TLS and without a login. With a login the MQTT client has met Mosquitto, in the OpenLEADR image; with TLS, this module's own test broker only.
+- Unchanged from v0.1.0: webhooks have not been tested against another implementation, and the VTN's MQTT notifications have been read by this module's own subscriber only; notifications are not durable; no SQL store.
+
+---
+
 ## v0.1.0
 
 **Date:** 2026-10-13

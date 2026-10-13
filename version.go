@@ -23,3 +23,7 @@ const (
 	ObjectVEN          ObjectType = "VEN"
 	ObjectResource     ObjectType = "RESOURCE"
 )
+
+// ObjectResourceGroup is the object type of a ResourceGroup, which is not
+// part of OpenADR 3.1.0.
+const ObjectResourceGroup ObjectType = "RESOURCE_GROUP"

@@ -25,8 +25,15 @@ type kind[T interface{ Validate() error }, F any] struct {
 	// admit applies the access rules to a create request, or to an update
 	// of old, and returns the object to store. Nil admits v as it is.
 	admit func(ctx context.Context, id auth.Identity, v T, form wire.Form, old *T) (T, error)
-	// subject describes v to the notifications; see notify.
+	// subject describes v to the notifications; see notify. Nil for a
+	// kind of object that nobody is notified of.
 	subject func(ctx context.Context, v T) subject
+}
+
+func (k kind[T, F]) notify(s *Server, r *http.Request, op openadr.Operation, v T) {
+	if k.subject != nil {
+		s.notify(r.Context(), op, k.subject(r.Context(), v))
+	}
 }
 
 // find loads the object named in the path, if the client may see it.
@@ -81,7 +88,7 @@ func create[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) han
 			s.fail(w, r, err)
 			return
 		}
-		s.notify(r.Context(), openadr.OperationCreate, k.subject(r.Context(), v))
+		k.notify(s, r, openadr.OperationCreate, v)
 		writeObject(s, w, r, http.StatusCreated, k.codec, v)
 	}
 }
@@ -106,7 +113,7 @@ func update[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) han
 			s.fail(w, r, err)
 			return
 		}
-		s.notify(r.Context(), openadr.OperationUpdate, k.subject(r.Context(), v))
+		k.notify(s, r, openadr.OperationUpdate, v)
 		writeObject(s, w, r, http.StatusOK, k.codec, v)
 	}
 }
@@ -121,7 +128,7 @@ func remove[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) han
 			s.fail(w, r, err)
 			return
 		}
-		s.notify(r.Context(), openadr.OperationDelete, k.subject(r.Context(), v))
+		k.notify(s, r, openadr.OperationDelete, v)
 		writeObject(s, w, r, http.StatusOK, k.codec, v)
 	}
 }

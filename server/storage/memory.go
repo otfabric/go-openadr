@@ -22,6 +22,7 @@ type Memory struct {
 	resources table[openadr.Resource]
 
 	subscriptions table[SubscriptionRecord]
+	groups        table[openadr.ResourceGroup]
 }
 
 // NewMemory returns an empty Memory store.
@@ -34,6 +35,7 @@ func NewMemory() *Memory {
 		resources: newTable[openadr.Resource](),
 
 		subscriptions: newTable[SubscriptionRecord](),
+		groups:        newTable[openadr.ResourceGroup](),
 	}
 }
 
@@ -71,7 +73,10 @@ type collection[T, F any] struct {
 	check func(v T, old *T) error
 	// canDelete vetoes a delete; nil if there is nothing to check.
 	canDelete func(v T) error
-	match     func(v T, f F) bool
+	// deleted runs after a delete, for what goes with the object; nil if
+	// nothing does.
+	deleted func(v T)
+	match   func(v T, f F) bool
 }
 
 func (c collection[T, F]) Create(_ context.Context, v T) error {
@@ -132,6 +137,9 @@ func (c collection[T, F]) Delete(_ context.Context, id string) (T, error) {
 	}
 	delete(c.table.byID, id)
 	c.table.order = slices.DeleteFunc(c.table.order, func(s string) bool { return s == id })
+	if c.deleted != nil {
+		c.deleted(v)
+	}
 	return v, nil
 }
 
@@ -264,6 +272,9 @@ func (m *Memory) Resources() Collection[openadr.Resource, ResourceFilter] {
 			}
 			return nil
 		},
+		deleted: func(r openadr.Resource) {
+			m.dropChild(openadr.ResourceGroupChild{Type: openadr.ChildResource, ID: r.ID})
+		},
 		match: func(r openadr.Resource, f ResourceFilter) bool {
 			return (f.Name == "" || r.Name == f.Name) &&
 				(f.VENID == "" || r.VENID == f.VENID) &&
@@ -292,4 +303,61 @@ func (m *Memory) Subscriptions() Collection[SubscriptionRecord, SubscriptionFilt
 				(f.ClientID == "" || s.ClientID == f.ClientID)
 		},
 	}
+}
+
+// ResourceGroups implements Store.
+func (m *Memory) ResourceGroups() Collection[openadr.ResourceGroup, ResourceGroupFilter] {
+	return collection[openadr.ResourceGroup, ResourceGroupFilter]{
+		mu: &m.mu, table: &m.groups,
+		id: func(g openadr.ResourceGroup) string { return g.ID },
+		check: func(g openadr.ResourceGroup, _ *openadr.ResourceGroup) error {
+			for _, c := range g.Children {
+				switch c.Type {
+				case openadr.ChildResource:
+					if _, ok := m.resources.byID[c.ID]; !ok {
+						return conflict("resource %s does not exist", c.ID)
+					}
+				case openadr.ChildResourceGroup:
+					// A group may hold itself, as it may in OpenLEADR.
+					if _, ok := m.groups.byID[c.ID]; !ok && c.ID != g.ID {
+						return conflict("resource group %s does not exist", c.ID)
+					}
+				default:
+					return conflict("%q is not a kind of child", c.Type)
+				}
+			}
+			return nil
+		},
+		deleted: func(g openadr.ResourceGroup) {
+			m.dropChild(openadr.ResourceGroupChild{Type: openadr.ChildResourceGroup, ID: g.ID})
+		},
+		match: func(g openadr.ResourceGroup, f ResourceGroupFilter) bool {
+			return f.Name == "" || g.Name == f.Name
+		},
+	}
+}
+
+// dropChild takes an object that no longer exists out of the groups that
+// held it. The caller holds the lock.
+func (m *Memory) dropChild(child openadr.ResourceGroupChild) {
+	for id, g := range m.groups.byID {
+		if slices.Contains(g.Children, child) {
+			// A new slice: the old one may be in the hands of a reader.
+			g.Children = slices.DeleteFunc(slices.Clone(g.Children), func(c openadr.ResourceGroupChild) bool { return c == child })
+			m.groups.byID[id] = g
+		}
+	}
+}
+
+// restoreResourceGroup adds a group without checking its children, for a
+// snapshot: groups refer to each other, in any order.
+func (m *Memory) restoreResourceGroup(g openadr.ResourceGroup) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.groups.byID[g.ID]; exists {
+		return conflict("ID %s is in use", g.ID)
+	}
+	m.groups.byID[g.ID] = g
+	m.groups.order = append(m.groups.order, g.ID)
+	return nil
 }

@@ -10,6 +10,9 @@ How go-openadr reports failures. For the rest of the behavioural contract see [A
 - [Tokens (`*client.TokenError`)](#tokens-clienttokenerror)
 - [Transport, context and timeouts](#transport-context-and-timeouts)
 - [Retries](#retries)
+- [Notification streams](#notification-streams)
+- [Tables (`timeline`)](#tables-timeline)
+- [Discovery](#discovery)
 - [In the VTN](#in-the-vtn)
 - [What is not an error](#what-is-not-an-error)
 - [Detection patterns](#detection-patterns)
@@ -21,7 +24,7 @@ Errors a client method can return:
 | Situation | Error | Was a request sent? |
 |-----------|-------|---------------------|
 | The VTN answered 400 | `*openadr.Error`, matches `openadr.ErrBadRequest` | yes |
-| The VTN answered 401, also with a fresh token | `*openadr.Error`, matches `openadr.ErrUnauthorized` | yes |
+| The VTN answered 401, also with a fresh token; or the client has no credentials and the operation needs a token | `*openadr.Error`, matches `openadr.ErrUnauthorized` | yes |
 | The VTN answered 403: the token lacks the scope, or the client may not do this | `*openadr.Error`, matches `openadr.ErrForbidden` | yes |
 | The VTN answered 404: no such object, or none the client may see | `*openadr.Error`, matches `openadr.ErrNotFound` | yes |
 | The VTN answered 409: a name is taken, a referenced object is missing, or dependents exist | `*openadr.Error`, matches `openadr.ErrConflict` | yes |
@@ -131,6 +134,68 @@ a 409 on the name, before repeating it.
 
 `client.Each` stops at the first error and yields it with a zero value.
 
+The tests of this module do what this section asks of a caller, against a
+network that cuts a third of the connections (`TestChaosNetwork`): a create
+that failed in transport is sent again, and a 409 on its name means the
+first one arrived.
+
+## Notification streams
+
+Opening a WebSocket (`NotificationStream` on a client) fails like any call:
+
+| Situation | Error |
+|-----------|-------|
+| The VTN has no WebSockets | `*openadr.Error` with status 501 (this module's VTN) or 404, matching `openadr.ErrNotFound` |
+| The token is refused, also a fresh one; or the client has none | `*openadr.Error`, matches `openadr.ErrUnauthorized` |
+| The client has as many WebSockets open as the VTN allows | `*openadr.Error`, matches `openadr.ErrConflict` |
+| The VTN is shutting down | `*openadr.Error` with status 503 |
+| The context ended before the stream was open | `context.Canceled` or `context.DeadlineExceeded` |
+| The answer is not a WebSocket | a plain error that says so |
+
+An OpenLEADR VTN answers 409 for a second WebSocket of one client, and goes
+on doing so after the first was closed, until it next fails to send to it.
+
+`NotificationStream.Next` returns an error when the stream has ended, by
+whichever side, and then it has ended for good: close it and open another.
+The error wraps the reason, a close code of the VTN (1001: it is shutting
+down; 1013: this client did not read fast enough) or a network error; a
+program has no reason to tell them apart. A message that is not a
+notification is not an error: `Next` passes over it.
+
+`websocket.Subscriber` returns none of this: it logs the failure, if it has
+a logger, and connects again. `NewSubscriber` fails only without `Dial` or
+`Notify`, and `Ready` only when its context ends or the subscriber is closed.
+
+## Tables (`timeline`)
+
+| Situation | Error |
+|-----------|-------|
+| An interval has no start, and neither a default nor a previous interval gives one | a plain error naming the interval ID |
+| An interval has no duration, and there is no default | a plain error naming the interval ID |
+| An interval follows one that does not end | a plain error naming the interval ID |
+| A negative duration | a plain error naming the interval ID |
+| More than about a million rows | `timeline.ErrTooLarge`; set `Options.Until` |
+| A CSV without a header line, or without `start`, `type` or `values` | a plain error that names what is missing |
+| A cell that cannot be read | a plain error with the row, from 0, and the column |
+| A value that is not set, or not a finite number, when writing CSV | a plain error with the row |
+
+`Table.Intervals` cannot fail, and does not check its result: an event built
+from it is validated like any other when it is sent.
+
+## Discovery
+
+`discovery.Browse` and `discovery.Advertise` return an error when the
+machine has no network interface with multicast and an IPv4 address, or no
+socket can be opened on any: for `Advertise`, typically because port 5353
+cannot be shared. `Advertise` also refuses an advertisement that cannot be
+written as DNS: a missing port, an instance or host name over 63 bytes, a
+program name with a comma, a TXT entry over 255 bytes.
+
+Finding no VTN is not an error: `Browse` returns an empty list. A cancelled
+context is one, when nothing was found before. Packets that cannot be sent
+on one interface while others work are logged by an `Advertiser` with a
+logger, and are nothing a caller hears of.
+
 ## In the VTN
 
 `storage.Store` implementations report:
@@ -162,12 +227,18 @@ known.
 
 Every error answer of the VTN is a problem object with the HTTP status in
 `status` and its name in `title`. The full list: 400 (invalid body,
-parameter or ID, or a callback URL that could not be verified), 401, 403,
-404, 405 (with `Allow`), 409, 413 (body over `Config.MaxBodyBytes`), 500,
-501 (subscriptions without `Config.Webhooks`, the MQTT topic operations
-without `Config.MQTT`, `/notifiers` without either; `/auth/token` without a
-`TokenHandler`) and 503 (the
-request's context ended).
+parameter or ID, a callback URL that could not be verified, or a
+subscription by a mechanism the VTN does not have), 401 (also for a request
+without a token to an operation that needs one, on a VTN with
+`AllowAnonymous`), 403, 404, 405 (with `Allow`), 409 (also for one WebSocket
+too many), 413 (body over `Config.MaxBodyBytes`), 426 (an ordinary request
+to `/notifiers/ws`, or a WebSocket handshake of another version), 500, 501
+(subscriptions without `Config.Webhooks` and `Config.WebSocket`, the MQTT
+topic operations without `Config.MQTT`, `/notifiers` without any of them,
+`/notifiers/ws` without `Config.WebSocket`; `/auth/token` without a
+`TokenHandler`, and `/auth/server` on a VTN that authenticates nobody) and
+503 (the request's context ended, or a WebSocket was asked for while the
+VTN shuts down).
 
 A callback URL the VTN refuses is a 400 whose detail names the property and
 the reason, for example `objectOperations[0].callbackUrl must use https` or
@@ -183,6 +254,17 @@ return an error only for a configuration that cannot work, such as a URL
 that is not `mqtt://` or `mqtts://`. A broker that refuses the login is
 logged and tried again, not returned.
 
+A notification can also be lost before it is sent: to decide whom to tell,
+the VTN reads its subscriptions, and the targets of its VENs, from the
+store. When that read fails, the failure is logged and nobody is told; the
+request that caused the notification has succeeded and is answered so. The
+reverse does not happen: nobody is notified of a change whose request was
+answered with an error.
+
+A WebSocket has no retries. A notification for a client whose queue is full
+is not sent: the VTN closes that connection with code 1013, so that the
+client notices and catches up, rather than leave it behind without a word.
+
 `server.New`, `client.NewVEN`, `client.NewBL` and `auth.NewIssuer` return a
 plain error for an invalid configuration.
 
@@ -192,6 +274,9 @@ plain error for an invalid configuration.
 - A search does not say that objects were left out because the client may not see them.
 - A property in an answer that the schema does not define is ignored.
 - A `ven` or `resource` object whose `objectType` is missing or unexpected is accepted (see docs/CONFORMANCE.md).
+- An interval period whose start is `0001-01-01` or `0001-01-01T00:00:00`, which are not date-times, is read as the zero time: the User Guide writes "now" that way.
+- A message on a notification stream that is not a notification is passed over.
+- A network without multicast finds no VTN.
 
 ## Detection patterns
 

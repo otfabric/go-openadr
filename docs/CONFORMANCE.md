@@ -18,21 +18,46 @@ against other implementations is in [INTEROP.md](../INTEROP.md).
 | Resources | search, read, create, update, delete | yes | yes | yes |
 | Auth | `GET /auth/server` | yes | yes | yes |
 | Auth | `POST /auth/token` (optional in the specification) | optional | yes | yes |
-| Subscriptions | search, read, create, update, delete | yes, with a webhook sender | yes | yes |
-| Notifiers | `GET /notifiers` | yes, with either binding | yes | yes |
+| Subscriptions | search, read, create, update, delete | yes, with a webhook sender or WebSockets | yes | yes |
+| Notifiers | `GET /notifiers` | yes, with any binding | yes | yes |
 | Notifiers | the 12 MQTT topic operations | yes, with an MQTT publisher | yes | yes |
 | Notifications | by webhook | sender | handler | handler |
 | Notifications | by MQTT | publisher | subscriber | subscriber |
 
 "n/a" marks operations the specification's scopes do not give that role.
 
-That is all 45 operations of the specification. A VTN that is not given a
-webhook sender has no subscriptions, and one that is not given an MQTT
-publisher has no topic operations: those answer 501.
+That is all 45 operations of the specification. A VTN that is given no way
+to deliver notifications has no subscriptions, and one that is not given an
+MQTT publisher has no topic operations: those answer 501.
 
-Not implemented: notifications of `READ`, gzip, mDNS discovery of local VTNs, a VTN mode without
-authentication, and the retention of properties the schema does not define
-(they are ignored, as the specification allows).
+Beside the operations, the Definition describes behaviour that has no
+operation of its own:
+
+| Behaviour | VTN | Clients |
+|---|:---:|:---:|
+| A VTN that does not require authentication ("Non-Authenticating VTNs") | optional (`AllowAnonymous`) | yes: a client without credentials sends no token |
+| Discovery of local VTNs by mDNS and DNS-SD | `discovery.Advertise` | `discovery.Browse` |
+| Event and interval timing (User Guide 7.3 and 7.4) | n/a: the VTN stores intervals as given | `timeline` |
+| Compressed answers (HTTP, not the specification) | gzip, deflate | yes |
+
+Not implemented: notifications of `READ`, and the retention of properties
+the schema does not define (they are ignored, as the specification allows).
+
+## Beyond the specification
+
+Two things this module has are not in OpenADR 3.1.0. Both are off unless a
+VTN is configured to have them, both follow OpenLEADR, and
+[API.md](../API.md#beyond-openadr-310) has their wire forms.
+
+| Extension | VTN | VEN client | BL client |
+|---|:---:|:---:|:---:|
+| Resource groups: `/resource_groups`, search, read | optional | yes | yes |
+| Resource groups: create, update, delete | optional | n/a | yes |
+| Notifications over a WebSocket: `GET /notifiers/ws`, and subscriptions with the mechanism `WEBSOCKET` | optional | yes | yes |
+
+A VTN without them is a plain 3.1.0 VTN: the paths do not exist, the
+answer to `GET /notifiers` has no `WEBSOCKET`, and a subscription that asks
+for the mechanism is refused (400).
 
 ## Access rules
 
@@ -46,6 +71,16 @@ authentication, and the retention of properties the schema does not define
 | `write_vens` | BL, VEN | write VENs and resources; a VEN only its own, and never targets |
 
 A client is treated as Business Logic when its token has `read_all`.
+
+Resource groups have no scopes of their own in 3.1.0. Here: reading needs
+`read_ven_objects` (or `read_all`), and shows a VEN the groups that lead to
+one of its resources; writing needs `write_vens` and Business Logic.
+OpenLEADR, which splits `write_vens` in two scopes, asks for its
+Business Logic half.
+
+`e2e/matrix_test.go` holds all of this as one table: every operation, as a
+client without a token, with a forged one, as the VEN an object belongs to,
+as another VEN, and as Business Logic.
 
 ## How the VTN reads the specification
 
@@ -106,9 +141,46 @@ that can be computed from the event alone: it has a start, a finite
 `duration` (or an `intervalPeriod.duration` to multiply by its intervals),
 and no interval with a period of its own. Every other event is returned.
 
-**Date-times are RFC 3339.** The Definition mentions `0001-01-01T00:00:00`,
-without an offset, as a start that may mean "now"; the schema says RFC 3339,
-and that form is rejected.
+**Date-times are RFC 3339, with one exception.** The User Guide writes the
+start that means "now", or "after the previous interval", as `0001-01-01`
+and as `0001-01-01T00:00:00`. Neither is a date-time of the schema. Both
+are accepted as the start of an interval period, and only there, and are
+written back as `0001-01-01T00:00:00Z`, which is one. Every other date-time
+without an offset is rejected.
+
+**A request without a token is a client without a client ID.** The
+Definition says a non-authenticating VTN answers "all incoming requests,
+without the specified OAuth2 access token", for "public information". Here
+that is a switch on a VTN that otherwise authenticates: a request without a
+token may read programs and events, and since it has no client ID it was
+granted no targets and owns nothing, so it sees what is not targeted and
+nothing else. Operations that need another scope answer 401, which tells a
+client that a token would help. A token that is sent is validated; a bad
+one is a 401, not an anonymous request.
+
+**`requires_auth` is announced as `True` or `False`**, capitalized as the
+Definition writes it, and read without regard to case. A VTN that does not
+announce it is taken to require authentication.
+
+**A discovered VTN is addressed by `local_url`** when it announces one, and
+otherwise by `https://`, its host name, its port and `base_path`. The
+Definition's example announces port 883 for an HTTPS API; nothing here
+assumes a port.
+
+**Sub-intervals are a choice of the reader.** The User Guide says a payload
+with several values "may" be a series of sub-intervals, and that some
+payloads have several values by nature. Nothing in an event says which.
+`timeline` splits when asked to (`Options.SubIntervals`), and then every
+payload with more than one value except those that hold a point.
+
+**An event's `duration` shorter than its intervals cuts them; longer, it
+repeats them.** As the User Guide describes. A row that the duration ends
+in is shortened, not dropped. Repetition is by the span of the intervals,
+first start to last end.
+
+**Answers are compressed with gzip or deflate on request.** The specification does not
+mention it; it is plain HTTP content negotiation, and a client that does
+not ask gets none.
 
 **`/auth/token` errors carry both forms.** The OpenAPI document gives the
 `problem` schema for errors of `/auth/token`, while its unreferenced
@@ -142,7 +214,17 @@ assigns it `read_all`, which a VEN does not have, while a VEN is who needs
 to know how it will be notified.
 
 **Delivery is at least once and in order per callback URL, and not
-durable.** The Definition leaves retries to the VTN.
+durable.** The Definition leaves retries to the VTN. A notification is also
+lost when the VTN cannot read its subscriptions at the moment it would
+send it.
+
+**A subscription says how it wants to be notified, per entry.** 3.1.0 has
+webhooks only, and `callbackUrl` is required. With the extension, an entry
+of `objectOperations` may name the mechanism `WEBSOCKET` and then has no
+`callbackUrl`; without a mechanism, or with `WEBHOOK`, it is a 3.1.0 entry.
+A client is sent over its WebSocket what its `WEBSOCKET` entries select and
+nothing else. (OpenLEADR sends whatever any subscription of the client
+selects.)
 
 **MQTT topics follow who may read what.** The Definition leaves topic names
 to the VTN. Here, below an optional prefix: `programs/<op>`,

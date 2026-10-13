@@ -49,6 +49,43 @@ OpenADR 3.1 requires HTTPS. The library speaks HTTP over whatever it is given an
 - The VTN trusts its `auth.Validator` completely: the client ID and scopes it returns decide everything above. A validator that accepts tokens it should not is a hole no check here can close
 - [docs/CONFORMANCE.md](docs/CONFORMANCE.md) lists where these rules are a reading of text the specification leaves open
 
+### A VTN without authentication
+
+`server.Config.AllowAnonymous` answers requests that carry no token, as the specification allows for public information. Know what it opens before turning it on:
+
+- **Everything without targets becomes public**: every program and event that has no targets can be read by anyone who can reach the VTN, with all its payloads. A program that was only "not targeted yet" is public the moment the switch is on
+- Nothing else is opened. A client without a token has no client ID: it cannot read reports, vens, resources, subscriptions or resource groups, cannot write anything, cannot open a WebSocket, and names targets to no effect. These answer 401
+- A request with a token is validated as always. A wrong token is not downgraded to anonymous access
+- There is no rate limiting: an open VTN is as exposed as any public web server. Put a proxy in front of it
+- Leaving `Validator` out as well makes a VTN on which nobody can authenticate, and so nobody can write through the API: such a VTN is filled through its `Store`
+
+### Compression
+
+Answers are compressed only on request and never mix a secret with text an attacker chooses in one answer in the way the attacks on compressed TLS need: the VTN does not echo request input into the bodies it compresses, and problem answers, which name what was wrong with a request, are not compressed. Turn it off with `Config.DisableCompression` if your threat model wants none.
+
+### Discovery on the local network
+
+Multicast DNS is not authenticated. `discovery.Browse` returns whatever answers on the link, and anyone on the link can answer:
+
+- **What is found is an address, not a VTN to trust.** A VEN that takes its VTN from discovery must still verify the TLS certificate of what it connects to, against a certificate authority it was given, and should not send its client secret to a VTN it cannot verify. The specification lets a VEN be configured to accept unverified certificates for local gateways with self-signed ones; with discovery, that combination gives the VEN's credentials and its obedience to whoever announces first
+- `requires_auth=False` in an announcement is a claim too. A VEN that expects to authenticate should not stop because an announcement says it need not
+- `discovery.Advertise` tells the local network that a VTN is there, its host name, port, path, version and the program names it is given. Do not announce what the network should not know
+- The package parses packets from the network. The parser is bounded and fuzzed, takes no more than 9000 bytes per packet, and answers only queries from the subnet of the interface they arrive on
+
+### WebSockets
+
+`server.Config.WebSocket` lets clients receive notifications on a connection they open:
+
+- The opening handshake is an API call like any other: it needs a bearer token, in the `Authorization` header. A browser cannot set that header on a WebSocket, so a web page cannot open one with a user's credentials; there is no cookie to ride on, and so no origin check
+- **The token is checked when the connection is opened, and not again.** A connection outlives the token it was opened with, and a client whose token was revoked keeps receiving until it disconnects or the VTN restarts. What each notification shows is still decided when it is sent, by the rules for the subscriber. Close the VTN's WebSockets (`Server.Close`), or restart it, to cut off a client
+- Bounded: connections per client (`MaxPerClient`), notifications queued per connection (`Queue`), the size of a message a client may send (64 KiB), and the silence of a client that does not answer pings
+- Use `wss`, which is to say: serve the VTN over HTTPS. A proxy in front has to pass the upgrade through, and its idle timeout has to be longer than `PingInterval`
+- The WebSocket implementation is this module's own, like the MQTT client. It is fuzzed, tested against the framing rules of RFC 6455, and has met one other implementation, OpenLEADR's
+
+### Resource groups
+
+Business Logic writes them; a VEN reads the groups that hold a resource of its own. A VEN is shown the name, attributes and targets of such a group, and not the other members: the IDs of other clients' resources, and of groups that do not lead to one of its own, are left out. Do not put in the name or attributes of a group what its members should not read.
+
 ### Webhooks: the VTN makes requests to URLs its clients choose
 
 A VTN with subscriptions sends HTTP requests to callback URLs that clients name. That is a server-side request forgery surface: a client could name an address inside the VTN's own network. `webhook.Sender` is built for it, and its defaults are the safe ones:
@@ -59,7 +96,7 @@ A VTN with subscriptions sends HTTP requests to callback URLs that clients name.
 - **No proxy** from the environment, which would make the connection on the sender's behalf
 - **Proof before use.** A subscription is accepted only after the URL has echoed a random challenge, so a client cannot aim the VTN's notifications at a server that does not expect them
 - **Nothing learned from failures.** What a client is told about a refused URL does not include what the VTN's network answered
-- Bounded: a timeout per request, a fixed number of attempts, bounded queues
+- Bounded: a timeout per request, a fixed number of attempts, a longest wait between them, bounded queues
 
 `SenderConfig.AllowInsecure` turns the scheme and address rules off and is for tests and closed networks. A custom `SenderConfig.HTTPClient` replaces the default client and its address rule entirely: the rules are then yours to keep.
 
@@ -79,7 +116,7 @@ With `server.Config.MQTT` the VTN publishes notifications to a broker you run. T
 
 Configuring the broker is outside this module, and nothing here checks that it was done.
 
-The MQTT client in this module is its own implementation of MQTT 3.1.1. It is fuzzed and tested against the wire format of the standard, and has not yet met a production broker.
+The MQTT client in this module is its own implementation of MQTT 3.1.1. It is fuzzed, tested against the wire format of the standard, and tested on Eclipse Mosquitto, NanoMQ, HiveMQ Community Edition and EMQX, without TLS and without a login; with a login it has met Mosquitto only, and with TLS no broker but this module's own test broker.
 
 ### Tokens from an identity provider
 
@@ -99,7 +136,8 @@ The MQTT client in this module is its own implementation of MQTT 3.1.1. It is fu
 - Request bodies are limited in size (`server.Config.MaxBodyBytes`, 1 MiB by default) and checked against the schema before they reach the store; response bodies are limited in the client (`client.Config.MaxResponseBytes`, 16 MiB by default)
 - Object IDs are checked against the pattern of the specification before they are used in a URL
 - Internal errors are logged, when a logger is configured, and answered with a bare 500: no detail of the failure reaches the client
-- The decoders are fuzzed
+- The decoders are fuzzed: of JSON objects, of ISO 8601 durations, of MQTT packets, of WebSocket frames, of DNS messages and of CSV tables
+- `timeline` refuses to lay out a table of more than about a million rows, so that an event that repeats one-second intervals for years costs an error and not the memory
 
 ### What is not there
 

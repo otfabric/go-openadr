@@ -15,6 +15,12 @@
 // URL, as the user of -mqtt-user if given, and announces the broker to
 // clients under -mqtt-public-url.
 //
+// With -websocket clients can be notified over a WebSocket, and with
+// -resource-groups the VTN serves resource groups; neither is part of
+// OpenADR 3.1.0. With -anonymous it answers requests without a token, for
+// programs and events that have no targets. With -advertise it announces
+// itself on the local network, for VENs that look for a VTN with DNS-SD.
+//
 // Clients are told where to get a token by URL. When they reach the VTN under
 // another address than -addr, give that address with -public-url.
 //
@@ -28,14 +34,18 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/otfabric/go-openadr/auth"
+	"github.com/otfabric/go-openadr/discovery"
 	"github.com/otfabric/go-openadr/notification/mqtt"
 	"github.com/otfabric/go-openadr/notification/webhook"
 	"github.com/otfabric/go-openadr/server"
@@ -75,10 +85,14 @@ func main() {
 	mqttURL := flag.String("mqtt", "", "MQTT broker to publish notifications to, such as mqtt://127.0.0.1:1883")
 	mqttUser := flag.String("mqtt-user", "", "user name for the broker; the password is read from $VTN_MQTT_PASSWORD")
 	mqttPublic := flag.String("mqtt-public-url", "", "URL of the broker as clients reach it (default: the value of -mqtt)")
+	websockets := flag.Bool("websocket", false, "notify over WebSockets (not part of OpenADR 3.1.0)")
+	groups := flag.Bool("resource-groups", false, "serve resource groups (not part of OpenADR 3.1.0)")
+	anonymous := flag.Bool("anonymous", false, "answer requests without a token, for what has no targets")
+	advertise := flag.String("advertise", "", "announce the VTN on the local network under this name")
 	flag.Var(&clients, "client", "an OAuth2 client as id:secret:role, role being bl or ven; repeatable")
 	flag.Parse()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if len(clients) == 0 {
+	if len(clients) == 0 && !*anonymous {
 		logger.Error("no -client given: nobody could authenticate")
 		os.Exit(2)
 	}
@@ -89,7 +103,8 @@ func main() {
 	if *webhooks || *insecure {
 		sender = webhook.NewSender(webhook.SenderConfig{AllowInsecure: *insecure, Logger: logger})
 	}
-	o := options{addr: *addr, publicURL: strings.TrimSuffix(*publicURL, "/"), clients: clients, sender: sender, store: *store}
+	o := options{addr: *addr, publicURL: strings.TrimSuffix(*publicURL, "/"), clients: clients, sender: sender, store: *store,
+		websockets: *websockets, groups: *groups, anonymous: *anonymous, advertise: *advertise}
 	if *mqttURL != "" {
 		publisher, err := mqtt.NewPublisher(mqtt.PublisherConfig{Logger: logger, Broker: mqtt.Broker{
 			URL: *mqttURL, ClientID: "go-openadr-vtn", Username: *mqttUser, Password: os.Getenv("VTN_MQTT_PASSWORD"),
@@ -115,6 +130,9 @@ type options struct {
 	clients                []auth.Client
 	sender                 *webhook.Sender
 	mqtt                   *server.MQTTConfig
+	// What is not, or not only, OpenADR 3.1.0.
+	websockets, groups, anonymous bool
+	advertise                     string
 	// closers stop background work at shutdown, within its time limit.
 	closers []func(context.Context) error
 }
@@ -141,6 +159,12 @@ func run(o options, logger *slog.Logger) error {
 		TokenHandler: issuer,
 		MQTT:         o.mqtt,
 		Logger:       logger,
+
+		ResourceGroups: o.groups,
+		AllowAnonymous: o.anonymous,
+	}
+	if o.websockets {
+		cfg.WebSocket = &server.WebSocketConfig{}
 	}
 	if sender != nil {
 		// A nil *webhook.Sender in the interface would not be nil.
@@ -158,6 +182,14 @@ func run(o options, logger *slog.Logger) error {
 		WriteTimeout:      30 * time.Second,
 	}
 
+	if o.advertise != "" {
+		ad, err := advertiseVTN(o, logger)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = ad.Close() }()
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	stopped := make(chan struct{})
@@ -166,6 +198,8 @@ func run(o options, logger *slog.Logger) error {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		// The WebSockets first: they are no longer the HTTP server's.
+		_ = vtn.Close()
 		_ = srv.Shutdown(shutdown)
 		// What is still queued gets the rest of the time.
 		if sender != nil {
@@ -181,4 +215,33 @@ func run(o options, logger *slog.Logger) error {
 	}
 	<-stopped
 	return nil
+}
+
+// advertiseVTN announces the VTN with DNS-SD, at the address clients reach
+// it under.
+func advertiseVTN(o options, logger *slog.Logger) (*discovery.Advertiser, error) {
+	public, err := url.Parse(o.publicURL)
+	if err != nil {
+		return nil, err
+	}
+	port := public.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443"}[public.Scheme]
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, fmt.Errorf("-public-url has no port to announce: %w", err)
+	}
+	ad := discovery.Advertisement{Instance: o.advertise, Port: n, BasePath: public.Path, NoAuth: o.anonymous && len(o.clients) == 0, Logger: logger}
+	// A name is announced as it is; an address is of this machine, and
+	// announced under the machine's own name.
+	if net.ParseIP(public.Hostname()) == nil {
+		ad.LocalURL = o.publicURL
+	} else if public.Scheme != "https" {
+		// The default would say https.
+		host, _ := os.Hostname()
+		host, _, _ = strings.Cut(host, ".")
+		ad.LocalURL = "http://" + net.JoinHostPort(host+".local", port) + public.Path
+	}
+	return discovery.Advertise(ad)
 }

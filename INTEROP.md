@@ -12,6 +12,10 @@ specific tests against specific versions.
 | go-openadr VEN and BL | [OpenLEADR](https://github.com/OpenLEADR/openleadr-rs) v0.2.7 (Rust) | Passing, run locally | `make interop` |
 | [ElaadNL openadr3-client](https://github.com/ElaadNL/openadr3-client) 2.4.0 (Python), VEN and BL | go-openadr | Passing, run locally | `make interop` |
 | go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ CE 2026.5, EMQX 6.3.1 | Passing, run locally | `make interop` |
+| go-openadr WebSocket subscriber | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| go-openadr BL and VEN, resource groups | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
 | the specification-driven suite of openadr-interop v0.2.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
 
 Last run: 2026-10-13, on a developer machine (linux/arm64 containers on
@@ -77,6 +81,86 @@ One thing had to be worked around, and it is OpenLEADR's: the topics it
 names for a ven (`events/vens/{id}/...`) are not the ones it publishes on
 (`vens/{id}/events/...`). The test listens on both.
 
+## MQTT on four brokers
+
+`interop/brokers_test.go`. The MQTT client of this module is its own, so
+the question is not only whether another VTN's notifications can be read,
+but whether brokers other people wrote accept what it sends. For each of
+Eclipse Mosquitto, NanoMQ, HiveMQ Community Edition and EMQX, the test
+starts the broker in a container, as its maker ships it (Mosquitto with the
+open configuration its image carries), and puts this module's VTN on it as
+publisher and this module's `mqtt.Subscriber` on it twice, as a VEN and as
+Business Logic, on the topics the VTN names for each:
+
+- create, update and delete of an event arrive in that order, at Business
+  Logic with all targets, at the VEN with the one it was granted;
+- an event for another group does not appear on the VEN's topics;
+- a burst of 200 events arrives complete and in order, at QoS 1;
+- an event of a thousand intervals, about 60 kB, arrives whole;
+- the broker is restarted: the subscriber connects and subscribes again,
+  the publisher connects again, and what is published after arrives.
+
+All four passed without a change to the client. The images are pinned by
+digest in `interop/harness_test.go`; `OPENADR_INTEROP_MOSQUITTO_IMAGE`,
+`..._NANOMQ_IMAGE`, `..._HIVEMQ_IMAGE` and `..._EMQX_IMAGE` select others.
+
+What this does not show: TLS and logins on these brokers (the test connects
+in the clear, without a password), their access control, which is what
+keeps one VEN from reading another's topics (SECURITY.md), and another
+implementation's client reading what this VTN publishes.
+
+## WebSocket notifications from OpenLEADR
+
+`interop/extensions_test.go`. WebSocket notifications are OpenLEADR's
+extension, not OpenADR 3.1.0; this module shares it, and this is the test
+that it is the same thing on both sides. The VEN client subscribes on
+OpenLEADR with the mechanism `WEBSOCKET` and no callback URL, this module's
+`websocket.Subscriber` opens `/notifiers/ws` with the client's token, and
+Business Logic creates a program, creates, updates and deletes an event:
+each arrives, decoded, with OpenLEADR's notification ID. A program targeted
+at someone else does not arrive.
+
+Two things about OpenLEADR that a client has to know, and that the test
+pins down:
+
+- it takes **one WebSocket per client**: a second is answered 409;
+- it notices that a client has gone only when it **fails to send** to it.
+  Until then the place stays taken, so a client that reconnects is answered
+  409 until notifications that would have been its own have failed. This
+  module's subscriber keeps trying, with its backoff.
+
+## Resource groups on OpenLEADR
+
+Same file. Resource groups are proposed for a later revision of OpenADR and
+implemented by OpenLEADR; this module follows its representation. Business
+Logic creates a group that holds the fixture's battery, with targets and
+attributes, and a second group that holds the first; reads them back, by ID
+and by name; updates one, which replaces its children; deletes one. The VEN
+whose battery it is sees both groups, the outer one with the inner as its
+only child; another VEN sees neither, and is refused the group by ID; a VEN
+that tries to create a group is answered 403.
+
+## Discovery with the resolver of the system
+
+Not automated, because it needs a machine with a Multicast DNS responder
+and a network that carries multicast. On macOS, with `examples/discovery`
+or the `-advertise` flag of `examples/vtn`:
+
+```sh
+dns-sd -B _openadr3._tcp local.                     # finds what discovery.Advertise announces
+dns-sd -L "<instance>" _openadr3._tcp local.        # and reads its host, port and TXT record
+dns-sd -R "Some VTN" _openadr3._tcp local. 9443 version=3.1.0 base_path=oa3 requires_auth=False
+                                                    # is found by discovery.Browse
+```
+
+Both directions worked on 2026-10-13 with the mDNSResponder of macOS: the
+system's browser listed and resolved the VTN this module announced, with
+every TXT key, and `Browse` found a service the system registered, with its
+port, TXT record and addresses. `go test ./discovery` with
+`OPENADR_TEST_MDNS=1` checks this module's two halves against each other on
+the machine's real sockets. Not yet tried: Avahi, and the discovery of
+OpenLEADR.
+
 ## The ElaadNL client against this module's VTN
 
 `interop/elaadnl_test.go` runs `server.Server` in the test process with the
@@ -108,6 +192,10 @@ Each of these was found by an interoperability run and changed this module.
   ElaadNL client hands the value to its OAuth2 library and failed. The schema
   says `format: uri`. `server.New` now requires an absolute URL.
 
+- **A callback URL is absent for a WebSocket** (OpenLEADR). `callbackUrl`
+  was written always, as 3.1.0 requires it; it is now left out when a
+  subscription names another mechanism. For a webhook nothing changed.
+
 Differences that needed no change: OpenLEADR writes durations in full
 (`P0Y0M0DT1H0M0S` for `PT1H`) and timestamps with a `+00:00` offset and
 microseconds, and allows one ven object per client. ElaadNL's client cannot
@@ -134,10 +222,12 @@ go run ./cmd/openadr-interop -url http://127.0.0.1:8080 \
 
 ## Not covered
 
-**Webhooks, and the VTN publishing by MQTT, against another
-implementation.** They are tested between this module's two sides only
-(`e2e/`): OpenLEADR has no webhook subscriptions, and the reference
-client's contract has no subscription or notification operations yet. TLS
-between the implementations (the references run over plain HTTP on
-loopback). OpenADR 3.0.x. Any VTN other than OpenLEADR, and any client other
-than ElaadNL's and the conformance suite.
+**Webhooks, and the VTN's side of MQTT, of WebSockets and of resource
+groups, against another implementation.** They are tested between this
+module's two sides only (`e2e/`): OpenLEADR does not deliver to webhooks,
+and the reference client's contract has no subscription, notification or
+resource group operations yet. A client without credentials against another
+VTN, and another anonymous client against this one. Discovery against Avahi
+and against OpenLEADR. TLS between the implementations (the references run
+over plain HTTP on loopback). OpenADR 3.0.x. Any VTN other than OpenLEADR,
+and any client other than ElaadNL's and the conformance suite.

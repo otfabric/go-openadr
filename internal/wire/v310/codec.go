@@ -20,6 +20,8 @@ func Codec() *wire.Codec {
 		VENs:      wire.ObjectCodec[openadr.VEN]{Marshal: marshalVEN, Unmarshal: unmarshalVEN},
 		Resources: wire.ObjectCodec[openadr.Resource]{Marshal: marshalResource, Unmarshal: unmarshalResource},
 
+		ResourceGroups: wire.ObjectCodec[openadr.ResourceGroup]{Marshal: marshalResourceGroup, Unmarshal: unmarshalResourceGroup},
+
 		Subscriptions:         wire.ObjectCodec[openadr.Subscription]{Marshal: marshalSubscription, Unmarshal: unmarshalSubscription},
 		MarshalNotification:   marshalNotification,
 		UnmarshalNotification: unmarshalNotification,
@@ -335,6 +337,9 @@ func marshalSubscription(sub openadr.Subscription, form wire.Form) ([]byte, erro
 			CallbackURL: oo.CallbackURL,
 			BearerToken: oo.BearerToken,
 		}
+		if oo.Mechanism != openadr.MechanismWebhook {
+			w.ObjectOperations[i].Mechanism = string(oo.Mechanism)
+		}
 		for j, o := range oo.Objects {
 			w.ObjectOperations[i].Objects[j] = string(o)
 		}
@@ -370,6 +375,9 @@ func unmarshalSubscription(data []byte) (openadr.Subscription, wire.Form, error)
 			return openadr.Subscription{}, 0, invalid(f+".operations", "is required")
 		}
 		out := openadr.ObjectOperation{CallbackURL: oo.CallbackURL, BearerToken: oo.BearerToken}
+		if oo.Mechanism != string(openadr.MechanismWebhook) {
+			out.Mechanism = openadr.Mechanism(oo.Mechanism)
+		}
 		for _, o := range oo.Objects {
 			out.Objects = append(out.Objects, openadr.ObjectType(o))
 		}
@@ -401,6 +409,8 @@ func marshalNotification(n openadr.Notification) ([]byte, error) {
 		object, err = marshalVEN(o, wire.Object)
 	case openadr.Resource:
 		object, err = marshalResource(o, wire.Object)
+	case openadr.ResourceGroup:
+		object, err = marshalResourceGroup(o, wire.Object)
 	default:
 		return nil, fmt.Errorf("openadr: a notification cannot carry a %T", n.Object)
 	}
@@ -424,6 +434,7 @@ func unmarshalNotification(data []byte) (openadr.Notification, error) {
 		return openadr.Notification{}, invalid("object", "is required")
 	}
 	n := openadr.Notification{
+		ID:         w.ID,
 		ObjectType: openadr.ObjectType(w.ObjectType), Operation: openadr.Operation(w.Operation), Targets: w.Targets,
 	}
 	var err error
@@ -442,6 +453,8 @@ func unmarshalNotification(data []byte) (openadr.Notification, error) {
 		n.Object, _, err = unmarshalVEN(w.Object)
 	case openadr.ObjectResource:
 		n.Object, _, err = unmarshalResource(w.Object)
+	case openadr.ObjectResourceGroup:
+		n.Object, _, err = unmarshalResourceGroup(w.Object)
 	case "":
 		return openadr.Notification{}, invalid("objectType", "is required")
 	default:
@@ -456,7 +469,7 @@ func unmarshalNotification(data []byte) (openadr.Notification, error) {
 // --- notifiers
 
 func marshalNotifiers(n openadr.Notifiers) ([]byte, error) {
-	w := notifiers{Webhook: n.Webhook}
+	w := notifiers{Webhook: n.Webhook, WebSocket: n.WebSocket}
 	if n.MQTT != nil {
 		a := n.MQTT.Authentication
 		w.MQTT = &mqttBinding{
@@ -475,7 +488,7 @@ func unmarshalNotifiers(data []byte) (openadr.Notifiers, error) {
 	if err := decode(data, &w); err != nil {
 		return openadr.Notifiers{}, err
 	}
-	n := openadr.Notifiers{Webhook: w.Webhook}
+	n := openadr.Notifiers{Webhook: w.Webhook, WebSocket: w.WebSocket}
 	if w.MQTT != nil {
 		a := w.MQTT.Authentication
 		n.MQTT = &openadr.MQTTBinding{

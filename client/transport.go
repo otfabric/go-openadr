@@ -360,6 +360,17 @@ func (q ResourceQuery) values() url.Values {
 	return newParams(q.Page).str("resourceName", q.Name).str("venID", q.VENID).list("targets", q.Targets).Values
 }
 
+// ResourceGroupQuery filters a search for resource groups.
+type ResourceGroupQuery struct {
+	Name    string
+	Targets []string
+	Page
+}
+
+func (q ResourceGroupQuery) values() url.Values {
+	return newParams(q.Page).str("resourceGroupName", q.Name).list("targets", q.Targets).Values
+}
+
 // SubscriptionQuery filters a search for subscriptions.
 type SubscriptionQuery struct {
 	ProgramID  string

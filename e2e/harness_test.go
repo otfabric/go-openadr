@@ -8,6 +8,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,6 +36,19 @@ type options struct {
 	jwt bool
 	// mqtt adds a broker and makes the VTN publish to it.
 	mqtt bool
+	// anonymous makes the VTN answer requests without a token.
+	anonymous bool
+	// groups makes the VTN serve resource groups.
+	groups bool
+	// websocket makes the VTN notify over WebSockets.
+	websocket *server.WebSocketConfig
+	// noWebhooks leaves the webhook sender out.
+	noWebhooks bool
+	// noCompression makes the VTN answer without gzip.
+	noCompression bool
+	// sender replaces the settings of the webhook sender; its HTTP client
+	// is always the one that trusts the test servers.
+	sender *webhook.SenderConfig
 }
 
 // stack is a running VTN with clients for one Business Logic client
@@ -51,6 +66,10 @@ type stack struct {
 	Broker *mqtttest.Broker
 	// idp mints tokens, with options.jwt.
 	idp *identityProvider
+	// VTN is the server itself.
+	VTN *server.Server
+	// Server is the HTTP server it is mounted on.
+	Server *httptest.Server
 
 	issuer *auth.Issuer
 }
@@ -65,11 +84,18 @@ func start(t testing.TB, o options) *stack {
 	// requires. The URL is known once the listener is; the VTN is mounted
 	// after, because it announces its token endpoint by URL.
 	mux := http.NewServeMux()
-	ts := httptest.NewTLSServer(mux)
+	ts := httptest.NewUnstartedServer(mux)
+	// Tests that cut connections would fill the output with the server's
+	// complaints about them.
+	ts.Config.ErrorLog = log.New(io.Discard, "", 0)
+	ts.StartTLS()
 	t.Cleanup(ts.Close)
-	s.URL, s.HTTP = ts.URL+"/openadr3", ts.Client()
+	s.URL, s.HTTP, s.Server = ts.URL+"/openadr3", ts.Client(), ts
 
-	cfg := server.Config{Store: s.Store, TokenURL: s.URL + "/auth/token"}
+	cfg := server.Config{
+		Store: s.Store, TokenURL: s.URL + "/auth/token",
+		AllowAnonymous: o.anonymous, ResourceGroups: o.groups, WebSocket: o.websocket, DisableCompression: o.noCompression,
+	}
 	if o.jwt {
 		s.idp = newIdentityProvider(t)
 		cfg.Validator, cfg.TokenURL = s.idp.validator, "https://idp.example/oauth/token"
@@ -90,8 +116,15 @@ func start(t testing.TB, o options) *stack {
 	// client that trusts the test certificate, which also means that its
 	// own rule against private addresses is not in force here; that rule
 	// has tests of its own in package webhook.
-	sender := webhook.NewSender(webhook.SenderConfig{HTTPClient: ts.Client(), Backoff: 20 * time.Millisecond})
-	cfg.Webhooks = sender
+	senderConfig := webhook.SenderConfig{Backoff: 20 * time.Millisecond}
+	if o.sender != nil {
+		senderConfig = *o.sender
+	}
+	senderConfig.HTTPClient = ts.Client()
+	sender := webhook.NewSender(senderConfig)
+	if !o.noWebhooks {
+		cfg.Webhooks = sender
+	}
 	shutdown := func(closer func(context.Context) error) {
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -122,6 +155,10 @@ func start(t testing.TB, o options) *stack {
 		t.Fatal(err)
 	}
 	mux.Handle("/openadr3/", http.StripPrefix("/openadr3", vtn))
+	s.VTN = vtn
+	// Before the HTTP server, which waits for the connections the VTN has
+	// taken over.
+	t.Cleanup(func() { _ = vtn.Close() })
 
 	if s.BL, err = client.NewBL(s.config("bl", "bl-secret")); err != nil {
 		t.Fatal(err)
@@ -252,4 +289,13 @@ func (s *tokenSource) Invalidate(token string) {
 	if s.current == token {
 		s.current = ""
 	}
+}
+
+// newPlainServer serves a handler over HTTP, for a test that plays a VTN
+// itself, and returns its URL.
+func newPlainServer(t testing.TB, h http.Handler) string {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv.URL
 }

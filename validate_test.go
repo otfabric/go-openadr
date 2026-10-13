@@ -118,3 +118,34 @@ func TestErrorAndValue(t *testing.T) {
 		t.Error("Bool")
 	}
 }
+
+func TestValidateExtensions(t *testing.T) {
+	ok := []interface{ Validate() error }{
+		ResourceGroup{Name: "g"},
+		ResourceGroup{Name: "g", Targets: []string{"t"}, Attributes: []ValuesMap{{Type: "A", Values: []Value{Number(1)}}},
+			Children: []ResourceGroupChild{{Type: ChildResource, ID: "r1"}, {Type: ChildResourceGroup, ID: "g1"}}},
+		Subscription{ClientName: "c", ObjectOperations: []ObjectOperation{{Mechanism: MechanismWebSocket}}},
+		Subscription{ClientName: "c", ObjectOperations: []ObjectOperation{{Mechanism: MechanismWebhook, CallbackURL: "https://example.com/"}}},
+	}
+	for i, v := range ok {
+		if err := v.Validate(); err != nil {
+			t.Errorf("valid object %d: %v", i, err)
+		}
+	}
+	bad := map[string]interface{ Validate() error }{
+		"resourceGroupName":               ResourceGroup{},
+		"children[0].type":                ResourceGroup{Name: "g", Children: []ResourceGroupChild{{Type: "device", ID: "x"}}},
+		"children[1].id":                  ResourceGroup{Name: "g", Children: []ResourceGroupChild{{Type: ChildResource, ID: "r"}, {Type: ChildResource, ID: "not an id"}}},
+		"targets[0]":                      ResourceGroup{Name: "g", Targets: []string{""}},
+		"attributes[0].type":              ResourceGroup{Name: "g", Attributes: []ValuesMap{{}}},
+		"objectOperations[0].mechanism":   Subscription{ClientName: "c", ObjectOperations: []ObjectOperation{{Mechanism: "PIGEON", CallbackURL: "https://example.com/"}}},
+		"objectOperations[0].callbackUrl": Subscription{ClientName: "c", ObjectOperations: []ObjectOperation{{Mechanism: MechanismWebSocket, CallbackURL: "https://example.com/"}}},
+		"objectOperations[1].callbackUrl": Subscription{ClientName: "c", ObjectOperations: []ObjectOperation{{Mechanism: MechanismWebSocket}, {Mechanism: MechanismWebhook}}},
+	}
+	for field, v := range bad {
+		var invalid *ValidationError
+		if err := v.Validate(); !errors.As(err, &invalid) || invalid.Field != field {
+			t.Errorf("got %v, want a fault in %s", err, field)
+		}
+	}
+}

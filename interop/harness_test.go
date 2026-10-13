@@ -24,6 +24,14 @@ import (
 var defaultImages = map[string]string{
 	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:a8fbdd858b15c4ccf797cd80695ab5b4abc11d1dcf6890efb7a8a03e98ef5f6c",
 	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:a976273dab5481cb2e7c90af6a6200aad7ecb0ebbffa8a8022f6a48a2d64ccaa",
+
+	// MQTT brokers, as their makers publish them, for brokers_test.go:
+	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition
+	// 2026.5 and EMQX 6.3.1.
+	"mosquitto": "eclipse-mosquitto@sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408",
+	"nanomq":    "emqx/nanomq@sha256:4c01fb8421b0c5cdf9ad17a913bcdcdb13c6a25947e17caae2b09a338aa669f5",
+	"hivemq":    "hivemq/hivemq-ce@sha256:bac6d4d1d815bffe4bc9a7fca8d06ea12b32d34f84ef2f1851ff4548560ee67b",
+	"emqx":      "emqx/emqx@sha256:5ecbf93d04e34aaf4096af074e93b773d0838c8ea668cfabdec7976b272d9606",
 }
 
 func image(adapter string) string {

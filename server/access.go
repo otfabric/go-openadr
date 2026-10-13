@@ -54,6 +54,11 @@ func queryTargets(values []string) ([]string, error) {
 // grantedTargets returns the targets Business Logic has granted a client:
 // those of the ven objects with its clientID and of their resources.
 func (s *Server) grantedTargets(ctx context.Context, clientID string) ([]string, error) {
+	if clientID == "" {
+		// A client that did not authenticate. (An empty filter would
+		// select every ven.)
+		return nil, nil
+	}
 	vens, err := s.store.VENs().List(ctx, storage.VENFilter{ClientID: clientID})
 	if err != nil {
 		return nil, err

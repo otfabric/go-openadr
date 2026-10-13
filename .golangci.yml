@@ -14,6 +14,9 @@ linters:
   settings:
     exhaustive:
       default-signifies-exhaustive: true  # a default: case satisfies exhaustiveness
+    misspell:
+      ignore-rules:
+        - mosquitto  # the Eclipse Mosquitto broker, not the insect
 
 formatters:
   enable:

@@ -113,6 +113,42 @@ type Resource struct {
 	Targets []string
 }
 
+// ResourceGroup is a named set of resources and of other resource groups,
+// by which Business Logic arranges the resources of its VENs, for example
+// by feeder or by building.
+//
+// Resource groups are not part of OpenADR 3.1.0. They are proposed for a
+// later revision and implemented here as OpenLEADR implements them; expect
+// them to change with the specification.
+type ResourceGroup struct {
+	Metadata
+
+	Name       string
+	Attributes []ValuesMap
+	Targets    []string
+	// Children are the members of the group. A VEN is shown the resources
+	// that are its own, and the groups that lead to one.
+	Children []ResourceGroupChild
+}
+
+// ResourceGroupChildType says what a member of a resource group is.
+type ResourceGroupChildType string
+
+// The kinds of member a resource group has.
+const (
+	// ChildResource is a resource of a VEN.
+	ChildResource ResourceGroupChildType = "ven_resource"
+	// ChildResourceGroup is another resource group.
+	ChildResourceGroup ResourceGroupChildType = "resource_group"
+)
+
+// ResourceGroupChild is a member of a resource group: the ID of a resource
+// or of a resource group.
+type ResourceGroupChild struct {
+	Type ResourceGroupChildType
+	ID   string
+}
+
 // Interval is a temporal window with payloads. ID is chosen by the client
 // that creates the interval and is not a sequence number.
 type Interval struct {

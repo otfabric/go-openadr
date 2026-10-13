@@ -49,7 +49,7 @@ func (s *Server) writeTopics(w http.ResponseWriter, r *http.Request, t openadr.T
 }
 
 func (s *Server) getNotifiers(w http.ResponseWriter, r *http.Request, _ auth.Identity) {
-	n := openadr.Notifiers{Webhook: s.webhooks != nil}
+	n := openadr.Notifiers{Webhook: s.webhooks != nil, WebSocket: s.sockets != nil}
 	if s.mqtt != nil {
 		n.MQTT = &openadr.MQTTBinding{URIs: s.mqtt.URIs, Serialization: "JSON", Authentication: s.mqtt.Authentication}
 	}
@@ -145,6 +145,9 @@ func (s *Server) publish(ctx context.Context, op openadr.Operation, sub subject)
 	case openadr.ObjectResource:
 		send("resources"+verb, nil)
 		send("vens/"+sub.venID+"/resources"+verb, nil)
+	case openadr.ObjectResourceGroup:
+		// Not of OpenADR 3.1.0, which has no topic for it: nobody is
+		// notified of resource groups.
 	}
 }
 
