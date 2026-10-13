@@ -123,7 +123,7 @@ fuzz: ## Run the parser fuzz targets for FUZZTIME each (default 30s)
 	@go test -run='^$$' -fuzz='^FuzzParseMessage$$' -fuzztime=$(FUZZTIME) ./discovery
 	@go test -run='^$$' -fuzz='^FuzzReadCSV$$' -fuzztime=$(FUZZTIME) ./timeline
 
-# Reference implementations for 'make interop': otfabric/openadr-interop v0.3.0
+# Reference implementations for 'make interop': otfabric/openadr-interop v0.4.0
 # (the OpenLEADR VTN v0.2.7 with a Mosquitto broker, and the ElaadNL
 # openadr3-client 2.4.0), pinned by multi-arch index digest.
 # Keep in step with interop/harness_test.go and .github/workflows/interop.yml.
@@ -134,8 +134,8 @@ fuzz: ## Run the parser fuzz targets for FUZZTIME each (default 30s)
 # passing by skipping would say nothing.
 # Override to test other builds, e.g. the local ones of a checkout of that repository:
 #   make interop OPENADR_INTEROP_OPENLEADR_IMAGE=ghcr.io/otfabric/openadr-interop-openleadr:dev
-OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:780fd3c7f39d3c3ddb80f8de372c22ff4e88f5e33bb29e4dc082b2fcaaa3a40e
-OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3e10097737c75de0d1d4b359e72a8b76a01ad8ab939844fad5aaf71dc75a20c8
+OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:b8221b89983a5b7cdc69cea92443e05416336ad1ddcd843250770d65950b4fb2
+OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:db5e0d61814fd12ab2c78926c482f15b466f1639a0eae692d58657f9fdfd093a
 
 test-interop: ## Run the interop suite: OpenLEADR and ElaadNL reference images, and four MQTT brokers (needs Docker)
 	@echo "Running interop tests against $(OPENADR_INTEROP_OPENLEADR_IMAGE) and $(OPENADR_INTEROP_ELAADNL_IMAGE)"

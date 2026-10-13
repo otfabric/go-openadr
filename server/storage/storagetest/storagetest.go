@@ -20,6 +20,7 @@ package storagetest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -55,6 +56,80 @@ func Run(t *testing.T, cfg Config) {
 	t.Run("Order", func(t *testing.T) { order(t, cfg.New(t)) })
 	t.Run("Concurrency", func(t *testing.T) { concurrency(t, cfg.New(t)) })
 	t.Run("Fidelity", func(t *testing.T) { fidelity(t, cfg) })
+	// A store that is also an Outbox is held to that too.
+	if _, ok := cfg.New(t).(storage.Outbox); ok {
+		t.Run("Outbox", func(t *testing.T) { outbox(t, cfg) })
+	}
+}
+
+func outbox(t *testing.T, cfg Config) {
+	ctx := context.Background()
+	s := cfg.New(t)
+	box := s.(storage.Outbox)
+	at := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	delivery := func(id string) storage.Delivery {
+		return storage.Delivery{ID: id, SubscriptionID: "s-" + id, CallbackURL: "https://example.com/hook?" + id, BearerToken: "token-" + id,
+			Body: []byte(`{"objectType":"PROGRAM","operation":"CREATE","object":{"programName":"` + id + ` \u00e9"}}`), Created: at}
+	}
+	if list, err := box.Deliveries(ctx); err != nil || len(list) != 0 {
+		t.Fatalf("an empty outbox: %+v, %v", list, err)
+	}
+	for _, id := range []string{"c", "a", "b"} {
+		must(t, "delivery "+id, box.AddDelivery(ctx, delivery(id)))
+	}
+	if err := box.AddDelivery(ctx, delivery("a")); err == nil {
+		t.Error("a second delivery with an ID in use was taken")
+	}
+	must(t, "removing a delivery", box.RemoveDelivery(ctx, "a"))
+	must(t, "removing a delivery that is not there", box.RemoveDelivery(ctx, "a"))
+	must(t, "removing a delivery that never was", box.RemoveDelivery(ctx, "nope"))
+	must(t, "a delivery after a removal", box.AddDelivery(ctx, delivery("d")))
+	check := func(when string, box storage.Outbox) {
+		t.Helper()
+		list, err := box.Deliveries(ctx)
+		if err != nil || len(list) != 3 || list[0].ID != "c" || list[1].ID != "b" || list[2].ID != "d" {
+			t.Fatalf("%s: the outbox holds %+v, %v; want c, b, d, oldest first", when, list, err)
+		}
+		got, want := list[1], delivery("b")
+		if got.SubscriptionID != want.SubscriptionID || got.CallbackURL != want.CallbackURL || got.BearerToken != want.BearerToken || !got.Created.Equal(want.Created) {
+			t.Errorf("%s: a delivery came back as %+v, want %+v", when, got, want)
+		}
+		// The body is JSON, and comes back as the same JSON.
+		var a, b any
+		if json.Unmarshal(got.Body, &a) != nil || json.Unmarshal(want.Body, &b) != nil || !reflect.DeepEqual(a, b) {
+			t.Errorf("%s: the body came back as %s, want %s", when, got.Body, want.Body)
+		}
+	}
+	check("as recorded", box)
+	// Many at once: all are kept, none twice.
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id := fmt.Sprintf("p%02d", i)
+			if err := box.AddDelivery(ctx, delivery(id)); err != nil {
+				t.Errorf("adding %s: %v", id, err)
+			}
+			if i%2 == 0 {
+				if err := box.RemoveDelivery(ctx, id); err != nil {
+					t.Errorf("removing %s: %v", id, err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if list, _ := box.Deliveries(ctx); len(list) != 13 {
+		t.Errorf("%d deliveries are kept, want 13", len(list))
+	}
+	for i := 1; i < 20; i += 2 {
+		must(t, "removing", box.RemoveDelivery(ctx, fmt.Sprintf("p%02d", i)))
+	}
+	if cfg.Reopen == nil {
+		return
+	}
+	// What an outbox is for: it is all there after a restart.
+	check("after a restart", cfg.Reopen(t, s).(storage.Outbox))
 }
 
 func meta(id string) openadr.Metadata { return openadr.Metadata{ID: id} }

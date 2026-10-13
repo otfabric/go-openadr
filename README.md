@@ -111,8 +111,10 @@ has that the others do not show.
 | OpenADR 3.1.0 | ✅ | ✅ | ✅ |
 | OpenADR 3.0.1 | — planned | — | ✅ |
 | Programs, events, reports, VENs, resources | ✅ | ✅ | ✅ |
-| Subscriptions | ✅ | ✅ delivered over WebSocket | ✅ |
+| Subscriptions | ✅ | ✅ delivered over WebSocket | ✅ with the operation names of 3.0.1 ⁸ |
 | Webhook notifications | ✅ sender and receiver | — | — not documented |
+| Webhook notifications that survive a restart of the VTN | ✅ opt-in outbox ⁹ | n/a | n/a |
+| Notifications of reads (operation `READ`) | ✅ opt-in | — not documented | n/a |
 | MQTT notifications | ✅ publisher and subscriber ¹ | ✅ | ✅ client, optional extra |
 | MQTT topic operations (12) | ✅ | ✅ 11, none for subscriptions | ✅ |
 | WebSocket notifications (not in the specification) | ✅ VTN and client ³ | ✅ VTN, experimental | — |
@@ -133,11 +135,12 @@ has that the others do not show.
 | Cancellation and deadlines per call | ✅ `context.Context` | ✅ async | — timeouts |
 | Structured logging | ✅ `log/slog`, opt-in, client and VTN | ✅ | ✅ |
 | Metrics hooks | ✅ client, VTN and notifications; no metrics library needed | — not documented | — |
+| Rate limiting on the VTN | ✅ hook, token bucket included; 429 with `Retry-After` | — not documented | n/a |
 | Client retries with backoff | ✅ opt-in policy, `Retry-After` honoured | — not documented | — not documented |
 | Error categories to test for | ✅ sentinels for `errors.Is` | ✅ error enum | ✅ exceptions |
 | Dependencies | none (standard library) | many crates; PostgreSQL to run | several packages |
 | Run against the OpenADR Alliance test suite | — | ✅ 166 of 168 applicable, by its authors | — not documented |
-| Cross-tested against other implementations in CI | ✅ against both | — not documented | — not documented |
+| Cross-tested against other implementations in CI | ✅ against both, clients and VTN ¹⁰ | — not documented | — not documented |
 | MQTT tested on several brokers | ✅ Mosquitto, NanoMQ, HiveMQ CE, EMQX | — not documented | — not documented |
 | mDNS tested against other implementations | ✅ Avahi, Apple mDNSResponder, OpenLEADR | — not documented | n/a |
 | Failure-injection tests (store, network, webhooks, broker, tokens, crash) | ✅ `make chaos` | — not documented | — not documented |
@@ -179,6 +182,21 @@ need a dependency, which this module does not take.
 SQLite and on PostgreSQL. It is a module of its own, so that the database
 drivers are not dependencies of go-openadr, and it is an example: read it,
 copy it, hold your own to the same test suite (`storagetest.Run`).
+
+⁸ openadr3-client 2.4.0 names the operations of a subscription `GET`,
+`POST`, `PUT` and `DELETE`, as OpenADR 3.0.1 did; 3.1.0 names them `READ`,
+`CREATE`, `UPDATE` and `DELETE`. Against a 3.1.0 VTN, this one or
+OpenLEADR's, it can make and read a subscription to `DELETE` only. See
+[INTEROP.md](INTEROP.md).
+
+⁹ `server.Config.Outbox`: a notification is recorded before it is sent and
+forgotten when the webhook has confirmed it, so that what was on its way
+when the VTN stopped is sent after it starts again. The journal file store
+is an outbox, and so are the SQLite and PostgreSQL examples.
+
+¹⁰ This module's clients against the OpenLEADR VTN, and the ElaadNL client
+against this module's VTN: objects, subscriptions with a webhook delivered,
+MQTT, resource groups, access without a token, compression, TLS.
 
 **Choose go-openadr if** you want both sides of the protocol in one Go
 module without dependencies, a VTN you embed in your own service with your
@@ -379,9 +397,26 @@ defer sender.Close(ctx)
 vtn, err := server.New(server.Config{ /* ... */ Webhooks: sender})
 ```
 
-Delivery is at least once and not durable: a client that must not miss a
-change still polls now and then.
+Delivery is at least once. By default it is not durable: what is on its
+way when the VTN stops is lost. A VTN with an outbox records each
+notification before it sends it, and sends again after a restart what no
+webhook confirmed, in the order it happened, for as long as
+`NotificationTTL` says:
+
+```go
+store, err := storage.OpenFile("vtn.journal", storage.FileOptions{}) // a Store and an Outbox
+vtn, err := server.New(server.Config{ /* ... */ Store: store, Webhooks: sender, Outbox: store})
+defer vtn.Close()
+```
+
+A client that must not miss a change still polls now and then: an outbox
+does not help a webhook that is away for longer than that.
 [examples/notifications](examples/notifications/main.go) runs both sides.
+
+A subscription may name the operation `READ`. OpenADR 3.1.0 lists it and
+does not say what it means; a VTN with `server.Config.NotifyReads` notifies
+such a subscriber whenever an object it may see is read, by ID or in a
+search. It is off by default.
 
 A VTN with an MQTT broker publishes the same notifications there
 (`server.Config.MQTT` with a `mqtt.Publisher`), and a client asks the VTN
@@ -422,8 +457,9 @@ sub, err := websocket.NewSubscriber(websocket.SubscriberConfig{
 ```
 
 The subscriber reconnects by itself. Whichever way it is notified, a client
-that must not miss a change searches after every reconnect: none of the
-three keeps notifications for a client that is away.
+that must not miss a change searches after every reconnect: MQTT and the
+WebSocket keep nothing for a client that is away, and a webhook only what
+an outbox holds.
 [examples/websocket](examples/websocket/main.go) runs both sides.
 
 ## Examples
@@ -524,6 +560,10 @@ start,end,type,values
 - **Retries.** None by default, beyond one retry with a fresh token after a
   401. `client.Config.RetryPolicy` adds them with backoff, for what is
   safe to repeat: see [OBSERVABILITY.md](OBSERVABILITY.md).
+- **Rate limiting.** None by default. `server.Config.Limiter` is asked for
+  every request of an identified client; `server.NewRateLimiter` is a token
+  bucket per client. A refused request is answered 429 with `Retry-After`,
+  which a client of this module with a retry policy waits out.
 - **Logging and metrics.** The library is silent and counts nothing unless
   told to: each part takes a `slog.Logger` and a small metrics interface in
   its configuration. See [OBSERVABILITY.md](OBSERVABILITY.md).

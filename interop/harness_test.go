@@ -14,16 +14,17 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 )
 
-// The reference images of otfabric/openadr-interop v0.3.0, by multi-arch
+// The reference images of otfabric/openadr-interop v0.4.0, by multi-arch
 // index digest. Keep in step with the Makefile and .github/workflows/interop.yml.
 var defaultImages = map[string]string{
-	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:780fd3c7f39d3c3ddb80f8de372c22ff4e88f5e33bb29e4dc082b2fcaaa3a40e",
-	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3e10097737c75de0d1d4b359e72a8b76a01ad8ab939844fad5aaf71dc75a20c8",
+	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:b8221b89983a5b7cdc69cea92443e05416336ad1ddcd843250770d65950b4fb2",
+	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:db5e0d61814fd12ab2c78926c482f15b466f1639a0eae692d58657f9fdfd093a",
 
 	// MQTT brokers, as their makers publish them, for brokers_test.go:
 	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition
@@ -283,7 +284,17 @@ func hostAccess() (host string, dockerArgs []string) {
 
 func (c clientRunner) run(t *testing.T, args ...string) result {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	r, err := c.try(args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// try is run for a goroutine other than the test's: it reports instead of
+// failing the test.
+func (c clientRunner) try(args ...string) (result, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	full := append([]string{"run", "--rm"}, c.network...)
 	full = append(full, c.img, "client")
@@ -291,12 +302,46 @@ func (c clientRunner) run(t *testing.T, args ...string) result {
 	full = append(full, "--url", c.url, "--fixture", "/fixtures/"+c.fixture+"/fixture.json")
 	out, exit, err := docker(ctx, full...)
 	if err != nil {
-		t.Fatalf("client %s: %v", strings.Join(args, " "), err)
+		return result{}, fmt.Errorf("client %s: %w", strings.Join(args, " "), err)
 	}
 	var r result
 	if err := json.Unmarshal(bytes.TrimSpace(out), &r); err != nil {
-		t.Fatalf("client %s: exit %d and no result document: %s", strings.Join(args, " "), exit, out)
+		return result{}, fmt.Errorf("client %s: exit %d and no result document: %s", strings.Join(args, " "), exit, out)
 	}
 	r.exit = exit
-	return r
+	return r, nil
+}
+
+// offers reports whether the client of an image has an operation for a
+// role, by its capabilities.
+func offers(t *testing.T, img, role, operation string) bool {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, exit, err := docker(ctx, "run", "--rm", img, "print-capabilities")
+	if err != nil || exit != 0 {
+		t.Fatalf("print-capabilities: exit %d, %v", exit, err)
+	}
+	var caps struct {
+		ClientOperations map[string][]string `json:"clientOperations"`
+	}
+	if err := json.Unmarshal(out, &caps); err != nil {
+		t.Fatalf("print-capabilities: %v", err)
+	}
+	return slices.Contains(caps.ClientOperations[role], operation)
+}
+
+// needOperation skips a test of an operation the reference client of the
+// image does not have: an image of openadr-interop before v0.4.0, given by
+// environment variable.
+func needOperation(t *testing.T, adapter, role, operation string) {
+	t.Helper()
+	if img := needImage(t, adapter); !offers(t, img, role, operation) {
+		// The pinned image has it. An older image given by environment
+		// variable may not: say so instead of passing by doing nothing.
+		if os.Getenv("OPENADR_INTEROP_REQUIRE") != "" && os.Getenv("OPENADR_INTEROP_"+strings.ToUpper(adapter)+"_IMAGE") == "" {
+			t.Fatalf("%s has no %s for a %s client", img, operation, role)
+		}
+		t.Skipf("%s has no %s for a %s client (openadr-interop v0.4.0 or later has)", img, operation, role)
+	}
 }

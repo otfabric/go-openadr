@@ -250,11 +250,15 @@ func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request, id auth.Ide
 	}
 }
 
-// Close ends what the Server has open: the WebSockets of its clients. The
-// HTTP server that serves it does not do that when it shuts down, because
-// those connections are no longer its own. New WebSockets are refused
-// after. A Server without WebSockets has nothing to close.
+// Close ends what the Server has running of its own: the WebSockets of its
+// clients, which the HTTP server that serves it does not close when it
+// shuts down, because those connections are no longer its own, and the
+// sending again of recorded notifications (Config.Outbox). New WebSockets
+// are refused after. A Server with neither has nothing to close.
 func (s *Server) Close() error {
+	if s.outbox != nil {
+		s.outbox.close()
+	}
 	if s.sockets != nil {
 		s.sockets.close()
 	}

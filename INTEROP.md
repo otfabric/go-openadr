@@ -11,6 +11,8 @@ specific tests against specific versions.
 | go-openadr VEN and BL | go-openadr | Passing, in CI; every feature | `make e2e` |
 | go-openadr VEN and BL | [OpenLEADR](https://github.com/OpenLEADR/openleadr-rs) v0.2.7 (Rust) | Passing, run locally | `make interop` |
 | [ElaadNL openadr3-client](https://github.com/ElaadNL/openadr3-client) 2.4.0 (Python), VEN and BL | go-openadr | Passing, run locally | `make interop` |
+| ElaadNL client over TLS, and its answers compressed | go-openadr | Passing, run locally | `make interop` |
+| ElaadNL client: subscriptions (webhook delivered), MQTT listener, resource groups, no token | go-openadr | Passing, run locally | `make interop` |
 | go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
 | go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ CE 2026.5, EMQX 6.3.1 | Passing, run locally | `make interop` |
 | go-openadr WebSocket subscriber | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
@@ -18,10 +20,10 @@ specific tests against specific versions.
 | go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | OpenLEADR v0.2.7, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
-| the specification-driven suite of openadr-interop v0.3.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
+| the specification-driven suite of openadr-interop v0.4.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
 
 Last run: 2026-10-13, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.3.0, pinned by
+macOS), against the published images of openadr-interop v0.4.0, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -33,7 +35,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.3.0, pinned by
+Needs Docker. The images are those of openadr-interop v0.4.0, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -212,6 +214,53 @@ and runs the ElaadNL reference client against it from its container:
 - **Access rules** as the ElaadNL client experiences them: target hiding,
   another VEN's objects answered 404, a duplicate `venName` answered 409.
 
+`interop/tls_test.go` does a part of that over HTTPS: the VTN has a
+certificate of an authority made for the test, the client's container is
+given that authority, and the token request and the API calls go over TLS.
+Without the authority the client sends nothing and reports that it could
+not connect, which shows that it checked.
+
+`interop/elaadnl_client_test.go` is what the VTN offers beyond objects:
+
+- **Compression.** The client asks for gzip, as the HTTP library under it
+  does, the VTN answers a search with it, and the client reads all of it.
+- **No token.** A VTN with `AllowAnonymous`, and the library's anonymous
+  client: it reads the programs and events that are open to everyone, gets
+  404 for a targeted program and 401 for vens and for a write. On a VTN
+  that was not told to, the same client gets 401.
+- **Subscriptions and the webhook they lead to.** The VEN client subscribes
+  with a callback URL and a bearer token, reads its subscription back alone
+  and in a search, changes and deletes it; another VEN does not see it. The
+  Business Logic client then deletes an event, and the notification arrives
+  at the callback URL with the token. The receiver there is this module's
+  `webhook.Handler`: neither reference has one.
+- **MQTT.** The client reads the broker and the topics of ten scopes from
+  the VTN, and its MQTT client, on a Mosquitto broker, receives what the
+  VTN publishes: as Business Logic every new program, and as a VEN, on its
+  own topic, the events for a target it was granted and not those for
+  another.
+- **Resource groups.** Business Logic creates a group of a VEN's resource
+  and a group of groups, reads, searches by name and by target, updates
+  and deletes; the VEN whose resource it is sees the group, another does
+  not; a VTN without the extension answers 404.
+
+What that showed about the library, pinned down by the same tests so that a
+change in either implementation is noticed:
+
+- **It names the operations of a subscription as OpenADR 3.0.1 did**: `GET`,
+  `POST`, `PUT`, `DELETE`, where 3.1.0 has `READ`, `CREATE`, `UPDATE`,
+  `DELETE`. This VTN answers a subscription to `POST` with 400 and a problem
+  that names the four it takes; a subscription to `CREATE` the library
+  refuses to send; and a subscription this module's client made to `CREATE`
+  the library cannot read. `DELETE` is the one name they share, which is why
+  the webhook above is one for a deletion.
+- **It requires `MQTT` in `GET /notifiers`**, which the specification leaves
+  optional: the notifiers of this VTN without a broker are an answer it
+  cannot decode.
+- **It requires a `CREATE` topic everywhere.** The topics of one program
+  have none, as the specification says, and the library cannot read them.
+- Its Business Logic client reads subscriptions and cannot make one.
+
 ## What it took
 
 Each of these was found by an interoperability run and changed this module.
@@ -260,11 +309,15 @@ go run ./cmd/openadr-interop -url http://127.0.0.1:8080 \
 
 ## Not covered
 
-**Webhooks, and the VTN's side of MQTT, of WebSockets and of resource
-groups, against another implementation.** They are tested between this
-module's two sides only (`e2e/`): OpenLEADR does not deliver to webhooks,
-and the reference client's contract has no subscription, notification or
-resource group operations yet. A client without credentials against another
-VTN, and another anonymous client against this one. TLS between the implementations (the references run
-over plain HTTP on loopback). OpenADR 3.0.x. Any VTN other than OpenLEADR,
+**A webhook receiver and a WebSocket client of another implementation.**
+Neither reference has one: OpenLEADR does not deliver to webhooks and its
+client library has no receiver, and the ElaadNL client has neither. So this
+VTN's webhooks are received by this module's handler, also when another
+implementation's client made the subscription, and its WebSockets are
+tested between this module's two sides only (`e2e/`). **Subscriptions to
+anything but `DELETE` with the ElaadNL client**, for the reason above.
+**MQTT with a login or over TLS with another implementation's client**: the
+ElaadNL MQTT client connects without credentials whatever the VTN says. A
+client of this module without credentials against another VTN. TLS towards
+the OpenLEADR reference, which serves plain HTTP on loopback. OpenADR 3.0.x. Any VTN other than OpenLEADR,
 and any client other than ElaadNL's and the conformance suite.

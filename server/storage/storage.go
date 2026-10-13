@@ -9,6 +9,7 @@ package storage
 
 import (
 	"context"
+	"time"
 
 	openadr "github.com/otfabric/go-openadr"
 )
@@ -110,6 +111,40 @@ type ResourceFilter struct {
 	Name     string
 	VENID    string
 	ClientID string
+}
+
+// Outbox keeps the notifications a VTN has decided to send to webhooks
+// until each has been delivered, so that a VTN that stops with
+// notifications on their way sends them when it starts again. It is not
+// part of Store: a VTN is given one with server.Config.Outbox, or does
+// without. Memory and File are both a Store and an Outbox.
+//
+// Implementations must be safe for concurrent use.
+type Outbox interface {
+	// AddDelivery records a notification that is to be delivered.
+	AddDelivery(ctx context.Context, d Delivery) error
+	// RemoveDelivery forgets one, because it was delivered or given up
+	// on. Removing one that is not there is not an error.
+	RemoveDelivery(ctx context.Context, id string) error
+	// Deliveries returns those that are recorded, oldest first.
+	Deliveries(ctx context.Context) ([]Delivery, error)
+}
+
+// Delivery is one notification on its way to one webhook.
+type Delivery struct {
+	// ID is assigned by the VTN.
+	ID string
+	// SubscriptionID is the subscription the notification is for: when it
+	// is gone, so is the reason to deliver.
+	SubscriptionID string
+	// CallbackURL and BearerToken are those of the subscription when the
+	// notification was decided.
+	CallbackURL string
+	BearerToken string
+	// Body is the notification as it is to be sent.
+	Body []byte
+	// Created is when the VTN decided to send it.
+	Created time.Time
 }
 
 // ResourceGroupFilter selects resource groups; empty fields match

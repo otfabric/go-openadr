@@ -10,6 +10,12 @@
 // With -webhooks the VTN serves subscriptions and notifies their callback
 // URLs, which have to be https and on public addresses; -insecure-webhooks
 // also allows http and private addresses, for webhooks on the same machine.
+// With -store as well, a notification that no webhook has confirmed when the
+// VTN stops is sent when it starts again. -notify-reads makes a subscription
+// to READ be notified of every read.
+//
+// With -rate the VTN takes that many requests a second from each client, and
+// answers the rest 429 with Retry-After.
 //
 // With -mqtt the VTN publishes its notifications to the MQTT broker at that
 // URL, as the user of -mqtt-user if given, and announces the broker to
@@ -89,6 +95,8 @@ func main() {
 	groups := flag.Bool("resource-groups", false, "serve resource groups (not part of OpenADR 3.1.0)")
 	anonymous := flag.Bool("anonymous", false, "answer requests without a token, for what has no targets")
 	advertise := flag.String("advertise", "", "announce the VTN on the local network under this name")
+	rate := flag.Float64("rate", 0, "requests a second the VTN takes from each client, with twice as many at once (default: no limit)")
+	reads := flag.Bool("notify-reads", false, "notify subscribers of the operation READ when an object is read")
 	flag.Var(&clients, "client", "an OAuth2 client as id:secret:role, role being bl or ven; repeatable")
 	flag.Parse()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -104,7 +112,7 @@ func main() {
 		sender = webhook.NewSender(webhook.SenderConfig{AllowInsecure: *insecure, Logger: logger})
 	}
 	o := options{addr: *addr, publicURL: strings.TrimSuffix(*publicURL, "/"), clients: clients, sender: sender, store: *store,
-		websockets: *websockets, groups: *groups, anonymous: *anonymous, advertise: *advertise}
+		websockets: *websockets, groups: *groups, anonymous: *anonymous, advertise: *advertise, rate: *rate, reads: *reads}
 	if *mqttURL != "" {
 		publisher, err := mqtt.NewPublisher(mqtt.PublisherConfig{Logger: logger, Broker: mqtt.Broker{
 			URL: *mqttURL, ClientID: "go-openadr-vtn", Username: *mqttUser, Password: os.Getenv("VTN_MQTT_PASSWORD"),
@@ -133,6 +141,10 @@ type options struct {
 	// What is not, or not only, OpenADR 3.1.0.
 	websockets, groups, anonymous bool
 	advertise                     string
+	// rate limits each client to so many requests a second, when not 0.
+	rate float64
+	// reads notifies subscribers of READ.
+	reads bool
 	// closers stop background work at shutdown, within its time limit.
 	closers []func(context.Context) error
 }
@@ -140,13 +152,16 @@ type options struct {
 func run(o options, logger *slog.Logger) error {
 	addr, publicURL, clients, sender := o.addr, o.publicURL, o.clients, o.sender
 	var store storage.Store = storage.NewMemory()
+	// With a file, notifications to webhooks are kept in it until they
+	// are delivered.
+	var outbox storage.Outbox
 	if o.store != "" {
 		file, err := storage.OpenFile(o.store, storage.FileOptions{})
 		if err != nil {
 			return err
 		}
 		defer func() { _ = file.Close() }()
-		store = file
+		store, outbox = file, file
 	}
 	issuer, err := auth.NewIssuer(auth.IssuerConfig{Clients: clients})
 	if err != nil {
@@ -162,6 +177,10 @@ func run(o options, logger *slog.Logger) error {
 
 		ResourceGroups: o.groups,
 		AllowAnonymous: o.anonymous,
+		NotifyReads:    o.reads,
+	}
+	if o.rate > 0 {
+		cfg.Limiter = server.NewRateLimiter(o.rate, int(2*o.rate)+1)
 	}
 	if o.websockets {
 		cfg.WebSocket = &server.WebSocketConfig{}
@@ -169,6 +188,9 @@ func run(o options, logger *slog.Logger) error {
 	if sender != nil {
 		// A nil *webhook.Sender in the interface would not be nil.
 		cfg.Webhooks = sender
+		if outbox != nil {
+			cfg.Outbox = outbox
+		}
 	}
 	vtn, err := server.New(cfg)
 	if err != nil {
@@ -198,7 +220,8 @@ func run(o options, logger *slog.Logger) error {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		// The WebSockets first: they are no longer the HTTP server's.
+		// The WebSockets first: they are no longer the HTTP server's. This
+		// also stops handing the sender what is still to be delivered.
 		_ = vtn.Close()
 		_ = srv.Shutdown(shutdown)
 		// What is still queued gets the rest of the time.

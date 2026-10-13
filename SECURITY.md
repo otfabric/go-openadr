@@ -56,7 +56,7 @@ OpenADR 3.1 requires HTTPS. The library speaks HTTP over whatever it is given an
 - **Everything without targets becomes public**: every program and event that has no targets can be read by anyone who can reach the VTN, with all its payloads. A program that was only "not targeted yet" is public the moment the switch is on
 - Nothing else is opened. A client without a token has no client ID: it cannot read reports, vens, resources, subscriptions or resource groups, cannot write anything, cannot open a WebSocket, and names targets to no effect. These answer 401
 - A request with a token is validated as always. A wrong token is not downgraded to anonymous access
-- There is no rate limiting: an open VTN is as exposed as any public web server. Put a proxy in front of it
+- The VTN's `Limiter` can count requests without a token as one client, which does not hold back someone who means harm: an open VTN is as exposed as any public web server. Put a proxy in front of it
 - Leaving `Validator` out as well makes a VTN on which nobody can authenticate, and so nobody can write through the API: such a VTN is filled through its `Store`
 
 ### Compression
@@ -156,4 +156,5 @@ A retry policy makes a client send a request again. The client only does so wher
 
 ### What is not there
 
-- **No rate limiting and no audit log.** Put them in front of the handler
+- **Rate limiting of clients the VTN knows, and nothing before that.** `server.Config.Limiter` (with `server.NewRateLimiter`, a token bucket per client ID) is asked after a token was checked: it keeps a client that has gone wrong from taking the VTN down with it. Requests without a valid token are refused before it, at the cost of checking a token each, and are for a gateway to limit
+- **No audit log.** Put one in front of the handler

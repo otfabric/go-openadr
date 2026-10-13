@@ -141,3 +141,60 @@ func TestSenderHonoursRetryAfter(t *testing.T) {
 		t.Errorf("attempts at %v", times)
 	}
 }
+
+// SendConfirmed says what became of a notification, once.
+func TestSendConfirmed(t *testing.T) {
+	var status atomic.Int64
+	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if s := status.Load(); s != 0 {
+			w.WriteHeader(int(s))
+		}
+	}))
+	defer hook.Close()
+	s := NewSender(SenderConfig{AllowInsecure: true, Backoff: time.Millisecond, Attempts: 2})
+	outcome := func(url string) error {
+		t.Helper()
+		done := make(chan error, 2)
+		s.SendConfirmed(url, "", []byte(`{}`), func(err error) { done <- err })
+		select {
+		case err := <-done:
+			select {
+			case <-done:
+				t.Error("done was called twice")
+			case <-time.After(30 * time.Millisecond):
+			}
+			return err
+		case <-time.After(10 * time.Second):
+			t.Fatal("done was not called")
+			return nil
+		}
+	}
+	permanent := func(err error) bool {
+		var p interface{ Permanent() bool }
+		return errors.As(err, &p) && p.Permanent()
+	}
+	if err := outcome(hook.URL); err != nil {
+		t.Errorf("delivered: %v", err)
+	}
+	status.Store(http.StatusServiceUnavailable)
+	if err := outcome(hook.URL); err == nil || permanent(err) {
+		t.Errorf("a webhook that is down: %v, want an error that is not for good", err)
+	}
+	status.Store(http.StatusGone)
+	var refused *RefusedError
+	if err := outcome(hook.URL); !errors.As(err, &refused) || !permanent(err) {
+		t.Errorf("a webhook that refuses: %v, want a RefusedError", err)
+	}
+	// A URL the sender does not send to is refused for good as well.
+	strict := NewSender(SenderConfig{})
+	done := make(chan error, 1)
+	strict.SendConfirmed("http://example.com/hook", "", nil, func(err error) { done <- err })
+	if err := <-done; !permanent(err) {
+		t.Errorf("an http URL to a sender that wants https: %v", err)
+	}
+	closeSender(t, strict)
+	closeSender(t, s)
+	if err := outcome(hook.URL); !errors.Is(err, openadr.ErrClosed) || permanent(err) {
+		t.Errorf("after Close: %v", err)
+	}
+}

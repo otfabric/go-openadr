@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/wire"
@@ -56,6 +57,18 @@ type record struct {
 	Object json.RawMessage `json:"object,omitempty"`
 	// ReadsAll belongs to a subscription; see SubscriptionRecord.
 	ReadsAll bool `json:"readsAll,omitempty"`
+	// Delivery belongs to the kind "delivery": a notification on its way.
+	Delivery *storedDelivery `json:"delivery,omitempty"`
+}
+
+// storedDelivery is a Delivery in the journal. The body is JSON already,
+// and is kept as it is.
+type storedDelivery struct {
+	Subscription string          `json:"subscription"`
+	URL          string          `json:"url"`
+	Token        string          `json:"token,omitempty"`
+	Body         json.RawMessage `json:"body"`
+	Created      time.Time       `json:"created"`
 }
 
 var fileCodec = v310.Codec()
@@ -146,6 +159,15 @@ func (f *File) apply(ctx context.Context, rec record) error {
 			return err
 		}
 		return f.mem.restoreResourceGroup(g)
+	case "delivery":
+		if rec.Op == "delete" {
+			return f.mem.RemoveDelivery(ctx, rec.ID)
+		}
+		if rec.Delivery == nil {
+			return errors.New("a delivery without its content")
+		}
+		d := rec.Delivery
+		return f.mem.AddDelivery(ctx, Delivery{ID: rec.ID, SubscriptionID: d.Subscription, CallbackURL: d.URL, BearerToken: d.Token, Body: d.Body, Created: d.Created})
 	case "subscription":
 		if rec.Op == "delete" {
 			_, err := f.mem.Subscriptions().Delete(ctx, rec.ID)
@@ -239,6 +261,12 @@ func (f *File) snapshot() ([]byte, error) {
 	for _, v := range subscriptions {
 		b, err := fileCodec.Subscriptions.Marshal(v.Subscription, wire.Object)
 		if err := add(record{Kind: "subscription", ReadsAll: v.ReadsAll}, b, err); err != nil {
+			return nil, err
+		}
+	}
+	deliveries, _ := f.mem.Deliveries(ctx)
+	for _, d := range deliveries {
+		if err := add(deliveryRecord(d), nil, nil); err != nil {
 			return nil, err
 		}
 	}
@@ -429,3 +457,41 @@ func (f *File) Subscriptions() Collection[SubscriptionRecord, SubscriptionFilter
 		},
 	}
 }
+
+func deliveryRecord(d Delivery) record {
+	return record{Kind: "delivery", ID: d.ID, Delivery: &storedDelivery{
+		Subscription: d.SubscriptionID, URL: d.CallbackURL, Token: d.BearerToken, Body: d.Body, Created: d.Created,
+	}}
+}
+
+// outboxChange is a change to the outbox: applied to memory, then written.
+func (f *File) outboxChange(rec record, do func() error) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.broken != nil {
+		return f.broken
+	}
+	if err := do(); err != nil {
+		return err
+	}
+	return f.write(rec)
+}
+
+// AddDelivery implements Outbox: the notification is in the journal, and
+// with FileOptions as they are by default on the disk, before it returns.
+func (f *File) AddDelivery(ctx context.Context, d Delivery) error {
+	if !json.Valid(d.Body) {
+		return errors.New("storage: the body of a delivery is not JSON")
+	}
+	rec := deliveryRecord(d)
+	rec.Op = "create"
+	return f.outboxChange(rec, func() error { return f.mem.AddDelivery(ctx, d) })
+}
+
+// RemoveDelivery implements Outbox.
+func (f *File) RemoveDelivery(ctx context.Context, id string) error {
+	return f.outboxChange(record{Op: "delete", Kind: "delivery", ID: id}, func() error { return f.mem.RemoveDelivery(ctx, id) })
+}
+
+// Deliveries implements Outbox.
+func (f *File) Deliveries(ctx context.Context) ([]Delivery, error) { return f.mem.Deliveries(ctx) }

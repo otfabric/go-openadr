@@ -102,7 +102,28 @@ type Sender struct {
 type delivery struct {
 	url, token string
 	body       []byte
+	// done, when not nil, is told what became of the delivery.
+	done func(error)
 }
+
+func (d delivery) finish(err error) {
+	if d.done != nil {
+		d.done(err)
+	}
+}
+
+// RefusedError is what SendConfirmed reports for a notification that
+// another attempt cannot deliver: the webhook answered that it will not
+// take it, or its URL is one the Sender does not send to.
+type RefusedError struct{ Err error }
+
+func (e *RefusedError) Error() string { return "webhook: refused for good: " + e.Err.Error() }
+func (e *RefusedError) Unwrap() error { return e.Err }
+
+// Permanent reports that trying again is of no use. A VTN that keeps
+// notifications until they are delivered asks an error this way, so that
+// it need not know this package.
+func (e *RefusedError) Permanent() bool { return true }
 
 // NewSender returns a running Sender.
 func NewSender(cfg SenderConfig) *Sender {
@@ -247,20 +268,36 @@ func (s *Sender) Verify(ctx context.Context, callbackURL string) error {
 // Send queues a notification for a webhook and returns at once. bearerToken
 // is sent as the Authorization of the request when not empty.
 func (s *Sender) Send(callbackURL, bearerToken string, body []byte) {
+	s.SendConfirmed(callbackURL, bearerToken, body, nil)
+}
+
+// SendConfirmed is Send for a caller that wants to know what became of the
+// notification. done is called exactly once, from another goroutine or,
+// when the notification is not even queued, from this one: with nil when
+// the webhook confirmed it, with a *RefusedError when it will never take
+// it, and otherwise with the reason it was given up on for now: its
+// attempts are used up, the queue was full, the Sender was closed. A VTN
+// uses it to keep a notification until it is delivered.
+func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, done func(error)) {
+	d := delivery{url: callbackURL, token: bearerToken, body: body, done: done}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(callbackURL))
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
+		d.finish(fmt.Errorf("%w: the sender", openadr.ErrClosed))
 		return
 	}
 	select {
-	case s.queues[int(h.Sum32()%uint32(len(s.queues)))] <- delivery{url: callbackURL, token: bearerToken, body: body}:
+	case s.queues[int(h.Sum32()%uint32(len(s.queues)))] <- d:
+		s.mu.Unlock()
 	default:
+		s.mu.Unlock()
 		s.log("webhook: queue full, notification dropped", callbackURL, nil)
 		if s.cfg.Metrics != nil {
 			s.cfg.Metrics.OnDropped()
 		}
+		d.finish(errors.New("webhook: the queue is full"))
 	}
 }
 
@@ -306,6 +343,7 @@ func (s *Sender) deliver(d delivery) {
 		if s.cfg.Metrics != nil {
 			s.cfg.Metrics.OnFailed(attempts, time.Since(start), err)
 		}
+		d.finish(err)
 	}
 	wait := s.cfg.Backoff
 	for attempt := 1; ; attempt++ {
@@ -314,7 +352,11 @@ func (s *Sender) deliver(d delivery) {
 			if s.cfg.Metrics != nil {
 				s.cfg.Metrics.OnDelivered(attempt, time.Since(start))
 			}
+			d.finish(nil)
 			return
+		}
+		if !retry {
+			err = &RefusedError{Err: err}
 		}
 		if !retry || attempt >= s.cfg.Attempts {
 			failed(attempt, err)

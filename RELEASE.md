@@ -1,5 +1,74 @@
 # go-openadr Releases
 
+## v0.4.0
+
+**Date:** 2026-10-13
+**Previous release:** v0.3.0
+
+## Summary
+
+Three things the VTN left to others until now, each behind a field of its
+configuration that is off by default: webhook notifications that survive a
+restart, a hook for rate limiting that answers 429 with `Retry-After`, and
+notifications of reads. And the VTN's side of what goes beyond reading and
+writing objects has met another implementation's client: the ElaadNL
+client manages subscriptions on it and gets a webhook delivered, listens on
+its MQTT topics, groups resources, reads without a token, takes compressed
+answers and talks to it over TLS.
+
+**Upgrade notes**
+
+- Nothing changes for a VTN that sets none of the new fields.
+- `server.Config` has new fields (`Outbox`, `NotificationTTL`, `RedeliverEvery`, `Limiter`, `NotifyReads`). Code that builds it with unkeyed fields has to be adjusted.
+- A VTN with an `Outbox` has background work of its own: call `Server.Close` when it stops, as a VTN with WebSockets already had to.
+- A store of your own does not have to change: `storage.Outbox` is an interface beside `storage.Store`, not a part of it. `storagetest.Run` tests it when your store implements it.
+- The reference images are those of openadr-interop v0.4.0 (contract 1.3), pinned by digest. The four tests of the VTN against the ElaadNL client's new operations need them, and skip on an older image given by environment variable.
+
+## Changes
+
+### Added
+
+- **Durable webhook notifications** — `server.Config.Outbox`. The VTN records a notification before it hands it to the sender and forgets it when the webhook has confirmed it. What is recorded and not on its way is sent again when the VTN starts and every `RedeliverEvery` (a minute), until it is delivered, the webhook refuses it for good, its subscription is deleted or `NotificationTTL` (a day) has passed. One callback URL gets one notification at a time, oldest first, so the order holds across failures and restarts. `storage.Outbox` is three methods; `storage.Memory`, `storage.File` (in its journal) and the SQLite and PostgreSQL examples implement it.
+- **`webhook.Sender.SendConfirmed`** — `Send` with a function that is told what became of the notification: delivered, refused for good (`*webhook.RefusedError`), or given up on for now. `server.ConfirmingSender` is the interface the outbox asks for.
+- **Rate limiting hook** — `server.Config.Limiter`, one method, asked for every request of a client the VTN has identified. A refusal is answered 429 with a problem object and `Retry-After`, which this module's clients honour when they have a retry policy. `server.NewRateLimiter(perSecond, burst)` is a token bucket per client ID.
+- **Notifications of `READ`** — `server.Config.NotifyReads`. A subscriber to the operation `READ` is told of every object of that type that is read, by ID or in a search, as it may see it; by webhook and over WebSockets. OpenADR 3.1.0 lists the operation and does not say what it means, so it is off by default.
+- **`examples/vtn`**: `-rate` and `-notify-reads`, and with `-store` and `-webhooks` together the file is the outbox too.
+- **Interoperability, the VTN's side** (`interop/elaadnl_client_test.go`, `interop/tls_test.go`): see Verification.
+
+### Changed
+
+- The README's comparison has rows for durable webhooks, notifications of reads and rate limiting, and says what the ElaadNL client's subscriptions are on a 3.1.0 VTN. `INTEROP.md` has the new tests, what they showed, and a shorter list of what is not covered. `docs/CONFORMANCE.md`, `API.md`, `ERRORS.md`, `OBSERVABILITY.md`, `SECURITY.md` and `ARCHITECTURE.md` say what is there now.
+- The interop harness starts this module's VTN with options (TLS, a configuration, a wrapper around the handler), and skips a test whose operation the reference client of the image does not have, saying which.
+
+### Verification
+
+- `make check`: coverage of 91.6% of the library's statements, seven self-contained examples.
+- Unit tests of the token bucket (burst, refill, one client not holding up another, the wait it names) and of the hook; of `SendConfirmed` for a delivery, a final refusal and one given up on.
+- `make e2e`: 48 end-to-end tests. New: a VTN on a journal file that is stopped as a crash stops it, with notifications for a webhook that is down, and whose successor delivers them all, in order; a webhook that refuses for good, a subscription deleted while its notifications wait, and one that expires; subscribers to `READ` told of reads by ID and by search, each as it may see the object, and nobody told without `NotifyReads`; a client that asks too much answered 429 with `Retry-After` while another is not held up, and a client with a retry policy that waits as told without its caller noticing.
+- `storagetest.Run` covers the outbox for the four stores: memory, journal file, SQLite, PostgreSQL (`make storage`), including what a reopened store still holds.
+- **The ElaadNL openadr3-client 2.4.0 against this module's VTN**, beyond objects:
+  - over **TLS**, with a certificate of an authority it was given, token request and API calls; without the authority it sends nothing;
+  - **compressed** answers: it asks for gzip and reads what it gets;
+  - **without a token** on a VTN with `AllowAnonymous`: it reads what is open, and gets 404 and 401 for the rest;
+  - **subscriptions**: it creates, reads, searches, updates and deletes one, another VEN does not see it, and when the ElaadNL Business Logic client deletes an event the notification arrives at the callback URL of the subscription, with its bearer token;
+  - **MQTT**: it reads the broker and the topics of ten scopes from the VTN, and its MQTT client receives on a Mosquitto broker what the VTN publishes, as Business Logic and as a VEN on its own topic;
+  - **resource groups**: create, read, search by name and target, update, delete, a group of groups, and what a VEN sees of them.
+  The last four need operations the reference client has from openadr-interop v0.4.0.
+- `make interop` is green against the reference images of openadr-interop v0.4.0 (OpenLEADR v0.2.7, ElaadNL openadr3-client 2.4.0), pinned by digest, and the four MQTT brokers; everything of v0.3.0 passes unchanged on them.
+- `make chaos`, five rounds. The library's tests on Linux with Go 1.23 and Go 1.26, in containers, with the race detector; the ElaadNL tests also from a Linux container with host networking, as CI runs them.
+
+### Known limitations
+
+- **Durable means webhooks.** Notifications by MQTT and over WebSockets are not kept: a broker has its own persistence, and a WebSocket client searches after it reconnects.
+- **At least once, not exactly once.** A VTN that stops between a webhook's answer and the removal of the record sends that notification again. A webhook has to take a notification twice.
+- **One VTN per outbox.** Two VTN processes on one database would each send what is recorded: the outbox has no claim on a delivery.
+- **The rate limiter knows clients, not addresses.** It is asked after the token was checked; what arrives without a valid token never reaches it and is for a gateway to limit. `NewRateLimiter` keeps its buckets in memory, per process.
+- **What the ElaadNL client cannot do on a 3.1.0 VTN** (this one or OpenLEADR's), all pinned down by tests: subscribe to anything but `DELETE`, because it names the operations as OpenADR 3.0.1 did; read `GET /notifiers` of a VTN without an MQTT broker; read the topics of one program or ven. See `INTEROP.md`.
+- **No other implementation receives this VTN's webhooks or WebSockets**: neither reference has a webhook receiver or a WebSocket client. The webhook in the test above is received by this module's handler.
+- MQTT with a login or over TLS has met no other implementation's client: the ElaadNL MQTT client connects without credentials.
+
+---
+
 ## v0.3.0
 
 **Date:** 2026-10-13

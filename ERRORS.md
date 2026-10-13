@@ -268,7 +268,8 @@ subscription by a mechanism the VTN does not have), 401 (also for a request
 without a token to an operation that needs one, on a VTN with
 `AllowAnonymous`), 403, 404, 405 (with `Allow`), 409 (also for one WebSocket
 too many), 413 (body over `Config.MaxBodyBytes`), 426 (an ordinary request
-to `/notifiers/ws`, or a WebSocket handshake of another version), 500, 501
+to `/notifiers/ws`, or a WebSocket handshake of another version), 429 (with
+`Retry-After`, when `Config.Limiter` refuses the request), 500, 501
 (subscriptions without `Config.Webhooks` and `Config.WebSocket`, the MQTT
 topic operations without `Config.MQTT`, `/notifiers` without any of them,
 `/notifiers/ws` without `Config.WebSocket`; `/auth/token` without a

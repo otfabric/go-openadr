@@ -44,7 +44,9 @@ func (s *Server) notify(ctx context.Context, op openadr.Operation, sub subject) 
 	// The write is done: what follows no longer depends on the client
 	// staying connected.
 	ctx = context.WithoutCancel(ctx)
-	if s.mqtt != nil {
+	// The MQTT binding has topics for what changes an object, and none
+	// for a read.
+	if s.mqtt != nil && op != openadr.OperationRead {
 		s.publish(ctx, op, sub)
 	}
 	if s.webhooks == nil && s.sockets == nil {
@@ -114,7 +116,11 @@ func (s *Server) notify(ctx context.Context, op openadr.Operation, sub subject) 
 				// Counted before it is handed over: a receiver is never
 				// ahead of the metrics.
 				s.notified(MechanismWebhook, sub, op)
-				s.webhooks.Send(oo.CallbackURL, oo.BearerToken, body)
+				if s.outbox != nil {
+					s.outbox.add(ctx, rec.ID, oo.CallbackURL, oo.BearerToken, body)
+				} else {
+					s.webhooks.Send(oo.CallbackURL, oo.BearerToken, body)
+				}
 			}
 			// The callback URL of a WebSocket entry is empty.
 			sent[oo.CallbackURL] = true
@@ -195,6 +201,9 @@ func (s *Server) getSubscription(w http.ResponseWriter, r *http.Request, id auth
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if s.reads {
+		s.notify(r.Context(), openadr.OperationRead, subscriptionSubject(rec.Subscription))
 	}
 	writeObject(s, w, r, http.StatusOK, s.codec.Subscriptions, rec.Subscription)
 }
@@ -299,6 +308,11 @@ func (s *Server) listSubscriptions(w http.ResponseWriter, r *http.Request, id au
 		}
 		if wanted {
 			out = append(out, rec.Subscription)
+		}
+	}
+	if s.reads {
+		for _, sub := range paginate(out, pg) {
+			s.notify(r.Context(), openadr.OperationRead, subscriptionSubject(sub))
 		}
 	}
 	writeList(s, w, r, s.codec.Subscriptions, out, pg)

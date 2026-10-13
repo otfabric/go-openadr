@@ -260,23 +260,39 @@ type Config struct {
 	DisableCompression bool             // no gzip, no deflate
 	WebSocket          *WebSocketConfig // optional, not of 3.1.0: notifications over WebSockets
 	ResourceGroups     bool             // optional, not of 3.1.0: serve /resource_groups
+
+	Outbox          storage.Outbox // optional: webhook notifications that survive a restart
+	NotificationTTL time.Duration  // with Outbox: how long an undelivered one is kept; a day
+	RedeliverEvery  time.Duration  // with Outbox: how often what is left is tried again; a minute
+	Limiter         Limiter        // optional: asked for every request of an identified client
+	NotifyReads     bool           // notify subscribers of READ when an object is read
 }
 
 func (*Server) Close() error
+
+type Limiter interface {
+	Allow(clientID, op string) (ok bool, retryAfter time.Duration)
+}
+func NewRateLimiter(perSecond float64, burst int) *RateLimiter
 ```
 
 A `Server` is an `http.Handler` for the root of the API. It owns no
 listener and no state besides its `Store`: starting, TLS, timeouts and
 shutdown belong to the `http.Server` it is given to. To serve it under a
 path, wrap it in `http.StripPrefix`. The one thing it does own is the
-WebSockets of its clients, when it has `WebSocket`: `Close` ends them, and
-is to be called when the VTN stops, before the `http.Server` is shut down,
-which no longer knows of those connections.
+WebSockets of its clients, when it has `WebSocket`, and the sending of what
+is in its `Outbox`: `Close` ends both, and is to be called when the VTN
+stops, before the `http.Server` is shut down, which no longer knows of
+those connections.
 
 - **`AllowAnonymous`** serves clients that do not authenticate, for public information. A request without an `Authorization` header is treated as a client with no ID that may read programs and events: it sees those without targets, and whatever it names in `targets`, nothing with them. Every operation on objects that belong to a client, every write and the WebSocket answer 401. A request *with* a token is validated as always, so a wrong token is still a 401. With `AllowAnonymous`, `Validator` and `TokenURL` may be left out, for a VTN that authenticates nobody: `GET /auth/server` then answers 501.
 - **Compression.** An answer of 1 KiB or more is compressed for a client whose `Accept-Encoding` allows gzip or deflate: the one the client gives the higher weight, gzip when they weigh the same, with `*` standing for whichever is not named. `deflate` is the zlib format, as HTTP defines it. br and zstd are not offered: the standard library cannot write them. Answers carry `Vary: Accept-Encoding`. Problem answers and the token endpoint are not compressed.
 
 - **`Webhooks`** turns subscriptions to webhooks on. Without it and without `WebSocket`, `/subscriptions` and `GET /notifiers` answer 501. It is an interface (`Verify`, `Send`) that `*webhook.Sender` implements; the sender has workers of its own, and the embedding program closes it on shutdown, after the `http.Server`.
+
+- **`Outbox`** makes webhook notifications durable. Each is recorded there before it is handed to the sender and removed when the webhook has confirmed it, or has refused it for good, or when its subscription is gone, or after `NotificationTTL`. What is recorded and not on its way is handed to the sender again when the VTN starts and every `RedeliverEvery`. One callback URL gets one notification at a time, the oldest first, so the order holds across a restart; a webhook that is down holds back its own notifications and no others. Delivery is at least once: a VTN that stops between the webhook's answer and the removal sends that one again. `storage.Memory` and `storage.File` are outboxes, and so are the stores of [examples/storage](examples/storage/README.md); `Webhooks` has to be a `ConfirmingSender`, which `*webhook.Sender` is. Notifications by MQTT and over WebSockets are not kept.
+- **`Limiter`** is asked once per request, after the token was checked and the scope found sufficient, with the client ID (empty for a request without a token on a VTN with `AllowAnonymous`) and the operation as the metrics name it. A refusal is answered 429 with a problem object and `Retry-After` in whole seconds, rounded up. `NewRateLimiter` is a token bucket per client ID: `perSecond` on average, `burst` at once. It guards against a client gone wrong; what arrives without a valid token never reaches it, and is a gateway's to limit.
+- **`NotifyReads`** makes a subscription to `READ` mean something: every object that is read, by ID or in a search, is notified of to the subscribers that asked for `READ` of its type and may see it, by webhook and over WebSockets. Not by MQTT, which has no topic for it. It is one notification per object per read, and off by default.
 
 - **`TokenURL`** is what clients are told, so it is the address as *they* see it, proxies and path prefixes included.
 - **Without `TokenHandler`**, `POST /auth/token` answers 501, for a VTN whose tokens come from elsewhere.
@@ -384,7 +400,8 @@ type SenderConfig struct {
 - **`Send` never blocks.** A notification for a full queue is dropped and logged.
 - **Order.** Notifications for one callback URL are delivered one at a time, in the order they were sent, retries included. A webhook that is slow or down delays the callbacks that share its worker, and no others.
 - **Retries.** A network failure, a 5xx, a 408 and a 429 are tried again, `Attempts` times in all. A webhook that sends `Retry-After` with such an answer is waited for that long, up to `MaxBackoff`. Any other answer outside 2xx, redirects included, is final.
-- **At least once, not durable.** A webhook may see a notification twice; a notification is lost when its attempts are used up or the process stops.
+- **At least once, and durable only with an outbox.** A webhook may see a notification twice. By itself the sender loses a notification when its attempts are used up or the process stops; a VTN with `server.Config.Outbox` hands it to the sender again.
+- **`SendConfirmed`** is `Send` with a function that is told what became of the notification, exactly once: `nil` when the webhook confirmed it, a `*RefusedError` when it never will (an answer that is final), any other error when it was given up on for now. It is what the VTN's outbox uses.
 - **Which URLs.** https only, no credentials in the URL, and with the default client only public addresses, checked on the address that is connected to, so that a name which resolves into the VTN's own network is refused. `AllowInsecure` lifts the scheme and address rules, for tests and closed networks. A client given in `HTTPClient` is used as it is.
 - **`Verify`** sends `GET <url>?echo=<random>` and requires 200 with that value as the body. Its error is worded for the client that named the URL, and does not say what the VTN's network answered.
 

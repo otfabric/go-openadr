@@ -51,6 +51,14 @@ type options struct {
 	sender *webhook.SenderConfig
 	// metrics is given to the VTN.
 	metrics server.Metrics
+	// outbox makes the VTN keep webhook notifications in its store until
+	// they are delivered, and redeliver says how often it tries again.
+	outbox    bool
+	redeliver time.Duration
+	ttl       time.Duration
+	// limiter and reads are given to the VTN as they are.
+	limiter server.Limiter
+	reads   bool
 }
 
 // stack is a running VTN with clients for one Business Logic client
@@ -68,8 +76,9 @@ type stack struct {
 	Broker *mqtttest.Broker
 	// idp mints tokens, with options.jwt.
 	idp *identityProvider
-	// VTN is the server itself.
-	VTN *server.Server
+	// VTN is the server itself, and Sender what delivers its webhooks.
+	VTN    *server.Server
+	Sender *webhook.Sender
 	// Server is the HTTP server it is mounted on.
 	Server *httptest.Server
 
@@ -97,7 +106,8 @@ func start(t testing.TB, o options) *stack {
 	cfg := server.Config{
 		Store: s.Store, TokenURL: s.URL + "/auth/token",
 		AllowAnonymous: o.anonymous, ResourceGroups: o.groups, WebSocket: o.websocket, DisableCompression: o.noCompression,
-		Metrics: o.metrics,
+		Metrics: o.metrics, Limiter: o.limiter, NotifyReads: o.reads,
+		RedeliverEvery: o.redeliver, NotificationTTL: o.ttl,
 	}
 	if o.jwt {
 		s.idp = newIdentityProvider(t)
@@ -128,6 +138,9 @@ func start(t testing.TB, o options) *stack {
 	if !o.noWebhooks {
 		cfg.Webhooks = sender
 	}
+	if o.outbox {
+		cfg.Outbox = s.Store.(storage.Outbox)
+	}
 	shutdown := func(closer func(context.Context) error) {
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -136,6 +149,7 @@ func start(t testing.TB, o options) *stack {
 		})
 	}
 	shutdown(sender.Close)
+	s.Sender = sender
 
 	if o.mqtt {
 		var err error

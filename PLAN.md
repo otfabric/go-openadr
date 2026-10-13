@@ -97,7 +97,7 @@ Logic retrieves the report.
 | Automated testing | Unit, integration, conformance and interoperability CI | Unit, e2e and interop in CI; the conformance suite runs in openadr-interop's CI against its references, and by hand against this VTN |
 | Go quality | Race detector, `go vet`, linting and relevant fuzz tests pass | Passing (`make check`, `make fuzz`) |
 | Documentation | GoDoc, runnable VEN/VTN examples and compatibility matrix | GoDoc; nine examples, six of them run in CI; comparison matrix in README.md and test matrix in INTEROP.md |
-| Release management | Semantic versioning, changelog and reproducible test results | Releases v0.0.1 to v0.3.0, with notes in RELEASE.md; reference images pinned by digest |
+| Release management | Semantic versioning, changelog and reproducible test results | Releases v0.0.1 to v0.4.0, with notes in RELEASE.md; reference images pinned by digest |
 
 `openadr-interop` is designed with certification preparation in mind, but a
 passing result is not an official certification. The OpenADR Alliance has a
@@ -150,14 +150,18 @@ Open, carried over from M1 to M3:
 
 Open, M4 proper:
 
-3. **The extensions and the new behaviour in openadr-interop**: resource
-   groups, WebSockets, a non-authenticating VTN and compression in the
-   container contract and the conformance suite, so that this module's VTN
-   side of them meets another implementation's client. (Discovery
-   against Avahi and OpenLEADR: done in v0.3.0.)
-4. Soak tests over hours, rate limiting hooks. (Metrics hooks, logging on
-   the client, a retry policy and error sentinels throughout: done in
-   v0.3.0, in line with go-modbus and go-opcua.)
+3. **The extensions and the new behaviour in openadr-interop.** Done in
+   v0.4.0 for the reference client (openadr-interop v0.4.0): this module's
+   VTN side of subscriptions, webhooks, MQTT, resource groups, a
+   non-authenticating VTN, compression and TLS meets the ElaadNL client.
+   Discovery against Avahi and OpenLEADR: done in v0.3.0. Open: scenarios
+   for the extensions in the conformance suite. Not possible with today's
+   references: a webhook receiver and a WebSocket client of another
+   implementation.
+4. Soak tests over hours. (Rate limiting hook, durable webhook
+   notifications and notifications of `READ`: done in v0.4.0. Metrics
+   hooks, logging on the client, a retry policy and error sentinels
+   throughout: done in v0.3.0, in line with go-modbus and go-opcua.)
 5. API review before v1.0.0. Known candidates: `storage.Store` grew a
    method in v0.2.0 and should stop doing so; resource groups will follow
    whatever the specification adopts.

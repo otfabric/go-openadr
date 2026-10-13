@@ -17,7 +17,9 @@
 //   - a violation is a *storage.ConstraintError, which the VTN answers
 //     with 409, and anything else is the database's error, which it
 //     answers with 500;
-//   - the result of a search is in the order of creation.
+//   - the result of a search is in the order of creation;
+//   - the store is also a storage.Outbox, so that a VTN on it keeps its
+//     webhook notifications until they are delivered.
 //
 // Writers take turns: a write transaction begins by taking one lock for
 // the whole store. That keeps the checks simple and right, and costs
@@ -36,6 +38,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/server/storage"
@@ -63,7 +66,10 @@ type Store struct {
 	dialect Dialect
 }
 
-var _ storage.Store = (*Store)(nil)
+var (
+	_ storage.Store  = (*Store)(nil)
+	_ storage.Outbox = (*Store)(nil)
+)
 
 // New returns a Store on db, creating its tables when they are not there.
 // The Store closes db when it is closed.
@@ -98,6 +104,8 @@ func schema(d Dialect) []string {
 		table("resource_groups", "name TEXT NOT NULL"),
 		// Who holds what, to find the groups a deleted object has to leave.
 		"CREATE TABLE IF NOT EXISTS resource_group_children (group_id TEXT NOT NULL, child_type TEXT NOT NULL, child_id TEXT NOT NULL)",
+		// The outbox: notifications on their way to webhooks.
+		"CREATE TABLE IF NOT EXISTS deliveries (seq " + d.Serial + ", id TEXT NOT NULL UNIQUE, subscription_id TEXT NOT NULL, callback_url TEXT NOT NULL, bearer_token TEXT NOT NULL, body " + d.JSON + " NOT NULL, created TEXT NOT NULL)",
 		"CREATE INDEX IF NOT EXISTS events_program ON events (program_id)",
 		"CREATE INDEX IF NOT EXISTS reports_event ON reports (event_id)",
 		"CREATE INDEX IF NOT EXISTS reports_client ON reports (client_id)",
@@ -565,4 +573,48 @@ func (s *Store) dropChild(ctx context.Context, tx *sql.Tx, child openadr.Resourc
 	}
 	_, err = tx.ExecContext(ctx, s.q("DELETE FROM resource_group_children WHERE child_type = ? AND child_id = ?"), string(child.Type), child.ID)
 	return err
+}
+
+// AddDelivery implements storage.Outbox.
+func (s *Store) AddDelivery(ctx context.Context, d storage.Delivery) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
+		if taken, err := s.exists(ctx, tx, "SELECT 1 FROM deliveries WHERE id = ?", d.ID); err != nil {
+			return err
+		} else if taken {
+			return conflict("ID %s is in use", d.ID)
+		}
+		_, err := tx.ExecContext(ctx, s.q("INSERT INTO deliveries (id, subscription_id, callback_url, bearer_token, body, created) VALUES (?, ?, ?, ?, ?, ?)"),
+			d.ID, d.SubscriptionID, d.CallbackURL, d.BearerToken, string(d.Body), d.Created.UTC().Format(time.RFC3339Nano))
+		return err
+	})
+}
+
+// RemoveDelivery implements storage.Outbox.
+func (s *Store) RemoveDelivery(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, s.q("DELETE FROM deliveries WHERE id = ?"), id)
+	return err
+}
+
+// Deliveries implements storage.Outbox.
+func (s *Store) Deliveries(ctx context.Context) ([]storage.Delivery, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, subscription_id, callback_url, bearer_token, body, created FROM deliveries ORDER BY seq")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []storage.Delivery
+	for rows.Next() {
+		var (
+			d       storage.Delivery
+			created string
+		)
+		if err := rows.Scan(&d.ID, &d.SubscriptionID, &d.CallbackURL, &d.BearerToken, &d.Body, &created); err != nil {
+			return nil, err
+		}
+		if d.Created, err = time.Parse(time.RFC3339Nano, created); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }

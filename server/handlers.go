@@ -73,6 +73,7 @@ func (s *Server) listPrograms(w http.ResponseWriter, r *http.Request, id auth.Id
 			out = append(out, p)
 		}
 	}
+	readPage(s, r, s.programs(), out, pg)
 	writeList(s, w, r, s.codec.Programs, out, pg)
 }
 
@@ -165,6 +166,7 @@ func (s *Server) listEvents(w http.ResponseWriter, r *http.Request, id auth.Iden
 			out = append(out, e)
 		}
 	}
+	readPage(s, r, s.events(), out, pg)
 	writeList(s, w, r, s.codec.Events, out, pg)
 }
 
@@ -232,6 +234,7 @@ func (s *Server) listReports(w http.ResponseWriter, r *http.Request, id auth.Ide
 		s.fail(w, r, err)
 		return
 	}
+	readPage(s, r, s.reports(), all, pg)
 	writeList(s, w, r, s.codec.Reports, all, pg)
 }
 
@@ -310,6 +313,7 @@ func (s *Server) listVENs(w http.ResponseWriter, r *http.Request, id auth.Identi
 			out = append(out, v)
 		}
 	}
+	readPage(s, r, s.vens(), out, pg)
 	writeList(s, w, r, s.codec.VENs, out, pg)
 }
 
@@ -397,5 +401,6 @@ func (s *Server) listResources(w http.ResponseWriter, r *http.Request, id auth.I
 			out = append(out, res)
 		}
 	}
+	readPage(s, r, s.resources(), out, pg)
 	writeList(s, w, r, s.codec.Resources, out, pg)
 }

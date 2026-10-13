@@ -94,6 +94,36 @@ type Config struct {
 	// per request, with its operation, status and duration. Nil disables
 	// logging.
 	Logger *slog.Logger
+	// Outbox makes webhook notifications survive: each is recorded there
+	// before it is sent and forgotten when its webhook has confirmed it,
+	// and what is still recorded is sent again, when the VTN starts and
+	// while it runs. Delivery is then at least once across restarts, where
+	// without an Outbox what is on its way when the VTN stops is lost.
+	// storage.File is an Outbox as well as a Store; so is storage.Memory,
+	// which lasts as long as the process and so only adds the sending
+	// again. It needs Webhooks to be a ConfirmingSender, which
+	// *webhook.Sender is, and Close to be called when the VTN stops.
+	// Notifications by MQTT and over WebSockets are not kept.
+	Outbox storage.Outbox
+	// NotificationTTL is how long a notification that cannot be delivered
+	// is kept before it is given up; a day when zero. Only with Outbox.
+	NotificationTTL time.Duration
+	// RedeliverEvery is how often the VTN hands to the sender again what
+	// is recorded and not on its way; a minute when zero. Only with Outbox.
+	RedeliverEvery time.Duration
+	// Limiter decides, for every request of a client it has identified,
+	// whether the VTN takes it now; see Limiter and NewRateLimiter. A
+	// request it refuses is answered 429 with a Retry-After header, which
+	// the clients of this module honour. Nil takes every request.
+	Limiter Limiter
+	// NotifyReads makes the VTN notify the subscribers that asked for the
+	// operation READ whenever an object is read, by ID or in a search.
+	// Off by default: OpenADR 3.1.0 lists READ among the operations of a
+	// subscription and says nothing of what it means, it is one
+	// notification per object per read, and it costs the VTN a look at
+	// its subscriptions for every read. Without it a subscription to READ
+	// is accepted and never notified of one.
+	NotifyReads bool
 	// Metrics receives a callback for every request, and, when it
 	// implements them, for notifications and WebSockets; see Metrics. Nil
 	// disables them.
@@ -146,6 +176,9 @@ type Server struct {
 	webhooks  WebhookSender
 	mqtt      *MQTTConfig
 	sockets   *sockets
+	outbox    *outbox
+	limiter   Limiter
+	reads     bool
 	anonymous bool
 	compress  bool
 	codec     *wire.Codec
@@ -199,6 +232,8 @@ func newServer(cfg Config) (*Server, error) {
 		validator: cfg.Validator,
 		webhooks:  cfg.Webhooks,
 		mqtt:      cfg.MQTT,
+		limiter:   cfg.Limiter,
+		reads:     cfg.NotifyReads,
 		anonymous: cfg.AllowAnonymous,
 		compress:  !cfg.DisableCompression,
 		codec:     v310.Codec(),
@@ -207,6 +242,14 @@ func newServer(cfg Config) (*Server, error) {
 		maxBody:   cfg.MaxBodyBytes,
 		now:       cfg.Now,
 		mux:       http.NewServeMux(),
+	}
+	if cfg.Outbox != nil {
+		sender, ok := cfg.Webhooks.(ConfirmingSender)
+		if !ok {
+			return nil, errors.New("server: Config.Outbox needs Config.Webhooks to be a ConfirmingSender, such as *webhook.Sender")
+		}
+		// After everything it uses: it starts to send at once.
+		defer func() { s.outbox = newOutbox(s, cfg.Outbox, sender, cfg.NotificationTTL, cfg.RedeliverEvery) }()
 	}
 	s.notifications, _ = cfg.Metrics.(NotificationMetrics)
 	s.socketMetrics, _ = cfg.Metrics.(SocketMetrics)
@@ -355,6 +398,9 @@ func (s *Server) authorized(scope string, h handler) http.Handler {
 				s.problem(w, r, http.StatusUnauthorized, "this operation needs a bearer token")
 				return
 			}
+			if s.limited(w, r, id) {
+				return
+			}
 			h(w, r, id)
 			return
 		}
@@ -377,6 +423,9 @@ func (s *Server) authorized(scope string, h handler) http.Handler {
 		}
 		if scope != "" && !id.Allows(scope) {
 			s.problem(w, r, http.StatusForbidden, "the token lacks the scope "+scope)
+			return
+		}
+		if s.limited(w, r, id) {
 			return
 		}
 		h(w, r, id)

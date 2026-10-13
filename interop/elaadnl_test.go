@@ -30,6 +30,12 @@ type goVTN struct {
 	// ids maps "program:<name>", "event:<name>" and "ven:<name>" to object IDs.
 	ids    map[string]string
 	client clientRunner
+	// hc reaches the VTN from the test: it trusts the VTN's certificate
+	// when it has one.
+	hc *http.Client
+	// local is the VTN as the test reaches it, and fx the fixture it serves.
+	local string
+	fx    fixture
 }
 
 // startGoVTN runs the VTN with the clients of the fixture and loads the
@@ -37,6 +43,24 @@ type goVTN struct {
 // way the reference servers of openadr-interop are loaded.
 func startGoVTN(t *testing.T, clientAdapter, fixtureName string) *goVTN {
 	t.Helper()
+	return startGoVTNWith(t, clientAdapter, fixtureName, vtnOptions{})
+}
+
+// vtnOptions is what a test wants of the VTN beyond the fixture.
+type vtnOptions struct {
+	// ca makes the VTN serve HTTPS with a certificate of that authority,
+	// which the container is told to trust.
+	ca *authority
+	// configure changes the configuration of the VTN before it starts.
+	configure func(cfg *server.Config)
+	// wrap goes around the VTN's handler, to see what passes.
+	wrap func(http.Handler) http.Handler
+}
+
+// startGoVTNWith is startGoVTN with options.
+func startGoVTNWith(t *testing.T, clientAdapter, fixtureName string, o vtnOptions) *goVTN {
+	t.Helper()
+	ca := o.ca
 	img := needImage(t, clientAdapter)
 	fx := readFixture(t, img, fixtureName)
 
@@ -61,19 +85,39 @@ func startGoVTN(t *testing.T, clientAdapter, fixtureName string) *goVTN {
 	port := listener.Addr().(*net.TCPAddr).Port
 	// The URL the container uses is also the one the VTN announces its
 	// token endpoint under.
-	public := fmt.Sprintf("http://%s:%d", host, port)
-	local := fmt.Sprintf("http://127.0.0.1:%d", port)
+	scheme, hc := "http", http.DefaultClient
+	if ca != nil {
+		scheme, hc = "https", ca.client()
+		// The client finds the authority where its HTTP library looks.
+		network = append(network, "-v", ca.dir+":/ca:ro", "-e", "REQUESTS_CA_BUNDLE=/ca/ca.pem", "-e", "SSL_CERT_FILE=/ca/ca.pem")
+	}
+	public := fmt.Sprintf("%s://%s:%d", scheme, host, port)
+	local := fmt.Sprintf("%s://127.0.0.1:%d", scheme, port)
 
 	store := storage.NewMemory()
-	vtn, err := server.New(server.Config{Store: store, Validator: issuer, TokenURL: public + "/auth/token", TokenHandler: issuer})
+	cfg := server.Config{Store: store, Validator: issuer, TokenURL: public + "/auth/token", TokenHandler: issuer}
+	if o.configure != nil {
+		o.configure(&cfg)
+	}
+	vtn, err := server.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{Handler: vtn, ReadHeaderTimeout: 5 * time.Second}
-	go func() { _ = srv.Serve(listener) }()
+	t.Cleanup(func() { _ = vtn.Close() })
+	var handler http.Handler = vtn
+	if o.wrap != nil {
+		handler = o.wrap(handler)
+	}
+	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
+	if ca != nil {
+		srv.TLSConfig = ca.serverConfig(t, host)
+		go func() { _ = srv.ServeTLS(listener, "", "") }()
+	} else {
+		go func() { _ = srv.Serve(listener) }()
+	}
 	t.Cleanup(func() { _ = srv.Close() })
 
-	v := &goVTN{store: store, ids: map[string]string{}, client: clientRunner{img: img, fixture: fixtureName, url: public, network: network}}
+	v := &goVTN{store: store, ids: map[string]string{}, hc: hc, local: local, fx: fx, client: clientRunner{img: img, fixture: fixtureName, url: public, network: network}}
 	v.load(t, fx, local)
 	return v
 }
@@ -81,7 +125,7 @@ func startGoVTN(t *testing.T, clientAdapter, fixtureName string) *goVTN {
 func (v *goVTN) load(t *testing.T, fx fixture, base string) {
 	t.Helper()
 	blID, blSecret := fx.credentials(t, "bl")
-	resp, err := http.PostForm(base+"/auth/token", url.Values{
+	resp, err := v.hc.PostForm(base+"/auth/token", url.Values{
 		"grant_type": {"client_credentials"}, "client_id": {blID}, "client_secret": {blSecret}})
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +147,7 @@ func (v *goVTN) load(t *testing.T, fx fixture, base string) {
 		req, _ := http.NewRequest(http.MethodPost, base+path, bytes.NewReader(data))
 		req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := v.hc.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}

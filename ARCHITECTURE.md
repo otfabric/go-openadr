@@ -271,5 +271,14 @@ loop around the client is not surprised by a second one inside.
 stay without a `require`. `make nodeps` fails when it does not, and `go get`
 of the main module never sees the drivers.
 
-Not there yet: durable delivery of notifications, which a journal of
-pending deliveries in the store would give.
+Durable delivery of webhook notifications is `server/outbox.go`, behind
+`storage.Outbox`, which is not part of `Store`: three methods that record a
+delivery, forget it and list what is left. The VTN records before it sends,
+and a pump per callback URL hands the sender one delivery at a time, the
+oldest first, and the next when that one is confirmed; what was given up on
+for now waits for the next round (`RedeliverEvery`) and holds back what
+came after it for the same URL, so that the order survives failures and
+restarts. The sender stays what it was, a queue with retries in memory; it
+only tells the outbox what became of each delivery (`SendConfirmed`).
+`server/limit.go` is the rate limiting hook, asked in the one place every
+request is authorized.

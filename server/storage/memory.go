@@ -23,6 +23,9 @@ type Memory struct {
 
 	subscriptions table[SubscriptionRecord]
 	groups        table[openadr.ResourceGroup]
+
+	// The Outbox.
+	deliveries []Delivery
 }
 
 // NewMemory returns an empty Memory store.
@@ -360,4 +363,33 @@ func (m *Memory) restoreResourceGroup(g openadr.ResourceGroup) error {
 	m.groups.byID[g.ID] = g
 	m.groups.order = append(m.groups.order, g.ID)
 	return nil
+}
+
+// AddDelivery implements Outbox. A Memory keeps deliveries as long as it
+// exists, which is no longer than the VTN: it is an Outbox for tests, and
+// for a VTN that wants failed deliveries tried again while it runs.
+func (m *Memory) AddDelivery(_ context.Context, d Delivery) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if slices.ContainsFunc(m.deliveries, func(o Delivery) bool { return o.ID == d.ID }) {
+		return conflict("ID %s is in use", d.ID)
+	}
+	m.deliveries = append(m.deliveries, d)
+	return nil
+}
+
+// RemoveDelivery implements Outbox.
+func (m *Memory) RemoveDelivery(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// A new slice: the old one may be in the hands of a reader.
+	m.deliveries = slices.DeleteFunc(slices.Clone(m.deliveries), func(d Delivery) bool { return d.ID == id })
+	return nil
+}
+
+// Deliveries implements Outbox.
+func (m *Memory) Deliveries(context.Context) ([]Delivery, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return slices.Clone(m.deliveries), nil
 }

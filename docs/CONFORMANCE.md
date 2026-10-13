@@ -40,8 +40,8 @@ operation of its own:
 | Event and interval timing (User Guide 7.3 and 7.4) | n/a: the VTN stores intervals as given | `timeline` |
 | Compressed answers (HTTP, not the specification) | gzip, deflate | yes |
 
-Not implemented: notifications of `READ`, and the retention of properties
-the schema does not define (they are ignored, as the specification allows).
+Not implemented: the retention of properties the schema does not define
+(they are ignored, as the specification allows).
 
 ## Beyond the specification
 
@@ -206,17 +206,29 @@ update adds. In addition the default sender connects to public addresses
 only and follows no redirect, which the Definition recommends. A refused URL
 answers 400.
 
-**`READ` is never notified of.** The schema lists it as an operation; the
-VTN accepts it in a subscription and sends nothing for it.
+**`READ` is notified of only when the VTN is told to.** The schema lists
+it as an operation and no text says what it means. The VTN accepts it in a
+subscription. With `Config.NotifyReads` it then notifies the subscriber of
+every object of that type that is read, by ID or in a search, and that the
+subscriber may see, by webhook and over a WebSocket; MQTT has no topic for
+a read. Without it, which is the default, nothing is sent for `READ`.
 
 **`GET /notifiers` needs a token and no particular scope.** The document
 assigns it `read_all`, which a VEN does not have, while a VEN is who needs
 to know how it will be notified.
 
-**Delivery is at least once and in order per callback URL, and not
-durable.** The Definition leaves retries to the VTN. A notification is also
+**Delivery is at least once and in order per callback URL, and durable
+when the VTN has an outbox.** The Definition leaves retries to the VTN.
+Without `Config.Outbox`, a notification is lost when the sender has used up
+its attempts or the VTN stops; with it, it is sent again, after a restart
+too, until the webhook confirms it, refuses it for good, its subscription
+is deleted or `NotificationTTL` has passed. Either way a notification is
 lost when the VTN cannot read its subscriptions at the moment it would
 send it.
+
+**A VTN may answer 429.** The document has no 429 among its answers. With
+`Config.Limiter`, a request the limiter refuses is answered 429 with a
+problem object and `Retry-After`; without, the VTN never answers it.
 
 **A subscription says how it wants to be notified, per entry.** 3.1.0 has
 webhooks only, and `callbackUrl` is required. With the extension, an entry

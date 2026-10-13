@@ -181,8 +181,11 @@ and is answered 404. The object is gone either way.
 **What the specification says.** OpenADR 3.1.0 does not speak of client
 retries. It asks a VTN to back off when a webhook fails, which the webhook
 sender does (`Attempts`, `Backoff`, `MaxBackoff`), and expects rate limiting
-to be done by a gateway before the VTN, which is where the 429 and the
-`Retry-After` handled here come from.
+to be done by a gateway before the VTN, which is one place the 429 and the
+`Retry-After` handled here come from. The other is this module's VTN when
+it is given a `server.Config.Limiter`: it answers 429 with `Retry-After`
+itself, for a client that has gone wrong. A limited request is counted like
+any other, as a response with status 429 for its operation.
 
 The other things that reconnect by themselves have a backoff of their own,
 doubling to a minute: `mqtt.Publisher`, `mqtt.Subscriber` and

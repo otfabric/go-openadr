@@ -64,8 +64,38 @@ func get[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) handle
 			s.fail(w, r, err)
 			return
 		}
+		k.notifyRead(s, r, k.meta(&v).ID)
 		writeObject(s, w, r, http.StatusOK, k.codec, v)
 	}
+}
+
+// notifyRead tells the subscribers to READ that the objects with the given
+// IDs were read, on a VTN that does that. Each is notified of the object
+// as it may see it itself, which is not always as the reader saw it, so
+// the objects are taken from the store again.
+func (k kind[T, F]) notifyRead(s *Server, r *http.Request, ids ...string) {
+	if !s.reads || k.subject == nil {
+		return
+	}
+	for _, id := range ids {
+		if v, err := k.coll.Get(r.Context(), id); err == nil {
+			s.notify(r.Context(), openadr.OperationRead, k.subject(r.Context(), v))
+		}
+	}
+}
+
+// readPage is notifyRead for the page of a search that is about to be
+// written.
+func readPage[T interface{ Validate() error }, F any](s *Server, r *http.Request, k kind[T, F], items []T, p page) {
+	if !s.reads || k.subject == nil {
+		return
+	}
+	shown := paginate(items, p)
+	ids := make([]string, len(shown))
+	for i := range shown {
+		ids[i] = k.meta(&shown[i]).ID
+	}
+	k.notifyRead(s, r, ids...)
 }
 
 func create[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) handler {
