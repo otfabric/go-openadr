@@ -79,8 +79,11 @@ still change.
 
 The clients are tested against the OpenLEADR VTN — MQTT and WebSocket
 notifications and resource groups included — and the VTN with the ElaadNL
-client; webhooks, and the VTN's side of MQTT and of WebSockets, are so far
-tested between this module's own two sides only. See
+client — subscriptions with a webhook delivered, MQTT notifications its
+client receives, resource groups, access without a token, compression and
+TLS included. No other implementation has a webhook receiver or a WebSocket
+client, so the VTN's webhooks are received by this module's own handler and
+its WebSockets are tested between this module's own two sides only. See
 [INTEROP.md](INTEROP.md) for the evidence,
 [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for exactly what is covered and
 [PLAN.md](PLAN.md) for what comes next.
@@ -151,7 +154,8 @@ has that the others do not show.
 ¹ The MQTT client is this module's own (MQTT 3.1.1, QoS 1). The VTN's
 publisher and the subscriber are tested on four brokers: Eclipse Mosquitto,
 NanoMQ, HiveMQ Community Edition and EMQX. The subscriber is also tested
-with the notifications OpenLEADR publishes.
+with the notifications OpenLEADR publishes, and the publisher with the
+ElaadNL client's MQTT client.
 
 ² One process, all objects in memory, every change appended to a file. Not
 a database: for a large VTN, put `storage.Store` on one.
