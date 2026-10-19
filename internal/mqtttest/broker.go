@@ -119,8 +119,8 @@ func (b *Broker) serve(conn net.Conn) {
 		return
 	}
 	code := b.connect(first.Body)
-	_, _ = conn.Write(mqtt.Packet{Type: mqtt.TypeConnack, Body: []byte{0, code}}.Encode())
 	if code != 0 {
+		_, _ = conn.Write(mqtt.Packet{Type: mqtt.TypeConnack, Body: []byte{0, code}}.Encode())
 		return
 	}
 	s := &session{conn: conn}
@@ -131,6 +131,7 @@ func (b *Broker) serve(conn net.Conn) {
 	}
 	b.sessions[s] = struct{}{}
 	b.mu.Unlock()
+	s.write(mqtt.Packet{Type: mqtt.TypeConnack, Body: []byte{0, code}})
 	defer func() {
 		b.mu.Lock()
 		delete(b.sessions, s)

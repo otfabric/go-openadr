@@ -680,10 +680,11 @@ type flakyProxy struct {
 	on       atomic.Bool
 	cuts     atomic.Int64
 
-	mu    sync.Mutex
-	rng   *rand.Rand
-	conns map[net.Conn]bool
-	wg    sync.WaitGroup
+	mu     sync.Mutex
+	rng    *rand.Rand
+	conns  map[net.Conn]bool
+	closed bool
+	wg     sync.WaitGroup
 }
 
 // cutAll cuts every connection there is, the quiet ones too.
@@ -718,6 +719,9 @@ func newFlakyProxy(t *testing.T, target string, seed uint64) *flakyProxy {
 	t.Cleanup(func() {
 		_ = ln.Close()
 		p.on.Store(false)
+		p.mu.Lock()
+		p.closed = true
+		p.mu.Unlock()
 		p.cutAll()
 		p.wg.Wait()
 	})
@@ -735,6 +739,12 @@ func (p *flakyProxy) serve(client net.Conn) {
 	// that is left alone.
 	budget := int64(-1)
 	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		_ = client.Close()
+		_ = upstream.Close()
+		return
+	}
 	if p.on.Load() && p.rng.IntN(3) == 0 {
 		budget = p.rng.Int64N(6000)
 	}
