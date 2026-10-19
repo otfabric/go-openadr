@@ -119,19 +119,22 @@ func (b *Broker) serve(conn net.Conn) {
 		return
 	}
 	code := b.connect(first.Body)
-	if code != 0 {
-		_, _ = conn.Write(mqtt.Packet{Type: mqtt.TypeConnack, Body: []byte{0, code}}.Encode())
-		return
-	}
 	s := &session{conn: conn}
-	b.mu.Lock()
-	if b.closed {
+	// Register before CONNACK, so a client that has its CONNACK can
+	// already be dropped by DropClients.
+	if code == 0 {
+		b.mu.Lock()
+		if b.closed {
+			b.mu.Unlock()
+			return
+		}
+		b.sessions[s] = struct{}{}
 		b.mu.Unlock()
+	}
+	s.write(mqtt.Packet{Type: mqtt.TypeConnack, Body: []byte{0, code}})
+	if code != 0 {
 		return
 	}
-	b.sessions[s] = struct{}{}
-	b.mu.Unlock()
-	s.write(mqtt.Packet{Type: mqtt.TypeConnack, Body: []byte{0, code}})
 	defer func() {
 		b.mu.Lock()
 		delete(b.sessions, s)
