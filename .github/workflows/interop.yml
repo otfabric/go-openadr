@@ -19,17 +19,21 @@ on:
       elaadnl_image:
         description: "ElaadNL reference image (default: the pinned release)"
         required: false
+      openleadr301_image:
+        description: "OpenLEADR v0.1.4 (OpenADR 3.0.1) reference image (default: the pinned release)"
+        required: false
 
 permissions:
   contents: read
   packages: read
 
 env:
-  # otfabric/openadr-interop v0.4.0: OpenLEADR openleadr-rs v0.2.7,
-  # ElaadNL openadr3-client 2.4.0.
+  # otfabric/openadr-interop v0.5.0: OpenLEADR openleadr-rs v0.2.7,
+  # ElaadNL openadr3-client 2.4.0, OpenLEADR v0.1.4 (OpenADR 3.0.1).
   # Keep in step with the Makefile and interop/harness_test.go.
-  OPENADR_INTEROP_OPENLEADR_IMAGE: ${{ inputs.openleadr_image || 'ghcr.io/otfabric/openadr-interop-openleadr@sha256:b8221b89983a5b7cdc69cea92443e05416336ad1ddcd843250770d65950b4fb2' }}
-  OPENADR_INTEROP_ELAADNL_IMAGE: ${{ inputs.elaadnl_image || 'ghcr.io/otfabric/openadr-interop-elaadnl@sha256:db5e0d61814fd12ab2c78926c482f15b466f1639a0eae692d58657f9fdfd093a' }}
+  OPENADR_INTEROP_OPENLEADR_IMAGE: ${{ inputs.openleadr_image || 'ghcr.io/otfabric/openadr-interop-openleadr@sha256:4f8eb4b1795bd3f21307346eb8cff0e3860f9c9753e841710de50a5af1353ab5' }}
+  OPENADR_INTEROP_ELAADNL_IMAGE: ${{ inputs.elaadnl_image || 'ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3c8d2e56b87740f138d3e083303c8333a28cfe6d386aab1a9a009ae70c33d12f' }}
+  OPENADR_INTEROP_OPENLEADR301_IMAGE: ${{ inputs.openleadr301_image || 'ghcr.io/otfabric/openadr-interop-openleadr301@sha256:a2039fff5b7d3e4a3691883a543bb602b885a07ed8a3a2779fed238627c7e1a5' }}
 
 jobs:
   interop:
@@ -47,7 +51,7 @@ jobs:
 
       - name: Pull reference images
         run: |
-          images=("${OPENADR_INTEROP_OPENLEADR_IMAGE}" "${OPENADR_INTEROP_ELAADNL_IMAGE}")
+          images=("${OPENADR_INTEROP_OPENLEADR_IMAGE}" "${OPENADR_INTEROP_ELAADNL_IMAGE}" "${OPENADR_INTEROP_OPENLEADR301_IMAGE}")
           # GHCR is occasionally slow or rate limiting: try each pull a few times.
           for image in "${images[@]}"; do
             for attempt in 1 2 3 4 5; do

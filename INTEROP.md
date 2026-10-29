@@ -21,10 +21,10 @@ specific tests against specific versions.
 | go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | OpenLEADR v0.2.7, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
-| the specification-driven suite of openadr-interop v0.4.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
+| the specification-driven suite of openadr-interop v0.5.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
 
-Last run: 2026-10-13, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.4.0, pinned by
+Last run: 2026-10-29, on a developer machine (linux/arm64 containers on
+macOS), against the published images of openadr-interop v0.5.0, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -36,7 +36,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.4.0, pinned by
+Needs Docker. The images are those of openadr-interop v0.5.0, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -46,7 +46,8 @@ make interop
 `make interop` fails when an image cannot be had. Run directly with
 `go test -tags=interop ./interop/...`, a test whose image is missing is
 skipped, unless `OPENADR_INTEROP_REQUIRE` is set.
-`OPENADR_INTEROP_OPENLEADR_IMAGE` and `OPENADR_INTEROP_ELAADNL_IMAGE` select
+`OPENADR_INTEROP_OPENLEADR_IMAGE`, `OPENADR_INTEROP_ELAADNL_IMAGE` and
+`OPENADR_INTEROP_OPENLEADR301_IMAGE` select
 other images, for example the `:dev` tags that `make images` builds in a
 checkout of openadr-interop.
 
