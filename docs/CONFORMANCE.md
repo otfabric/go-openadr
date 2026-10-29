@@ -4,6 +4,13 @@ What this module implements of OpenADR 3.1.0 (document 20250807-X), and how
 the VTN behaves where the specification leaves room. What has been tested
 against other implementations is in [INTEROP.md](../INTEROP.md).
 
+The VEN and BL clients and the webhook handler also speak OpenADR 3.0.1
+(`client.Config.Version`): every operation of its OpenAPI, which has no
+`GET /auth/server`, no notifiers and no MQTT, and reaches resources under
+`/vens/{venID}/resources`. What differs is in [API.md](../API.md#openadr-301)
+and in the godoc of `openadr.Version301`. The rest of this document is about
+3.1.0.
+
 ## Operations
 
 | Resource | Operations | VTN | VEN client | BL client |

@@ -514,7 +514,9 @@ func TestIdleTimeout(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 	}
 	_ = alive.Close(CloseNormal, "")
-	<-ended
+	if err := <-ended; err == nil {
+		t.Error("the peer that answers pings ended without a cause")
+	}
 
 	// This one does not read.
 	dial(t, ts)

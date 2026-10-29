@@ -20,11 +20,14 @@ Status as of 2026-10-13: v0.0.1 released; v0.1.0 ready, which closes M1 to M3 ex
 | OpenADR 3.0.0 | P2 | If interoperability requirements justify it |
 | OpenADR 2.0a/b | Excluded | Not part of either project |
 
-3.1.0 is implemented completely before 3.0.1 is added. 3.1 is not backward
+3.1.0 was implemented completely before 3.0.1 was added. 3.1 is not backward
 compatible with 3.0 (resource endpoints, authorization scopes, targeting,
-notification capabilities), so one set of wire models cannot serve both.
-The design accommodates several revisions without duplicating the client
-and server: see [ARCHITECTURE.md](ARCHITECTURE.md).
+notification capabilities), so one set of wire models cannot serve both:
+3.0.1 has its own codec, `internal/wire/v301`, behind the same client, and
+the domain model is that of 3.1.0 with what only 3.0.1 has added to it
+(see [ARCHITECTURE.md](ARCHITECTURE.md)). Since v0.5.0 the VEN and BL
+clients and the webhook handler speak 3.0.1; the VTN server is of 3.1.0
+only.
 
 **Included:** VEN client; VTN server; the Business Logic API needed to
 operate the VTN; programs, events, reports, VENs, resources and
@@ -64,10 +67,12 @@ communication protocol and does not become an energy-management platform.
 | **M2 Security** | OAuth2, token discovery, scopes, targeting, resource ownership | Unauthorized access consistently rejected | **Done**: JWT validator, callback verification, and an authorization matrix of every operation as five kinds of client (`e2e/matrix_test.go`). The same matrix in openadr-interop's conformance suite: see that repository |
 | **M3 Notifications** | Webhook and MQTT for client and server | Notifications work with external peers | Both bindings done on both sides, and a third, WebSockets, as OpenLEADR has it. MQTT and WebSockets work with an external peer: this module's subscribers receive OpenLEADR's notifications, and the ElaadNL client gets this VTN's webhook delivered and its MQTT client receives what this VTN publishes, in `make interop`. Open: a webhook receiver and a WebSocket client of another implementation, which neither reference has |
 | **M4 Stabilization** | Production hardening, documentation, examples | OpenADR 3.1 release candidate | **Started** in v0.2.0: the feature gaps against the other implementations closed (section 6), failure injection and load in `e2e/`, an example per feature, the documents revised. Open: see section 6 |
-| **M5 Version expansion** | OpenADR 3.0.1 | Both versions independently validated | Not started |
+| **M5 Version expansion** | OpenADR 3.0.1 | Both versions independently validated | **Done** in v0.5.0 for the clients and the webhook handler: a 3.0.1 codec tested against the pinned 3.0.1 OpenAPI, and the clients run against OpenLEADR v0.1.4, a 3.0.1 VTN (`make interop`). A 3.0.1 VTN server is not planned |
 
 M0 to M4 are about 3.1.0 only. M5 must not introduce compatibility behaviour
-that weakens or silently changes 3.1 functionality.
+that weakens or silently changes 3.1 functionality: a 3.1.0 codec refuses
+the 3.0.1 fields (`TypedTargets`, `Report.ProgramID`), and a 3.0.1 codec
+refuses what 3.0.1 cannot carry, rather than dropping either.
 
 ### First end-to-end milestone
 

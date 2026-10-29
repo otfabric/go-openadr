@@ -34,6 +34,8 @@ type Subscription struct {
 	// Targets are the targets the subscriber names, as in a search: see
 	// the access rules for programs and events.
 	Targets []string
+	// TypedTargets: see Program.TypedTargets.
+	TypedTargets []ValuesMap
 }
 
 // Mechanism is a way for a VTN to deliver the notifications of a
@@ -83,6 +85,8 @@ type Notification struct {
 	Object any
 	// Targets are the targets of the object that the subscriber may see.
 	Targets []string
+	// TypedTargets: see Program.TypedTargets.
+	TypedTargets []ValuesMap
 }
 
 // Validate checks the client-provided properties against the schema. It does
@@ -123,7 +127,10 @@ func (s Subscription) Validate() error {
 			return invalid(f+".mechanism", "is %q, not %s or %s", oo.Mechanism, MechanismWebhook, MechanismWebSocket)
 		}
 	}
-	return targets("targets", s.Targets)
+	if err := targets("targets", s.Targets); err != nil {
+		return err
+	}
+	return valuesMaps("targets", s.TypedTargets)
 }
 
 // Notifiers says how a VTN notifies its clients: the answer to

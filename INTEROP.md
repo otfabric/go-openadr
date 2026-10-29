@@ -17,6 +17,7 @@ specific tests against specific versions.
 | go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ CE 2026.5, EMQX 6.3.1 | Passing, run locally | `make interop` |
 | go-openadr WebSocket subscriber | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
 | go-openadr BL and VEN, resource groups | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| go-openadr VEN and BL, **OpenADR 3.0.1** | OpenLEADR v0.1.4 (Rust) | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | OpenLEADR v0.2.7, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
@@ -144,6 +145,49 @@ whose battery it is sees both groups, the outer one with the inner as its
 only child; another VEN sees neither, and is refused the group by ID; a VEN
 that tries to create a group is answered 403.
 
+## OpenADR 3.0.1: this module's clients against OpenLEADR v0.1.4
+
+`interop/openleadr301_test.go` runs `client.BL` and `client.VEN` with
+`Config.Version: openadr.Version301` against OpenLEADR v0.1.4, the last
+release of OpenLEADR for OpenADR 3.0, as the `openleadr301` image of
+openadr-interop serves it with its `baseline-301` fixture:
+
+- **The fixture and its access rules.** Programs, events and VENs come back
+  with typed targets (`VEN_NAME`, `GROUP`); the VEN a program is targeted
+  at sees it and its event, another VEN does not; VENs are found by a
+  search for `GROUP` targets, and a VEN's resources through
+  `/vens/{venID}/resources`.
+- **Workflow.** The token comes from `/auth/token`, with no
+  `GET /auth/server`. Business Logic creates a program with the properties
+  3.1.0 made attributes (`programLongName`, `retailerName`, `country`,
+  `localPrice`), given and read back as `PROGRAM_LONG_NAME`, `RETAILER_NAME`,
+  `COUNTRY`, `LOCAL`, and an event with intervals and a report descriptor;
+  the VEN reads it and creates a report, whose `programID` the client reads
+  from the event; the report is updated; the event and program are updated
+  and deleted.
+- **VENs and resources.** A VEN with a `GROUP` target is created, given a
+  resource, which is read, updated, searched and deleted through the VEN,
+  and then updated with a second target and deleted.
+- **Limits.** A program with 3.1.0 string targets is refused before it is
+  sent, `Notifiers` returns `errors.ErrUnsupported` without a request, and
+  subscriptions, which 3.0.1 has and OpenLEADR v0.1.4 does not serve,
+  answer 404.
+
+What that showed about OpenLEADR v0.1.4, pinned down by the same tests:
+
+- **A search for `VEN_NAME` targets finds no program.** OpenLEADR keeps a
+  program's `VEN_NAME` targets apart (they decide which VENs see it) and
+  searches the others: the program shows the target, and
+  `targetType=VEN_NAME` does not find it. A search for `GROUP` works.
+- **A VEN cannot delete its report** (403, "User does not have the required
+  role"): OpenLEADR gives that to business users, against the
+  specification, as its source says. The event and program of the report
+  answer 409 until it is gone. The test deletes it as Business Logic over
+  plain HTTP, as this module's BL client has no `DeleteReport`.
+
+`openadrctl --spec 3.0.1` runs the same VTN in
+[its own script](https://github.com/otfabric/openadrctl/blob/main/scripts/interop301.sh).
+
 ## Discovery: Avahi, OpenLEADR and Apple's mDNSResponder
 
 Package `discovery` speaks Multicast DNS with code of its own, so it is
@@ -247,9 +291,11 @@ not connect, which shows that it checked.
 What that showed about the library, pinned down by the same tests so that a
 change in either implementation is noticed:
 
-- **It names the operations of a subscription as OpenADR 3.0.1 did**: `GET`,
-  `POST`, `PUT`, `DELETE`, where 3.1.0 has `READ`, `CREATE`, `UPDATE`,
-  `DELETE`. This VTN answers a subscription to `POST` with 400 and a problem
+- **It names the operations of a subscription by HTTP method**: `GET`,
+  `POST`, `PUT`, `DELETE`, where both 3.1.0 and 3.0.1 have `READ`, `CREATE`,
+  `UPDATE`, `DELETE`. (OpenADR 3.0.1 uses the HTTP methods for the operation
+  of a notification, not of a subscription; earlier versions of this
+  document said otherwise.) This VTN answers a subscription to `POST` with 400 and a problem
   that names the four it takes; a subscription to `CREATE` the library
   refuses to send; and a subscription this module's client made to `CREATE`
   the library cannot read. `DELETE` is the one name they share, which is why

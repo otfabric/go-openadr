@@ -327,3 +327,33 @@ func TestHandler(t *testing.T) {
 		t.Errorf("handler without a token = %d", rec.Code)
 	}
 }
+
+// TestHandler301 receives a notification of an OpenADR 3.0.1 VTN, which
+// names the operation by its HTTP method and writes typed targets.
+func TestHandler301(t *testing.T) {
+	var got openadr.Notification
+	h := &Handler{Version: openadr.Version301, Notify: func(_ context.Context, n openadr.Notification) error {
+		got = n
+		return nil
+	}}
+	const event = `{"objectType":"EVENT","operation":"PUT","targets":[{"type":"GROUP","values":["group-a"]}],
+		"object":{"id":"e1","objectType":"EVENT","programID":"p1","eventName":"prices","intervals":[]}}`
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/hook", strings.NewReader(event)))
+	if rec.Code != 200 || got.Operation != openadr.OperationUpdate || got.TypedTargets[0].Type != "GROUP" ||
+		got.Object.(openadr.Event).Name != "prices" {
+		t.Errorf("= %d %s, %+v", rec.Code, rec.Body, got)
+	}
+	// The words of 3.1.0 are not those of 3.0.1.
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/hook", strings.NewReader(strings.Replace(event, `"PUT"`, `"UPDATE"`, 1))))
+	if rec.Code != 400 {
+		t.Errorf("a 3.1.0 operation = %d", rec.Code)
+	}
+	bad := &Handler{Version: "2.0b", Notify: h.Notify}
+	rec = httptest.NewRecorder()
+	bad.ServeHTTP(rec, httptest.NewRequest("POST", "/hook", strings.NewReader(event)))
+	if rec.Code != 500 {
+		t.Errorf("a revision this module does not speak = %d", rec.Code)
+	}
+}

@@ -28,7 +28,7 @@ func NewBL(cfg Config) (*BL, error) {
 
 // Programs searches the programs of the VTN.
 func (c *BL) Programs(ctx context.Context, q ProgramQuery) ([]openadr.Program, error) {
-	return listObjects(ctx, c.core, c.core.codec.Programs, "programs", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Programs, "programs", q)
 }
 
 // Program returns the program with the given ID.
@@ -56,7 +56,7 @@ func (c *BL) DeleteProgram(ctx context.Context, id string) (openadr.Program, err
 
 // Events searches the events of the VTN.
 func (c *BL) Events(ctx context.Context, q EventQuery) ([]openadr.Event, error) {
-	return listObjects(ctx, c.core, c.core.codec.Events, "events", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Events, "events", q)
 }
 
 // Event returns the event with the given ID.
@@ -84,7 +84,7 @@ func (c *BL) DeleteEvent(ctx context.Context, id string) (openadr.Event, error) 
 
 // Reports searches the reports of all VENs.
 func (c *BL) Reports(ctx context.Context, q ReportQuery) ([]openadr.Report, error) {
-	return listObjects(ctx, c.core, c.core.codec.Reports, "reports", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Reports, "reports", q)
 }
 
 // Report returns the report with the given ID.
@@ -94,7 +94,7 @@ func (c *BL) Report(ctx context.Context, id string) (openadr.Report, error) {
 
 // VENs searches the VENs of the VTN.
 func (c *BL) VENs(ctx context.Context, q VENQuery) ([]openadr.VEN, error) {
-	return listObjects(ctx, c.core, c.core.codec.VENs, "vens", q.values())
+	return listObjects(ctx, c.core, c.core.codec.VENs, "vens", q)
 }
 
 // VEN returns the VEN with the given ID.
@@ -123,18 +123,29 @@ func (c *BL) DeleteVEN(ctx context.Context, id string) (openadr.VEN, error) {
 
 // Resources searches the resources of all VENs.
 func (c *BL) Resources(ctx context.Context, q ResourceQuery) ([]openadr.Resource, error) {
-	return listObjects(ctx, c.core, c.core.codec.Resources, "resources", q.values())
+	return listResources(ctx, c.core, q)
 }
 
-// Resource returns the resource with the given ID.
+// Resource returns the resource with the given ID. OpenADR 3.0.1 reaches
+// a resource through its VEN: use ResourceOf.
 func (c *BL) Resource(ctx context.Context, id string) (openadr.Resource, error) {
-	return getObject(ctx, c.core, c.core.codec.Resources, "resources", id)
+	if err := c.core.byIDOnly("Resource", "ResourceOf"); err != nil {
+		return openadr.Resource{}, err
+	}
+	return getResource(ctx, c.core, "", id)
+}
+
+// ResourceOf returns the resource with the given ID of the VEN with the
+// given ID. It works with both revisions; in 3.1.0, where a resource is
+// reached by its ID alone, venID is not sent.
+func (c *BL) ResourceOf(ctx context.Context, venID, id string) (openadr.Resource, error) {
+	return getResource(ctx, c.core, venID, id)
 }
 
 // CreateResource creates a resource and returns it as the VTN stored it. ClientID
 // is required, as for CreateVEN.
 func (c *BL) CreateResource(ctx context.Context, res openadr.Resource) (openadr.Resource, error) {
-	return sendObject(ctx, c.core, c.core.codec.Resources, "resources", "", res, wire.BLRequest)
+	return sendResource(ctx, c.core, "", res, wire.BLRequest)
 }
 
 // UpdateResource replaces the resource that has res.ID with res.
@@ -142,17 +153,29 @@ func (c *BL) UpdateResource(ctx context.Context, res openadr.Resource) (openadr.
 	if res.ID == "" {
 		return openadr.Resource{}, &openadr.ValidationError{Field: "id", Reason: "is required for an update"}
 	}
-	return sendObject(ctx, c.core, c.core.codec.Resources, "resources", res.ID, res, wire.BLRequest)
+	return sendResource(ctx, c.core, res.ID, res, wire.BLRequest)
 }
 
 // DeleteResource deletes a resource and returns it as it last was.
+//
+// OpenADR 3.0.1 reaches a resource through its VEN: use DeleteResourceOf.
 func (c *BL) DeleteResource(ctx context.Context, id string) (openadr.Resource, error) {
-	return deleteObject(ctx, c.core, c.core.codec.Resources, "resources", id)
+	if err := c.core.byIDOnly("DeleteResource", "DeleteResourceOf"); err != nil {
+		return openadr.Resource{}, err
+	}
+	return deleteResource(ctx, c.core, "", id)
+}
+
+// DeleteResourceOf deletes the resource with the given ID of the VEN with
+// the given ID, and returns it as it last was. venID is used as in
+// ResourceOf.
+func (c *BL) DeleteResourceOf(ctx context.Context, venID, id string) (openadr.Resource, error) {
+	return deleteResource(ctx, c.core, venID, id)
 }
 
 // Subscriptions searches the subscriptions of all clients.
 func (c *BL) Subscriptions(ctx context.Context, q SubscriptionQuery) ([]openadr.Subscription, error) {
-	return listObjects(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", q)
 }
 
 // Subscription returns the subscription with the given ID.
@@ -199,22 +222,34 @@ func (c *BL) MQTTTopics(ctx context.Context, of TopicSet) (openadr.Topics, error
 
 // ResourceGroups searches the resource groups.
 func (c *BL) ResourceGroups(ctx context.Context, q ResourceGroupQuery) ([]openadr.ResourceGroup, error) {
-	return listObjects(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", q.values())
+	if err := c.core.only310("resource groups"); err != nil {
+		return nil, err
+	}
+	return listObjects(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", q)
 }
 
 // ResourceGroup returns the resource group with the given ID.
 func (c *BL) ResourceGroup(ctx context.Context, id string) (openadr.ResourceGroup, error) {
+	if err := c.core.only310("resource groups"); err != nil {
+		return openadr.ResourceGroup{}, err
+	}
 	return getObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", id)
 }
 
 // CreateResourceGroup creates a resource group and returns it as the VTN
 // stored it. Its children have to exist.
 func (c *BL) CreateResourceGroup(ctx context.Context, g openadr.ResourceGroup) (openadr.ResourceGroup, error) {
+	if err := c.core.only310("resource groups"); err != nil {
+		return openadr.ResourceGroup{}, err
+	}
 	return sendObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", "", g, wire.Request)
 }
 
 // UpdateResourceGroup replaces the resource group that has g.ID with g.
 func (c *BL) UpdateResourceGroup(ctx context.Context, g openadr.ResourceGroup) (openadr.ResourceGroup, error) {
+	if err := c.core.only310("resource groups"); err != nil {
+		return openadr.ResourceGroup{}, err
+	}
 	if g.ID == "" {
 		return openadr.ResourceGroup{}, &openadr.ValidationError{Field: "id", Reason: "is required for an update"}
 	}
@@ -224,5 +259,8 @@ func (c *BL) UpdateResourceGroup(ctx context.Context, g openadr.ResourceGroup) (
 // DeleteResourceGroup deletes a resource group and returns it as it last
 // was. Its children stay.
 func (c *BL) DeleteResourceGroup(ctx context.Context, id string) (openadr.ResourceGroup, error) {
+	if err := c.core.only310("resource groups"); err != nil {
+		return openadr.ResourceGroup{}, err
+	}
 	return deleteObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", id)
 }

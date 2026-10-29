@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	openadr "github.com/otfabric/go-openadr"
-	v310 "github.com/otfabric/go-openadr/internal/wire/v310"
+	"github.com/otfabric/go-openadr/internal/wire/codecs"
 )
 
 // Handler receives the notifications of a VTN: it is what a subscription's
@@ -36,9 +36,10 @@ type Handler struct {
 	Notify func(ctx context.Context, n openadr.Notification) error
 	// MaxBodyBytes limits the size of a notification; 1 MiB when zero.
 	MaxBodyBytes int64
+	// Version is the revision of OpenADR the VTN notifies in:
+	// openadr.Version310 when empty, or openadr.Version301.
+	Version openadr.Version
 }
-
-var codec = v310.Codec()
 
 // ServeHTTP implements http.Handler.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +84,11 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "the body could not be read", http.StatusBadRequest)
+		return
+	}
+	codec, err := codecs.For(h.Version)
+	if err != nil {
+		http.Error(w, "webhook.Handler.Version: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	n, err := codec.UnmarshalNotification(body)

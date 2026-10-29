@@ -31,6 +31,10 @@ type Program struct {
 	// Targets restrict which VENs may read the program. A VTN only shows a
 	// VEN the targets that VEN asked for.
 	Targets []string
+	// TypedTargets are the targets of OpenADR 3.0.1: values maps such as
+	// {Type: "GROUP", Values: ["group-1"]}. Only a client of a 3.0.1 VTN
+	// reads and writes them; see Version301.
+	TypedTargets []ValuesMap
 }
 
 // ProgramDescription links to a description of a program.
@@ -48,8 +52,10 @@ type Event struct {
 	// Duration optionally bounds the event; it may be used to loop intervals.
 	Duration *Duration
 	// Priority orders events; a lower number is a higher priority.
-	Priority           *int
-	Targets            []string
+	Priority *int
+	Targets  []string
+	// TypedTargets: see Program.TypedTargets.
+	TypedTargets       []ValuesMap
 	ReportDescriptors  []ReportDescriptor
 	PayloadDescriptors []EventPayloadDescriptor
 	// IntervalPeriod sets the default start and duration of Intervals.
@@ -65,6 +71,10 @@ type Report struct {
 	ClientID string
 	// EventID is the event the report is associated with.
 	EventID string
+	// ProgramID is the program of the event. OpenADR 3.0.1 requires it and
+	// 3.1.0 does not have it: a client of a 3.0.1 VTN fills it in from the
+	// event when it is empty.
+	ProgramID string
 	// ClientName is chosen by the reporting client.
 	ClientName         string
 	Name               string
@@ -97,6 +107,8 @@ type VEN struct {
 	// Targets are granted by Business Logic and decide which targeted
 	// programs and events the VEN may read. Only Business Logic may set them.
 	Targets []string
+	// TypedTargets: see Program.TypedTargets.
+	TypedTargets []ValuesMap
 }
 
 // Resource is a resource of a VEN, such as a device or a group of devices.
@@ -111,6 +123,8 @@ type Resource struct {
 	Attributes []ValuesMap
 	// Targets are granted by Business Logic; see VEN.Targets.
 	Targets []string
+	// TypedTargets: see Program.TypedTargets.
+	TypedTargets []ValuesMap
 }
 
 // ResourceGroup is a named set of resources and of other resource groups,
@@ -221,6 +235,8 @@ type ReportDescriptor struct {
 	ReadingType string
 	Units       string
 	Targets     []string
+	// TypedTargets: see Program.TypedTargets.
+	TypedTargets []ValuesMap
 	// Aggregate asks for one result over all targeted resources.
 	Aggregate bool
 	// StartInterval is the interval on which to report; -1 is the end of

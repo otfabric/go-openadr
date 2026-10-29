@@ -14,8 +14,12 @@ go-openadr/
 │   └── websocket/       Subscriber (client side; the VTN side is in server)
 ├── timeline/            intervals as a table; CSV
 ├── discovery/           DNS-SD over Multicast DNS: Browse and Advertise
+├── objectjson/          an object as JSON of a revision, for tools
 ├── internal/
 │   ├── wire/            what a protocol revision has to provide
+│   │   ├── common/      the JSON both revisions write alike
+│   │   ├── codecs/      the codec of a revision
+│   │   ├── v301/        the JSON of OpenADR 3.0.1 (clients only)
 │   │   └── v310/        the JSON of OpenADR 3.1.0, and of the extensions
 │   ├── mqtt/            an MQTT 3.1.1 client
 │   ├── mqtttest/        a broker for tests
@@ -26,8 +30,8 @@ go-openadr/
     └── storage/         a module of its own: the store on SQLite and PostgreSQL
 ```
 
-Dependencies point one way: `client` and `server` use the domain model and a
-wire codec; nothing in the root package knows about HTTP or JSON.
+Dependencies point one way: `client`, `server` and `objectjson` use the
+domain model and a wire codec; nothing in the root package knows about HTTP or JSON.
 `timeline` and `discovery` stand apart: the first uses the domain model
 only, the second nothing of this module at all.
 
@@ -49,10 +53,28 @@ from `valuesMap` objects to strings, VEN resources moved from
 `/vens/{venID}/resources` to `/resources`, and the scopes were redefined.
 A second revision is a second `wire.Codec`, not a second set of public types.
 
-The codec covers message bodies. Paths, query parameters and scopes are
-still written directly in `client` and `server` for 3.1.0; adding 3.0.1 will
-need a per-revision table for those as well. That is deliberately left
-until 3.0.1 is implemented, when the real differences can shape it.
+That is how 3.0.1 was added (v0.5.0), for the clients:
+
+- `internal/wire/common` holds the JSON both revisions write alike: values
+  maps, intervals, periods, payload descriptors, problems. `v310` and `v301`
+  build on it, and differ in the objects themselves.
+- The domain model gained what 3.0.1 has and 3.1.0 has not, as fields
+  of their own rather than reinterpretations: `TypedTargets` (3.0.1's
+  values-map targets) and `Report.ProgramID`. The program properties 3.0.1
+  had and 3.1.0 turned into program attributes need no field: the 3.0.1
+  codec maps them onto the attributes of the types 3.1.0 defines.
+- Each codec refuses, with a `ValidationError`, what its revision cannot
+  carry, so that nothing is lost in either direction: the 3.1.0 codec
+  refuses typed targets, the 3.0.1 codec string targets.
+- What is not a body is in `client/revision.go`, a table per revision of
+  the rest: the collection of resources
+  (`/resources` or `/vens/{venID}/resources`), how a search names targets
+  (`targets`, or `targetType` and `targetValues`), where the token endpoint
+  is, what 3.0.1 does not have (`errors.ErrUnsupported`, before a request),
+  and the program a 3.0.1 report needs.
+
+Scopes are the VTN's business, and the VTN speaks 3.1.0 only; a 3.0.1
+client asks for the scopes it is configured with, as a 3.1.0 one does.
 
 A `wire.ObjectCodec` distinguishes three forms of an object: the VTN's
 representation, a request from a VEN, and a request from Business Logic. The
@@ -60,7 +82,7 @@ last two differ for VENs and resources only, where the specification uses
 separate request schemas with an `objectType` discriminator.
 
 The domain model follows 3.1 where the revisions differ (targets are
-strings).
+strings), and has fields of its own for what only 3.0.1 has.
 
 ## The server
 

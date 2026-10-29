@@ -37,7 +37,7 @@ build: ## Build the examples into ./bin
 	done
 
 # The self-contained examples: each starts both sides and exits by itself.
-RUN_EXAMPLES := quickstart notifications prices websocket resourcegroups discovery observability
+RUN_EXAMPLES := quickstart notifications prices websocket resourcegroups discovery observability openadr301
 
 examples: ## Run the self-contained examples (each must exit successfully)
 	@for e in $(RUN_EXAMPLES); do \

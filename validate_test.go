@@ -187,3 +187,39 @@ func TestSentinels(t *testing.T) {
 		seen[sentinel.Error()] = true
 	}
 }
+
+// TestValidate301 checks the properties only OpenADR 3.0.1 has: typed
+// targets are values maps, and the program of a report an object ID.
+func TestValidate301(t *testing.T) {
+	typed := []ValuesMap{{Type: "GROUP", Values: []Value{String("g")}}}
+	untyped := []ValuesMap{{Values: []Value{String("g")}}}
+	descriptor := NewReportDescriptor("USAGE")
+	descriptor.TypedTargets = untyped
+	ok := []interface{ Validate() error }{
+		Program{Name: "p", TypedTargets: typed},
+		Event{ProgramID: "p", TypedTargets: typed},
+		VEN{Name: "v", TypedTargets: typed},
+		Resource{Name: "r", VENID: "v", TypedTargets: typed},
+		Subscription{ClientName: "c", TypedTargets: typed},
+		Report{EventID: "e", ClientName: "c", ProgramID: "p"},
+	}
+	for i, v := range ok {
+		if err := v.Validate(); err != nil {
+			t.Errorf("valid object %d: %v", i, err)
+		}
+	}
+	bad := map[string]interface{ Validate() error }{
+		"program":    Program{Name: "p", TypedTargets: untyped},
+		"event":      Event{ProgramID: "p", TypedTargets: untyped},
+		"descriptor": Event{ProgramID: "p", ReportDescriptors: []ReportDescriptor{descriptor}},
+		"VEN":        VEN{Name: "v", TypedTargets: untyped},
+		"resource":   Resource{Name: "r", VENID: "v", TypedTargets: untyped},
+		"sub":        Subscription{ClientName: "c", TypedTargets: untyped},
+		"report":     Report{EventID: "e", ClientName: "c", ProgramID: "not an id"},
+	}
+	for name, v := range bad {
+		if err := v.Validate(); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v, want ErrInvalid", name, err)
+		}
+	}
+}

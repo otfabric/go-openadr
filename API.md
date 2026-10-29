@@ -17,6 +17,7 @@ is the authoritative text for each symbol; this document is the map.
 - [Package `discovery`](#package-discovery)
 - [Package `auth`](#package-auth)
 - [Beyond OpenADR 3.1.0](#beyond-openadr-310)
+- [OpenADR 3.0.1](#openadr-301)
 - [Concurrency](#concurrency)
 - [Limits](#limits)
 
@@ -33,14 +34,15 @@ The domain model both sides share. Nothing here does I/O.
 
 ```go
 type Program  struct { Metadata; Name string; IntervalPeriod *IntervalPeriod; Descriptions []ProgramDescription
-                       PayloadDescriptors []PayloadDescriptor; Attributes []ValuesMap; Targets []string }
+                       PayloadDescriptors []PayloadDescriptor; Attributes []ValuesMap; Targets []string
+                       TypedTargets []ValuesMap }
 type Event    struct { Metadata; ProgramID, Name string; Duration *Duration; Priority *int; Targets []string
-                       ReportDescriptors []ReportDescriptor; PayloadDescriptors []EventPayloadDescriptor
-                       IntervalPeriod *IntervalPeriod; Intervals []Interval }
-type Report   struct { Metadata; ClientID, EventID, ClientName, Name string
+                       TypedTargets []ValuesMap; ReportDescriptors []ReportDescriptor
+                       PayloadDescriptors []EventPayloadDescriptor; IntervalPeriod *IntervalPeriod; Intervals []Interval }
+type Report   struct { Metadata; ClientID, EventID, ProgramID, ClientName, Name string
                        PayloadDescriptors []ReportPayloadDescriptor; Resources []ReportResource }
-type VEN      struct { Metadata; ClientID, Name string; Attributes []ValuesMap; Targets []string }
-type Resource struct { Metadata; ClientID, VENID, Name string; Attributes []ValuesMap; Targets []string }
+type VEN      struct { Metadata; ClientID, Name string; Attributes []ValuesMap; Targets []string; TypedTargets []ValuesMap }
+type Resource struct { Metadata; ClientID, VENID, Name string; Attributes []ValuesMap; Targets []string; TypedTargets []ValuesMap }
 
 type Metadata struct { ID string; Created, Modified time.Time }
 ```
@@ -54,6 +56,7 @@ type Metadata struct { ID string; Created, Modified time.Time }
 - **Absent and empty.** An optional string is absent when empty, an optional object or number when its pointer is nil, an optional list when nil. `IntervalPeriod.Start` is a pointer because the zero `time.Time` is year 1, which the specification gives a meaning ("now").
 - **No JSON tags.** These types are not meant to be marshalled directly: the JSON of a protocol revision is the business of `client` and `server`.
 - **Strings stay open.** Payload types, units, reading types and targets are plain strings: the enumerations of the specification are suggestions, and private values are allowed.
+- **`TypedTargets` and `Report.ProgramID`** are of OpenADR 3.0.1, and only a client of a 3.0.1 VTN uses them: see [OpenADR 3.0.1](#openadr-301). A 3.1.0 client or VTN refuses an object that has them.
 
 ### Values
 
@@ -127,6 +130,7 @@ func NewBL(Config) (*BL, error)
 
 type Config struct {
 	BaseURL          string        // required: what /programs is appended to
+	Version          openadr.Version // openadr.Version310 (default) or openadr.Version301
 	HTTPClient       *http.Client  // default: a client with a 30 s timeout
 	Credentials      *Credentials  // OAuth2 client credentials, or
 	Tokens           TokenSource   // ... any other source of bearer tokens
@@ -157,8 +161,8 @@ token fetches one.
 | `CreateProgram`, `UpdateProgram`, `DeleteProgram`, and the same for events | | yes |
 | `Reports`, `Report` | own reports | all reports |
 | `CreateReport`, `UpdateReport`, `DeleteReport` | yes | |
-| `VENs`, `VEN`, `Resources`, `Resource` | own objects | all objects |
-| `CreateVEN`, `UpdateVEN`, `DeleteVEN`, and the same for resources | VEN request | Business Logic request |
+| `VENs`, `VEN`, `Resources`, `Resource`, `ResourceOf` | own objects | all objects |
+| `CreateVEN`, `UpdateVEN`, `DeleteVEN`, and the same for resources, and `DeleteResourceOf` | VEN request | Business Logic request |
 | `Subscriptions`, `Subscription` | own subscriptions | all subscriptions |
 | `CreateSubscription`, `UpdateSubscription`, `DeleteSubscription` | yes | yes |
 | `Notifiers` | yes | yes |
@@ -193,6 +197,11 @@ for event, err := range client.Each(ctx, func(ctx context.Context, p client.Page
 is not a snapshot: objects created or deleted while it runs may be skipped
 or seen twice.
 
+With OpenADR 3.0.1, `ProgramQuery`, `EventQuery`, `VENQuery` and
+`ResourceQuery` name the type of their `Targets` in `TargetType`, sent as
+`targetType` and `targetValues`; `ResourceQuery.VENID` is required, and
+`EventQuery.ActiveOnly` is refused.
+
 **Targets.** A VEN is shown a program or event that has targets only for
 targets Business Logic granted it, and many VTNs — this module's included —
 only when the search names them. A VEN that polls for everything meant for
@@ -202,7 +211,7 @@ it searches once without targets and once with its own.
 
 With `Credentials`, the client performs the OAuth2 client-credentials grant:
 
-- The token endpoint is `Credentials.TokenURL`, or, when that is empty, what the VTN names with `GET /auth/server`. A relative name is resolved against `BaseURL`. For an `https` VTN an `http` token endpoint is refused.
+- The token endpoint is `Credentials.TokenURL`, or, when that is empty, what the VTN names with `GET /auth/server`; with OpenADR 3.0.1, which has no such operation, `auth/token` under `BaseURL`. A relative name is resolved against `BaseURL`. For an `https` VTN an `http` token endpoint is refused.
 - The client ID and secret are sent in the form body, as the OpenADR schema defines the request.
 - A token is reused until 10 seconds before it expires; one without a stated lifetime until the VTN rejects it. Concurrent calls wait for one token request instead of each making their own.
 - A 401 from the VTN discards the token and the request is sent once more with a fresh one.
@@ -412,6 +421,7 @@ type Handler struct {
 	BearerToken  string                                             // of the subscription; empty accepts anyone
 	Notify       func(ctx context.Context, n openadr.Notification) error
 	MaxBodyBytes int64                                              // default 1 MiB
+	Version      openadr.Version                                    // of the VTN: 3.1.0 (default) or 3.0.1
 }
 ```
 
@@ -611,6 +621,43 @@ groups.
 | `Notification.ID` | OpenLEADR adds an `id` of the operation to its notifications; this module reads it and does not send one |
 | Connections | `WebSocketConfig{PingInterval, MaxPerClient, Queue}`: 4 per client (OpenLEADR: 1), then 409; a client that does not answer two pings, or lets 256 notifications queue up, is disconnected |
 | Not kept | what happens while a client is not connected is not sent later |
+
+## OpenADR 3.0.1
+
+The clients speak OpenADR 3.0.1 with `Config.Version: openadr.Version301`,
+and `webhook.Handler` reads its notifications with `Version` set. The
+server, the MQTT and WebSocket subscribers and the topic operations are of
+3.1.0. The domain model is the same; the godoc of `openadr.Version301` is
+the authoritative list of what differs.
+
+| | With 3.0.1 |
+|---|---|
+| Targets | `TypedTargets` (`[]ValuesMap`, such as `{GROUP: [group-a]}`) on programs, events, report descriptors, VENs, resources, subscriptions and notifications. `Targets` (strings) is refused with a `ValidationError` |
+| Searches | `TargetType` with `Targets`: `targetType=GROUP&targetValues=…`. Without a type, refused |
+| Program attributes | `programLongName`, `retailerName`, `retailerLongName`, `programType`, `country`, `principalSubdivision`, `bindingEvents`, `localPrice` are read into and written from `Attributes` of the types 3.1.0 gives them (`PROGRAM_LONG_NAME` … `LOCAL`); `timeZoneOffset` as `TIME_ZONE_OFFSET`. Any other attribute type is refused |
+| Reports | `ProgramID` is required. `(*VEN).CreateReport` and `UpdateReport` read it from the event (`GET /events/{id}`) when it is empty |
+| Resources | `/vens/{venID}/resources`: `ResourceQuery.VENID`, `ResourceOf(ctx, venID, id)`, `DeleteResourceOf(ctx, venID, id)`; `CreateResource` and `UpdateResource` take the VEN from `Resource.VENID`. `Resource` and `DeleteResource`, which have no VEN, return `errors.ErrUnsupported` |
+| Refused | an event's `Duration`; a VEN's or resource's `ClientID` from Business Logic; report descriptors with `ReportIntervals` other than `INTERVALS`; subscriptions without `ProgramID` or by another mechanism than a webhook |
+| Not there | `Notifiers`, `MQTTTopics` and resource groups return `errors.ErrUnsupported`, without a request |
+| Notifications | the operation is named by its HTTP method (`POST`, `GET`, `PUT`, `DELETE`) and read as `CREATE`, `READ`, `UPDATE`, `DELETE` |
+
+`ResourceOf` and `DeleteResourceOf` work with 3.1.0 too, where `venID` is
+not sent: code that serves both revisions can use them throughout.
+
+### Package `objectjson`
+
+```go
+func Marshal[T Object](v openadr.Version, obj T) ([]byte, error)
+func Unmarshal[T Object](v openadr.Version, data []byte) (T, error)
+```
+
+The JSON of an object as a VTN of revision `v` answers with it (the zero
+`Version` is 3.1.0), and back: for a program that shows objects or reads
+them from files and has to write them as the VTN it talks to would. `Object`
+is any of the seven kinds of object or a `Notification`. What `v` cannot
+carry is a `*openadr.ValidationError`, a resource group in 3.0.1
+`errors.ErrUnsupported`, an unknown revision `openadr.ErrConfiguration`.
+`Unmarshal` does not validate.
 
 ## Package `auth`
 

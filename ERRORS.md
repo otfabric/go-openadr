@@ -34,6 +34,8 @@ Errors a client method can return:
 | The VTN answered with any other 5xx | `*openadr.Error`, matches `openadr.ErrServer` | yes |
 | The VTN answered with another status outside 2xx (405, 413, 426) | `*openadr.Error`; matches no sentinel | yes |
 | The object, or an object ID, violates the schema | `*openadr.ValidationError`, matches `openadr.ErrInvalid` | no |
+| The object, or a search, has what the client's revision of OpenADR cannot carry: string targets or a 3.0.1 report's `ProgramID` and a 3.1.0 VTN, typed targets, an event's `Duration` and a 3.0.1 VTN | `*openadr.ValidationError`, matches `openadr.ErrInvalid` | no |
+| The operation is not in the client's revision: notifiers, MQTT topics, resource groups, or a resource by ID alone, with OpenADR 3.0.1 | matches `errors.ErrUnsupported` | no |
 | The token endpoint refused the client | wraps `*client.TokenError`, which matches `openadr.ErrUnauthorized` | no API request |
 | The token endpoint failed (429, 5xx) | wraps `*client.TokenError`, which matches `openadr.ErrTooManyRequests` or `openadr.ErrServer` | no API request |
 | The token endpoint could not be discovered: `GET /auth/server` was refused | wraps an `*openadr.Error` for that request | no API request |

@@ -57,9 +57,11 @@ type fixture struct {
 		ClientSecret string `json:"clientSecret"`
 	} `json:"clients"`
 	VENs []struct {
-		VENName string   `json:"venName"`
-		Client  string   `json:"client"`
-		Targets []string `json:"targets"`
+		VENName string `json:"venName"`
+		Client  string `json:"client"`
+		// Strings in a fixture of OpenADR 3.1.0, values maps in one of
+		// 3.0.1.
+		Targets json.RawMessage `json:"targets"`
 	} `json:"vens"`
 	Resources []struct {
 		ResourceName string `json:"resourceName"`
