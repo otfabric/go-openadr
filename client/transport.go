@@ -2,8 +2,9 @@
 
 // Package client holds the two clients of a VTN: VEN, for a virtual end
 // node, and BL, for the Business Logic of a utility or aggregator. Both
-// speak OpenADR 3.1.0 over HTTP and differ only in the operations they
-// offer, which follow the scopes the specification gives each role.
+// speak OpenADR 3.1.0 over HTTP, or 3.0.1 with Config.Version, and differ
+// only in the operations they offer, which follow the scopes the
+// specification gives each role.
 //
 // A client is safe for concurrent use. Its methods take a context that
 // bounds the whole call, including a token request it may have to make
@@ -31,7 +32,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/wire"
-	v310 "github.com/otfabric/go-openadr/internal/wire/v310"
+	"github.com/otfabric/go-openadr/internal/wire/codecs"
 )
 
 // Config configures a client.
@@ -39,6 +40,10 @@ type Config struct {
 	// BaseURL is the URL of the VTN's API, the one the paths of the
 	// specification, such as /programs, are appended to. Required.
 	BaseURL string
+	// Version is the revision of OpenADR the VTN speaks: openadr.Version310
+	// (the default when empty) or openadr.Version301. See
+	// openadr.Version301 for what a 3.0.1 client does differently.
+	Version openadr.Version
 	// HTTPClient makes the requests; it is where TLS, proxies and timeouts
 	// are configured. When nil, a client with a 30 second timeout is used.
 	HTTPClient *http.Client
@@ -105,6 +110,10 @@ func newCore(cfg Config) (*core, error) {
 	if cfg.Credentials != nil && cfg.Tokens != nil {
 		return nil, errors.New("client: set Config.Credentials or Config.Tokens, not both")
 	}
+	codec, err := codecs.For(cfg.Version)
+	if err != nil {
+		return nil, fmt.Errorf("client: Config.Version: %w", err)
+	}
 	// Paths are appended to the base, so it must end in a slash for
 	// relative resolution to keep its last segment.
 	base.Path = strings.TrimSuffix(base.Path, "/") + "/"
@@ -116,7 +125,7 @@ func newCore(cfg Config) (*core, error) {
 		tokens:  cfg.Tokens,
 		ua:      cfg.UserAgent,
 		maxBody: cfg.MaxResponseBytes,
-		codec:   v310.Codec(),
+		codec:   codec,
 
 		retry:        cfg.RetryPolicy,
 		retryCreates: cfg.RetryCreates,
@@ -386,8 +395,12 @@ func sendObject[T interface{ Validate() error }](ctx context.Context, c *core, o
 	return decodeObject(oc, body, err)
 }
 
-func listObjects[T any](ctx context.Context, c *core, oc wire.ObjectCodec[T], collection string, query url.Values) ([]T, error) {
-	body, err := c.do(ctx, http.MethodGet, collection, query, nil)
+func listObjects[T any](ctx context.Context, c *core, oc wire.ObjectCodec[T], collection string, q query) ([]T, error) {
+	values, err := q.values(c.codec.Version)
+	if err != nil {
+		return nil, err
+	}
+	body, err := c.do(ctx, http.MethodGet, collection, values, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -437,34 +450,72 @@ func (q params) list(name string, values []string) params {
 	return q
 }
 
+// query is a search's filters, as one revision writes them.
+type query interface {
+	values(v openadr.Version) (url.Values, error)
+}
+
+// targets writes a filter on targets: targets=... in 3.1.0, and in 3.0.1
+// targetType=...&targetValues=..., which needs a type.
+func (q params) targets(v openadr.Version, typ string, targets []string) error {
+	if v == openadr.Version301 {
+		if len(targets) > 0 && typ == "" {
+			return &openadr.ValidationError{Field: "TargetType", Reason: "is required by OpenADR 3.0.1 to search by targets"}
+		}
+		if len(targets) > 0 {
+			q.Set("targetType", typ)
+			q.list("targetValues", targets)
+		}
+		return nil
+	}
+	if typ != "" {
+		return &openadr.ValidationError{Field: "TargetType", Reason: "is of OpenADR 3.0.1; 3.1.0 targets have no type"}
+	}
+	q.list("targets", targets)
+	return nil
+}
+
 // ProgramQuery filters a search for programs.
 type ProgramQuery struct {
 	// Targets selects programs that have one of these targets. A VEN has to
 	// name the targets it was granted to see the programs that carry them.
 	Targets []string
+	// TargetType is the type of Targets, which OpenADR 3.0.1 requires
+	// (such as "GROUP") and 3.1.0 does not have.
+	TargetType string
 	Page
 }
 
-func (q ProgramQuery) values() url.Values {
-	return newParams(q.Page).list("targets", q.Targets).Values
+func (q ProgramQuery) values(v openadr.Version) (url.Values, error) {
+	p := newParams(q.Page)
+	err := p.targets(v, q.TargetType, q.Targets)
+	return p.Values, err
 }
 
 // EventQuery filters a search for events.
 type EventQuery struct {
 	ProgramID string
-	// Targets works as in ProgramQuery.
-	Targets []string
-	// ActiveOnly leaves out events that have transpired.
+	// Targets and TargetType work as in ProgramQuery.
+	Targets    []string
+	TargetType string
+	// ActiveOnly leaves out events that have transpired. OpenADR 3.0.1
+	// does not have it.
 	ActiveOnly bool
 	Page
 }
 
-func (q EventQuery) values() url.Values {
-	p := newParams(q.Page).str("programID", q.ProgramID).list("targets", q.Targets)
+func (q EventQuery) values(v openadr.Version) (url.Values, error) {
+	p := newParams(q.Page).str("programID", q.ProgramID)
+	if err := p.targets(v, q.TargetType, q.Targets); err != nil {
+		return nil, err
+	}
 	if q.ActiveOnly {
+		if v == openadr.Version301 {
+			return nil, &openadr.ValidationError{Field: "ActiveOnly", Reason: "is of OpenADR 3.1.0; 3.0.1 cannot search for active events"}
+		}
 		p.Set("active", "true")
 	}
-	return p.Values
+	return p.Values, nil
 }
 
 // ReportQuery filters a search for reports.
@@ -475,31 +526,45 @@ type ReportQuery struct {
 	Page
 }
 
-func (q ReportQuery) values() url.Values {
-	return newParams(q.Page).str("programID", q.ProgramID).str("eventID", q.EventID).str("clientName", q.ClientName).Values
+func (q ReportQuery) values(openadr.Version) (url.Values, error) {
+	return newParams(q.Page).str("programID", q.ProgramID).str("eventID", q.EventID).str("clientName", q.ClientName).Values, nil
 }
 
 // VENQuery filters a search for VENs.
 type VENQuery struct {
-	Name    string
-	Targets []string
+	Name string
+	// Targets and TargetType work as in ProgramQuery.
+	Targets    []string
+	TargetType string
 	Page
 }
 
-func (q VENQuery) values() url.Values {
-	return newParams(q.Page).str("venName", q.Name).list("targets", q.Targets).Values
+func (q VENQuery) values(v openadr.Version) (url.Values, error) {
+	p := newParams(q.Page).str("venName", q.Name)
+	err := p.targets(v, q.TargetType, q.Targets)
+	return p.Values, err
 }
 
 // ResourceQuery filters a search for resources.
 type ResourceQuery struct {
-	Name    string
-	VENID   string
-	Targets []string
+	Name string
+	// VENID selects the resources of one VEN. OpenADR 3.0.1 requires it:
+	// its resources are reached through their VEN.
+	VENID string
+	// Targets and TargetType work as in ProgramQuery.
+	Targets    []string
+	TargetType string
 	Page
 }
 
-func (q ResourceQuery) values() url.Values {
-	return newParams(q.Page).str("resourceName", q.Name).str("venID", q.VENID).list("targets", q.Targets).Values
+func (q ResourceQuery) values(v openadr.Version) (url.Values, error) {
+	p := newParams(q.Page).str("resourceName", q.Name)
+	if v != openadr.Version301 {
+		// In 3.0.1 the VEN is in the path.
+		p.str("venID", q.VENID)
+	}
+	err := p.targets(v, q.TargetType, q.Targets)
+	return p.Values, err
 }
 
 // ResourceGroupQuery filters a search for resource groups.
@@ -509,8 +574,8 @@ type ResourceGroupQuery struct {
 	Page
 }
 
-func (q ResourceGroupQuery) values() url.Values {
-	return newParams(q.Page).str("resourceGroupName", q.Name).list("targets", q.Targets).Values
+func (q ResourceGroupQuery) values(openadr.Version) (url.Values, error) {
+	return newParams(q.Page).str("resourceGroupName", q.Name).list("targets", q.Targets).Values, nil
 }
 
 // SubscriptionQuery filters a search for subscriptions.
@@ -522,12 +587,12 @@ type SubscriptionQuery struct {
 	Page
 }
 
-func (q SubscriptionQuery) values() url.Values {
+func (q SubscriptionQuery) values(openadr.Version) (url.Values, error) {
 	p := newParams(q.Page).str("programID", q.ProgramID).str("clientName", q.ClientName)
 	for _, o := range q.Objects {
 		p.Add("objects", string(o))
 	}
-	return p.Values
+	return p.Values, nil
 }
 
 // TopicSet names a set of objects whose MQTT topics a VTN can be asked for.
@@ -580,6 +645,9 @@ func ProgramsForVEN(venID string) TopicSet { return TopicSet{path: "vens/%s/prog
 func ResourcesOfVEN(venID string) TopicSet { return TopicSet{path: "vens/%s/resources", id: venID} }
 
 func (c *core) notifiers(ctx context.Context) (openadr.Notifiers, error) {
+	if err := c.only310("GET /notifiers"); err != nil {
+		return openadr.Notifiers{}, err
+	}
 	body, err := c.do(ctx, http.MethodGet, "notifiers", nil, nil)
 	if err != nil {
 		return openadr.Notifiers{}, err
@@ -592,6 +660,9 @@ func (c *core) notifiers(ctx context.Context) (openadr.Notifiers, error) {
 }
 
 func (c *core) topics(ctx context.Context, of TopicSet) (openadr.Topics, error) {
+	if err := c.only310("MQTT"); err != nil {
+		return openadr.Topics{}, err
+	}
 	path := of.path
 	if path == "" {
 		return openadr.Topics{}, &openadr.ValidationError{Field: "of", Reason: "is the zero TopicSet"}

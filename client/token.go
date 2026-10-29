@@ -39,7 +39,8 @@ type Credentials struct {
 	// Scopes are requested from the token endpoint when not empty.
 	Scopes []string
 	// TokenURL is the token endpoint. When empty it is discovered from the
-	// VTN with GET /auth/server.
+	// VTN with GET /auth/server; a client of OpenADR 3.0.1, which has no
+	// such operation, uses /auth/token under the VTN's BaseURL.
 	TokenURL string
 }
 
@@ -106,7 +107,11 @@ func newCredentialSource(creds Credentials, c *core) (*credentialSource, error) 
 			return nil, fmt.Errorf("client: Credentials.TokenURL %q is not an absolute URL", creds.TokenURL)
 		}
 	}
-	return &credentialSource{creds: creds, core: c, tokenURL: creds.TokenURL}, nil
+	tokenURL := creds.TokenURL
+	if tokenURL == "" {
+		tokenURL = c.defaultTokenURL()
+	}
+	return &credentialSource{creds: creds, core: c, tokenURL: tokenURL}, nil
 }
 
 // expirySlack is how long before its expiry a token stops being used, so

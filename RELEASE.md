@@ -1,5 +1,64 @@
 # go-openadr Releases
 
+## v0.5.0
+
+**Date:** 2026-10-29
+**Previous release:** v0.4.0
+
+## Summary
+
+OpenADR 3.0.1, milestone M5: the VEN and Business Logic clients and the
+webhook handler speak the earlier revision with `Config.Version:
+openadr.Version301`, and are tested against OpenLEADR v0.1.4, the last
+OpenLEADR for OpenADR 3.0. The domain model stays that of 3.1.0, with what
+only 3.0.1 has added to it; each revision has a codec of its own, and what
+one cannot carry is refused, never dropped. The VTN server serves 3.1.0.
+
+**Upgrade notes**
+
+- Nothing changes for a 3.1.0 client: `Config.Version` defaults to 3.1.0.
+- `openadr.Program`, `Event`, `VEN`, `Resource`, `ReportDescriptor`, `Subscription` and `Notification` have a new field, `TypedTargets`, and `openadr.Report` has `ProgramID`. A 3.1.0 client and the VTN refuse an object that sets them. Code that builds these structs with unkeyed fields has to be adjusted.
+- `client.ProgramQuery`, `EventQuery`, `VENQuery` and `ResourceQuery` have a new field, `TargetType`, refused with 3.1.0.
+- The reference images are those of openadr-interop v0.5.0, pinned by digest, with a third, `openleadr301`.
+
+## Changes
+
+### Added
+
+- **`openadr.Version301`** and `Version.Supported`. The godoc of `Version301` lists what differs from 3.1.0.
+- **`client.Config.Version`.** With 3.0.1: typed targets (`TypedTargets`, `TargetType` in a search, sent as `targetType` and `targetValues`); the program properties 3.1.0 made attributes (`programLongName` … `localPrice`) read into and written from those attributes, and `timeZoneOffset` as `TIME_ZONE_OFFSET`; a report's `ProgramID`, which `CreateReport` and `UpdateReport` read from the event when it is empty; resources under `/vens/{venID}/resources`; the token from `/auth/token` unless `TokenURL` says otherwise. Notifiers, MQTT topics and resource groups return an error that matches `errors.ErrUnsupported`, without a request.
+- **`ResourceOf` and `DeleteResourceOf`** on both clients: a resource by its VEN and ID, for either revision.
+- **`webhook.Handler.Version`**: reads the notifications of a 3.0.1 VTN, whose operations are named `POST`, `PUT`, `GET`, `DELETE`.
+- **Package `objectjson`**: `Marshal` and `Unmarshal` give an object the JSON of either revision, for tools that show objects or read them from files.
+- **`examples/openadr301`**: a 3.0.1 VEN end to end, and one program as JSON of either revision.
+- **Interoperability with a 3.0.1 VTN** (`interop/openleadr301_test.go`): see Verification.
+
+### Changed
+
+- The revision-independent JSON moved from `internal/wire/v310` to `internal/wire/common`, shared by `v310` and the new `v301`; `internal/wire/codecs` returns the codec of a revision. The 3.1.0 JSON is unchanged, byte for byte, as its tests show.
+- `README.md` has an OpenADR 3.0.1 section; `API.md`, `ARCHITECTURE.md`, `ERRORS.md`, `docs/CONFORMANCE.md`, `PLAN.md` (M5 done) and `INTEROP.md` say what is there now.
+
+### Fixed
+
+- **Documentation:** the subscription operations of the ElaadNL client were said to be named "as OpenADR 3.0.1 did". 3.0.1 names subscription operations `READ`, `CREATE`, `UPDATE`, `DELETE`, as 3.1.0 does; it uses the HTTP methods for the operation of a notification. `INTEROP.md` and the README say so now.
+- Two tests that ignored a received value (`internal/ws`, `notification/webhook`) assert it, as golangci-lint 2.15 asks.
+
+### Verification
+
+- `make check`: coverage of 91.5% of the library's statements, eight self-contained examples.
+- The 3.0.1 codec is tested against the pinned OpenAPI file of 3.0.1 (`grid-coordination/openadr3-specification`, SHA-256 `3418d267…e7e7`): round trips of every object, the shape of the JSON, what it refuses, notifications and decoding. The client is tested against a 3.0.1 VTN double for every request it makes differently.
+- **go-openadr's clients against OpenLEADR v0.1.4** (openadr-interop v0.5.0, `openleadr301`), 4 tests: the fixture and who sees what, a search by typed targets, the program attributes of 3.0.1 both ways, an event, a report that names its program, VENs and resources through their VEN, and what 3.0.1 does not have. Two things OpenLEADR does its own way are pinned down: a search for `VEN_NAME` targets finds no program, and a VEN cannot delete its report (403).
+- `make interop` is green against the images of openadr-interop v0.5.0, pinned by digest, and the four MQTT brokers; everything of v0.4.0 passes unchanged.
+- `make e2e`, and the library's tests on Linux with Go 1.26, in a container, with the race detector.
+
+### Known limitations
+
+- **3.0.1 for the clients only.** The VTN serves 3.1.0; a 3.0.1 VTN is not planned.
+- **MQTT and WebSocket subscribers are of 3.1.0**: 3.0.1 has neither.
+- **Only OpenLEADR v0.1.4 has been met as a 3.0.1 peer.** It serves no subscriptions, so the subscription and webhook path of 3.0.1 is tested against the specification's schema and a double, not another implementation.
+
+---
+
 ## v0.4.0
 
 **Date:** 2026-10-13

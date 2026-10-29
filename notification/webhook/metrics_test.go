@@ -159,8 +159,8 @@ func TestSendConfirmed(t *testing.T) {
 		select {
 		case err := <-done:
 			select {
-			case <-done:
-				t.Error("done was called twice")
+			case again := <-done:
+				t.Errorf("done was called twice, the second time with %v", again)
 			case <-time.After(30 * time.Millisecond):
 			}
 			return err

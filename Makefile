@@ -37,7 +37,7 @@ build: ## Build the examples into ./bin
 	done
 
 # The self-contained examples: each starts both sides and exits by itself.
-RUN_EXAMPLES := quickstart notifications prices websocket resourcegroups discovery observability
+RUN_EXAMPLES := quickstart notifications prices websocket resourcegroups discovery observability openadr301
 
 examples: ## Run the self-contained examples (each must exit successfully)
 	@for e in $(RUN_EXAMPLES); do \
@@ -123,9 +123,10 @@ fuzz: ## Run the parser fuzz targets for FUZZTIME each (default 30s)
 	@go test -run='^$$' -fuzz='^FuzzParseMessage$$' -fuzztime=$(FUZZTIME) ./discovery
 	@go test -run='^$$' -fuzz='^FuzzReadCSV$$' -fuzztime=$(FUZZTIME) ./timeline
 
-# Reference implementations for 'make interop': otfabric/openadr-interop v0.4.0
-# (the OpenLEADR VTN v0.2.7 with a Mosquitto broker, and the ElaadNL
-# openadr3-client 2.4.0), pinned by multi-arch index digest.
+# Reference implementations for 'make interop': otfabric/openadr-interop v0.5.0
+# (the OpenLEADR VTN v0.2.7 with a Mosquitto broker, the ElaadNL
+# openadr3-client 2.4.0, and OpenLEADR v0.1.4 for OpenADR 3.0.1), pinned by
+# multi-arch index digest.
 # Keep in step with interop/harness_test.go and .github/workflows/interop.yml.
 # The suite also runs this module's MQTT publisher and subscriber on four
 # brokers (Mosquitto, NanoMQ, HiveMQ CE, EMQX), whose images are pinned in
@@ -134,13 +135,15 @@ fuzz: ## Run the parser fuzz targets for FUZZTIME each (default 30s)
 # passing by skipping would say nothing.
 # Override to test other builds, e.g. the local ones of a checkout of that repository:
 #   make interop OPENADR_INTEROP_OPENLEADR_IMAGE=ghcr.io/otfabric/openadr-interop-openleadr:dev
-OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:b8221b89983a5b7cdc69cea92443e05416336ad1ddcd843250770d65950b4fb2
-OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:db5e0d61814fd12ab2c78926c482f15b466f1639a0eae692d58657f9fdfd093a
+OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:4f8eb4b1795bd3f21307346eb8cff0e3860f9c9753e841710de50a5af1353ab5
+OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3c8d2e56b87740f138d3e083303c8333a28cfe6d386aab1a9a009ae70c33d12f
+OPENADR_INTEROP_OPENLEADR301_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr301@sha256:a2039fff5b7d3e4a3691883a543bb602b885a07ed8a3a2779fed238627c7e1a5
 
-test-interop: ## Run the interop suite: OpenLEADR and ElaadNL reference images, and four MQTT brokers (needs Docker)
-	@echo "Running interop tests against $(OPENADR_INTEROP_OPENLEADR_IMAGE) and $(OPENADR_INTEROP_ELAADNL_IMAGE)"
+test-interop: ## Run the interop suite: OpenLEADR (3.1.0 and 3.0.1) and ElaadNL reference images, and four MQTT brokers (needs Docker)
+	@echo "Running interop tests against $(OPENADR_INTEROP_OPENLEADR_IMAGE), $(OPENADR_INTEROP_ELAADNL_IMAGE) and $(OPENADR_INTEROP_OPENLEADR301_IMAGE)"
 	@OPENADR_INTEROP_OPENLEADR_IMAGE="$(OPENADR_INTEROP_OPENLEADR_IMAGE)" \
 		OPENADR_INTEROP_ELAADNL_IMAGE="$(OPENADR_INTEROP_ELAADNL_IMAGE)" \
+		OPENADR_INTEROP_OPENLEADR301_IMAGE="$(OPENADR_INTEROP_OPENLEADR301_IMAGE)" \
 		OPENADR_INTEROP_REQUIRE=1 \
 		go test -tags=interop -count=1 -timeout=20m ./interop/...
 

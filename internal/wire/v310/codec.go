@@ -8,6 +8,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/wire"
+	"github.com/otfabric/go-openadr/internal/wire/common"
 )
 
 // Codec returns the OpenADR 3.1.0 representation.
@@ -38,14 +39,8 @@ func Codec() *wire.Codec {
 			return openadr.Topics{Create: w.Topics.Create, Update: w.Topics.Update, Delete: w.Topics.Delete, All: w.Topics.All}, nil
 		},
 
-		MarshalProblem: func(p openadr.Problem) ([]byte, error) {
-			return json.Marshal(problem(p))
-		},
-		UnmarshalProblem: func(data []byte) (openadr.Problem, error) {
-			var p problem
-			err := json.Unmarshal(data, &p)
-			return openadr.Problem(p), err
-		},
+		MarshalProblem:   common.MarshalProblem,
+		UnmarshalProblem: common.UnmarshalProblem,
 		MarshalAuthServer: func(tokenURL string) ([]byte, error) {
 			return json.Marshal(authServerInfo{TokenURL: tokenURL})
 		},
@@ -67,9 +62,21 @@ func requestMeta(discriminator string) metadata {
 	return metadata{ObjectType: discriminator}
 }
 
+// untyped refuses the typed targets of OpenADR 3.0.1, which 3.1.0 cannot
+// carry: its targets are strings.
+func untyped(field string, typed []openadr.ValuesMap) error {
+	if len(typed) > 0 {
+		return invalid(field, "are values maps, the targets of OpenADR 3.0.1; 3.1.0 targets are strings")
+	}
+	return nil
+}
+
 // --- program
 
 func marshalProgram(p openadr.Program, form wire.Form) ([]byte, error) {
+	if err := untyped("targets", p.TypedTargets); err != nil {
+		return nil, err
+	}
 	w := program{
 		ProgramName:    p.Name,
 		IntervalPeriod: periodTo(p.IntervalPeriod),
@@ -85,21 +92,8 @@ func marshalProgram(p openadr.Program, form wire.Form) ([]byte, error) {
 	if w.Attributes, err = valuesMapsTo(p.Attributes); err != nil {
 		return nil, err
 	}
-	for i, d := range p.PayloadDescriptors {
-		var v any
-		switch d := d.(type) {
-		case openadr.EventPayloadDescriptor:
-			v = eventDescriptorTo(d)
-		case openadr.ReportPayloadDescriptor:
-			v = reportDescriptorTo(d)
-		default:
-			return nil, fmt.Errorf("openadr: program payload descriptor %d is nil", i)
-		}
-		raw, err := json.Marshal(v)
-		if err != nil {
-			return nil, err
-		}
-		w.PayloadDescriptors = append(w.PayloadDescriptors, raw)
+	if w.PayloadDescriptors, err = common.PayloadDescriptorsTo(p.PayloadDescriptors); err != nil {
+		return nil, err
 	}
 	return json.Marshal(w)
 }
@@ -124,12 +118,8 @@ func unmarshalProgram(data []byte) (openadr.Program, wire.Form, error) {
 	if p.Attributes, err = valuesMapsFrom("attributes", w.Attributes); err != nil {
 		return openadr.Program{}, 0, err
 	}
-	for i, raw := range w.PayloadDescriptors {
-		d, err := payloadDescriptorFrom(fmt.Sprintf("payloadDescriptors[%d]", i), raw)
-		if err != nil {
-			return openadr.Program{}, 0, err
-		}
-		p.PayloadDescriptors = append(p.PayloadDescriptors, d)
+	if p.PayloadDescriptors, err = common.PayloadDescriptorsFrom("payloadDescriptors", w.PayloadDescriptors); err != nil {
+		return openadr.Program{}, 0, err
 	}
 	return p, wire.Object, nil
 }
@@ -137,6 +127,14 @@ func unmarshalProgram(data []byte) (openadr.Program, wire.Form, error) {
 // --- event
 
 func marshalEvent(e openadr.Event, form wire.Form) ([]byte, error) {
+	if err := untyped("targets", e.TypedTargets); err != nil {
+		return nil, err
+	}
+	for i, d := range e.ReportDescriptors {
+		if err := untyped(fmt.Sprintf("reportDescriptors[%d].targets", i), d.TypedTargets); err != nil {
+			return nil, err
+		}
+	}
 	w := event{
 		ProgramID:          e.ProgramID,
 		EventName:          e.Name,
@@ -189,23 +187,22 @@ func unmarshalEvent(data []byte) (openadr.Event, wire.Form, error) {
 // --- report
 
 func marshalReport(r openadr.Report, form wire.Form) ([]byte, error) {
+	if r.ProgramID != "" {
+		return nil, invalid("programID", "is of OpenADR 3.0.1; a 3.1.0 report has none")
+	}
 	w := report{
 		EventID:            r.EventID,
 		ClientName:         r.ClientName,
 		ReportName:         r.Name,
 		PayloadDescriptors: mapSlice(r.PayloadDescriptors, reportDescriptorTo),
-		Resources:          make([]reportResource, len(r.Resources)),
 	}
 	if form == wire.Object {
 		w.metadata = metaTo(r.Metadata, openadr.ObjectReport)
 		w.ClientID = r.ClientID
 	}
-	for i, res := range r.Resources {
-		ivs, err := intervalsTo(res.Intervals)
-		if err != nil {
-			return nil, err
-		}
-		w.Resources[i] = reportResource{ResourceName: res.ResourceName, IntervalPeriod: periodTo(res.IntervalPeriod), Intervals: ivs}
+	var err error
+	if w.Resources, err = common.ReportResourcesTo(r.Resources); err != nil {
+		return nil, err
 	}
 	return json.Marshal(w)
 }
@@ -215,9 +212,6 @@ func unmarshalReport(data []byte) (openadr.Report, wire.Form, error) {
 	if err := decode(data, &w); err != nil {
 		return openadr.Report{}, 0, err
 	}
-	if w.Resources == nil {
-		return openadr.Report{}, 0, invalid("resources", "is required")
-	}
 	r := openadr.Report{
 		Metadata:           metaFrom(w.metadata),
 		ClientID:           w.ClientID,
@@ -225,22 +219,10 @@ func unmarshalReport(data []byte) (openadr.Report, wire.Form, error) {
 		ClientName:         w.ClientName,
 		Name:               w.ReportName,
 		PayloadDescriptors: mapSlice(w.PayloadDescriptors, reportDescriptorFrom),
-		Resources:          make([]openadr.ReportResource, len(w.Resources)),
 	}
-	for i, res := range w.Resources {
-		f := fmt.Sprintf("resources[%d]", i)
-		if res.Intervals == nil {
-			return openadr.Report{}, 0, invalid(f+".intervals", "is required")
-		}
-		period, err := periodFrom(f+".intervalPeriod", res.IntervalPeriod)
-		if err != nil {
-			return openadr.Report{}, 0, err
-		}
-		ivs, err := intervalsFrom(f+".intervals", res.Intervals)
-		if err != nil {
-			return openadr.Report{}, 0, err
-		}
-		r.Resources[i] = openadr.ReportResource{ResourceName: res.ResourceName, IntervalPeriod: period, Intervals: ivs}
+	var err error
+	if r.Resources, err = common.ReportResourcesFrom(w.Resources); err != nil {
+		return openadr.Report{}, 0, err
 	}
 	return r, wire.Object, nil
 }
@@ -248,6 +230,9 @@ func unmarshalReport(data []byte) (openadr.Report, wire.Form, error) {
 // --- ven
 
 func marshalVEN(v openadr.VEN, form wire.Form) ([]byte, error) {
+	if err := untyped("targets", v.TypedTargets); err != nil {
+		return nil, err
+	}
 	w := ven{VenName: v.Name}
 	switch form {
 	case wire.Object:
@@ -284,6 +269,9 @@ func unmarshalVEN(data []byte) (openadr.VEN, wire.Form, error) {
 // --- resource
 
 func marshalResource(r openadr.Resource, form wire.Form) ([]byte, error) {
+	if err := untyped("targets", r.TypedTargets); err != nil {
+		return nil, err
+	}
 	w := resource{ResourceName: r.Name, VenID: r.VENID}
 	switch form {
 	case wire.Object:
@@ -319,6 +307,9 @@ func unmarshalResource(data []byte) (openadr.Resource, wire.Form, error) {
 // --- subscription
 
 func marshalSubscription(sub openadr.Subscription, form wire.Form) ([]byte, error) {
+	if err := untyped("targets", sub.TypedTargets); err != nil {
+		return nil, err
+	}
 	w := subscription{
 		ClientName:       sub.ClientName,
 		ProgramID:        sub.ProgramID,
@@ -392,6 +383,9 @@ func unmarshalSubscription(data []byte) (openadr.Subscription, wire.Form, error)
 // --- notification
 
 func marshalNotification(n openadr.Notification) ([]byte, error) {
+	if err := untyped("targets", n.TypedTargets); err != nil {
+		return nil, err
+	}
 	var (
 		object []byte
 		err    error

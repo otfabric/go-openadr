@@ -31,7 +31,7 @@ func NewVEN(cfg Config) (*VEN, error) {
 
 // Programs searches the programs this VEN may see.
 func (c *VEN) Programs(ctx context.Context, q ProgramQuery) ([]openadr.Program, error) {
-	return listObjects(ctx, c.core, c.core.codec.Programs, "programs", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Programs, "programs", q)
 }
 
 // Program returns the program with the given ID.
@@ -41,7 +41,7 @@ func (c *VEN) Program(ctx context.Context, id string) (openadr.Program, error) {
 
 // Events searches the events this VEN may see.
 func (c *VEN) Events(ctx context.Context, q EventQuery) ([]openadr.Event, error) {
-	return listObjects(ctx, c.core, c.core.codec.Events, "events", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Events, "events", q)
 }
 
 // Event returns the event with the given ID.
@@ -51,7 +51,7 @@ func (c *VEN) Event(ctx context.Context, id string) (openadr.Event, error) {
 
 // Reports searches the reports this VEN created.
 func (c *VEN) Reports(ctx context.Context, q ReportQuery) ([]openadr.Report, error) {
-	return listObjects(ctx, c.core, c.core.codec.Reports, "reports", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Reports, "reports", q)
 }
 
 // Report returns the report with the given ID.
@@ -61,8 +61,11 @@ func (c *VEN) Report(ctx context.Context, id string) (openadr.Report, error) {
 
 // CreateReport creates a report and returns it as the VTN stored it. The VTN
 // records the report under the credentials of this client.
+//
+// A client of OpenADR 3.0.1 reads the event first when rep.ProgramID is
+// empty: 3.0.1 requires the program in a report.
 func (c *VEN) CreateReport(ctx context.Context, rep openadr.Report) (openadr.Report, error) {
-	return sendObject(ctx, c.core, c.core.codec.Reports, "reports", "", rep, wire.Request)
+	return sendReport(ctx, c.core, "", rep)
 }
 
 // UpdateReport replaces the report that has rep.ID with rep.
@@ -70,7 +73,7 @@ func (c *VEN) UpdateReport(ctx context.Context, rep openadr.Report) (openadr.Rep
 	if rep.ID == "" {
 		return openadr.Report{}, &openadr.ValidationError{Field: "id", Reason: "is required for an update"}
 	}
-	return sendObject(ctx, c.core, c.core.codec.Reports, "reports", rep.ID, rep, wire.Request)
+	return sendReport(ctx, c.core, rep.ID, rep)
 }
 
 // DeleteReport deletes a report and returns it as it last was.
@@ -80,7 +83,7 @@ func (c *VEN) DeleteReport(ctx context.Context, id string) (openadr.Report, erro
 
 // VENs searches the VENs registered with the credentials of this client.
 func (c *VEN) VENs(ctx context.Context, q VENQuery) ([]openadr.VEN, error) {
-	return listObjects(ctx, c.core, c.core.codec.VENs, "vens", q.values())
+	return listObjects(ctx, c.core, c.core.codec.VENs, "vens", q)
 }
 
 // VEN returns the VEN with the given ID.
@@ -110,18 +113,29 @@ func (c *VEN) DeleteVEN(ctx context.Context, id string) (openadr.VEN, error) {
 
 // Resources searches the resources of this VEN.
 func (c *VEN) Resources(ctx context.Context, q ResourceQuery) ([]openadr.Resource, error) {
-	return listObjects(ctx, c.core, c.core.codec.Resources, "resources", q.values())
+	return listResources(ctx, c.core, q)
 }
 
-// Resource returns the resource with the given ID.
+// Resource returns the resource with the given ID. OpenADR 3.0.1 reaches
+// a resource through its VEN: use ResourceOf.
 func (c *VEN) Resource(ctx context.Context, id string) (openadr.Resource, error) {
-	return getObject(ctx, c.core, c.core.codec.Resources, "resources", id)
+	if err := c.core.byIDOnly("Resource", "ResourceOf"); err != nil {
+		return openadr.Resource{}, err
+	}
+	return getResource(ctx, c.core, "", id)
+}
+
+// ResourceOf returns the resource with the given ID of the VEN with the
+// given ID. It works with both revisions; in 3.1.0, where a resource is
+// reached by its ID alone, venID is not sent.
+func (c *VEN) ResourceOf(ctx context.Context, venID, id string) (openadr.Resource, error) {
+	return getResource(ctx, c.core, venID, id)
 }
 
 // CreateResource creates a resource and returns it as the VTN stored it. ClientID
 // and Targets are not sent; see CreateVEN.
 func (c *VEN) CreateResource(ctx context.Context, res openadr.Resource) (openadr.Resource, error) {
-	return sendObject(ctx, c.core, c.core.codec.Resources, "resources", "", res, wire.Request)
+	return sendResource(ctx, c.core, "", res, wire.Request)
 }
 
 // UpdateResource replaces the resource that has res.ID with res. Targets
@@ -130,17 +144,29 @@ func (c *VEN) UpdateResource(ctx context.Context, res openadr.Resource) (openadr
 	if res.ID == "" {
 		return openadr.Resource{}, &openadr.ValidationError{Field: "id", Reason: "is required for an update"}
 	}
-	return sendObject(ctx, c.core, c.core.codec.Resources, "resources", res.ID, res, wire.Request)
+	return sendResource(ctx, c.core, res.ID, res, wire.Request)
 }
 
 // DeleteResource deletes a resource and returns it as it last was.
+//
+// OpenADR 3.0.1 reaches a resource through its VEN: use DeleteResourceOf.
 func (c *VEN) DeleteResource(ctx context.Context, id string) (openadr.Resource, error) {
-	return deleteObject(ctx, c.core, c.core.codec.Resources, "resources", id)
+	if err := c.core.byIDOnly("DeleteResource", "DeleteResourceOf"); err != nil {
+		return openadr.Resource{}, err
+	}
+	return deleteResource(ctx, c.core, "", id)
+}
+
+// DeleteResourceOf deletes the resource with the given ID of the VEN with
+// the given ID, and returns it as it last was. venID is used as in
+// ResourceOf.
+func (c *VEN) DeleteResourceOf(ctx context.Context, venID, id string) (openadr.Resource, error) {
+	return deleteResource(ctx, c.core, venID, id)
 }
 
 // Subscriptions searches the subscriptions this client made.
 func (c *VEN) Subscriptions(ctx context.Context, q SubscriptionQuery) ([]openadr.Subscription, error) {
-	return listObjects(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", q.values())
+	return listObjects(ctx, c.core, c.core.codec.Subscriptions, "subscriptions", q)
 }
 
 // Subscription returns the subscription with the given ID.
@@ -189,10 +215,16 @@ func (c *VEN) MQTTTopics(ctx context.Context, of TopicSet) (openadr.Topics, erro
 // VEN, directly or through other groups. Of their children the VTN shows
 // those resources and such groups only.
 func (c *VEN) ResourceGroups(ctx context.Context, q ResourceGroupQuery) ([]openadr.ResourceGroup, error) {
-	return listObjects(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", q.values())
+	if err := c.core.only310("resource groups"); err != nil {
+		return nil, err
+	}
+	return listObjects(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", q)
 }
 
 // ResourceGroup returns the resource group with the given ID.
 func (c *VEN) ResourceGroup(ctx context.Context, id string) (openadr.ResourceGroup, error) {
+	if err := c.core.only310("resource groups"); err != nil {
+		return openadr.ResourceGroup{}, err
+	}
 	return getObject(ctx, c.core, c.core.codec.ResourceGroups, "resource_groups", id)
 }

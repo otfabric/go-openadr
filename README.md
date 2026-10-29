@@ -68,14 +68,21 @@ each other, and the VTN reaches a client by itself only to notify it of a
 change. [Examples](#examples) runs this loop as three programs, step by
 step.
 
-**Status: pre-release.** OpenADR 3.1.0 only. All 45 operations of the
-specification are implemented in the VTN, with OAuth2 client credentials or
+**Status: pre-release.** OpenADR 3.1.0, and 3.0.1 for the clients. All 45
+operations of the 3.1.0 specification are implemented in the VTN, with OAuth2 client credentials or
 JSON Web Tokens, scopes, object ownership, targeting, and notifications by
 webhook and by MQTT; a VTN can also serve clients that do not authenticate,
 compress its answers, and announce itself on the local network. Two things
 go beyond the specification, both shared with OpenLEADR and both off unless
 asked for: notifications over a WebSocket, and resource groups. The API may
 still change.
+
+The clients speak OpenADR 3.0.1 too, to a VTN that has not moved to 3.1
+(`client.Config.Version`): the same domain model, with what 3.0.1 writes
+differently mapped (targets of a type, program properties that 3.1 made
+attributes, resources under their VEN) and what it cannot carry refused
+before anything is sent. See [3.0.1](#openadr-301). The VTN speaks 3.1.0
+only.
 
 The clients are tested against the OpenLEADR VTN — MQTT and WebSocket
 notifications and resource groups included — and the VTN with the ElaadNL
@@ -112,9 +119,9 @@ has that the others do not show.
 | VEN client | ✅ | ✅ | ✅ |
 | Business Logic client | ✅ | ✅ same client | ✅ |
 | OpenADR 3.1.0 | ✅ | ✅ | ✅ |
-| OpenADR 3.0.1 | — planned | — | ✅ |
+| OpenADR 3.0.1 | ✅ clients ¹¹ | ✅ v0.1.x, an earlier release line | ✅ |
 | Programs, events, reports, VENs, resources | ✅ | ✅ | ✅ |
-| Subscriptions | ✅ | ✅ delivered over WebSocket | ✅ with the operation names of 3.0.1 ⁸ |
+| Subscriptions | ✅ | ✅ delivered over WebSocket | ✅ with HTTP methods as operation names ⁸ |
 | Webhook notifications | ✅ sender and receiver | — | — not documented |
 | Webhook notifications that survive a restart of the VTN | ✅ opt-in outbox ⁹ | n/a | n/a |
 | Notifications of reads (operation `READ`) | ✅ opt-in | — not documented | n/a |
@@ -188,8 +195,9 @@ drivers are not dependencies of go-openadr, and it is an example: read it,
 copy it, hold your own to the same test suite (`storagetest.Run`).
 
 ⁸ openadr3-client 2.4.0 names the operations of a subscription `GET`,
-`POST`, `PUT` and `DELETE`, as OpenADR 3.0.1 did; 3.1.0 names them `READ`,
-`CREATE`, `UPDATE` and `DELETE`. Against a 3.1.0 VTN, this one or
+`POST`, `PUT` and `DELETE`, the names OpenADR 3.0.1 gives the operation of
+a notification; the subscriptions of 3.0.1 and of 3.1.0 both name them
+`READ`, `CREATE`, `UPDATE` and `DELETE`. Against a 3.1.0 VTN, this one or
 OpenLEADR's, it can make and read a subscription to `DELETE` only. See
 [INTEROP.md](INTEROP.md).
 
@@ -201,6 +209,11 @@ is an outbox, and so are the SQLite and PostgreSQL examples.
 ¹⁰ This module's clients against the OpenLEADR VTN, and the ElaadNL client
 against this module's VTN: objects, subscriptions with a webhook delivered,
 MQTT, resource groups, access without a token, compression, TLS.
+
+¹¹ The VEN and Business Logic clients, against OpenLEADR v0.1.4, the last
+release of OpenLEADR for OpenADR 3.0. The VTN, the MQTT and WebSocket
+subscribers and the topic operations are of 3.1.0; 3.0.1 notifies by
+webhook only, which the webhook handler receives with `Version` set.
 
 **Choose go-openadr if** you want both sides of the protocol in one Go
 module without dependencies, a VTN you embed in your own service with your
@@ -270,6 +283,76 @@ Errors from the VTN are `*openadr.Error` values and match sentinels:
 ```go
 if errors.Is(err, openadr.ErrNotFound) { ... }
 ```
+
+## OpenADR 3.0.1
+
+A VTN that still speaks 3.0.1 is reached by the same clients with
+`Config.Version`:
+
+```go
+bl, err := client.NewBL(client.Config{
+    BaseURL:     "https://vtn.example.com/openadr3",
+    Version:     openadr.Version301,
+    Credentials: &client.Credentials{ClientID: id, ClientSecret: secret},
+})
+if err != nil {
+    return err
+}
+
+// 3.0.1 targets have a type: TypedTargets, and TargetType in a search.
+program, err := bl.CreateProgram(ctx, openadr.Program{
+    Name:         "flex-group-a",
+    TypedTargets: []openadr.ValuesMap{{Type: "GROUP", Values: []openadr.Value{openadr.String("group-a")}}},
+    // retailerName in 3.0.1, as 3.1.0 has it: a program attribute.
+    Attributes: []openadr.ValuesMap{{Type: "RETAILER_NAME", Values: []openadr.Value{openadr.String("ACME")}}},
+})
+if err != nil {
+    return err
+}
+programs, err := bl.Programs(ctx, client.ProgramQuery{TargetType: "GROUP", Targets: []string{"group-a"}})
+if err != nil {
+    return err
+}
+
+// Resources are reached through their VEN.
+resources, err := bl.Resources(ctx, client.ResourceQuery{VENID: venID})
+```
+
+What differs from 3.1.0, as `openadr.Version301` lists it:
+
+| | 3.1.0 | 3.0.1, as the client maps it |
+|---|---|---|
+| Targets | `Targets`, strings | `TypedTargets`, values maps; `TargetType` in a search |
+| `programLongName`, `retailerName`, `retailerLongName`, `programType`, `country`, `principalSubdivision`, `bindingEvents`, `localPrice` | program attributes `PROGRAM_LONG_NAME` … `LOCAL` | those properties, read into and written from the same attributes |
+| `timeZoneOffset` | — | the attribute `TIME_ZONE_OFFSET` (this module's name) |
+| A report's program | — | `Report.ProgramID`, required; `CreateReport` reads it from the event when it is empty |
+| Resources | `/resources` | `/vens/{venID}/resources`: `ResourceQuery.VENID`, `ResourceOf`, `DeleteResourceOf` |
+| Token endpoint | `GET /auth/server` | `/auth/token` of the VTN, unless `Credentials.TokenURL` says otherwise |
+| Notifications | webhook, MQTT | webhook: `webhook.Handler` with `Version`; notifications name the operation `POST`, `PUT`, `GET`, `DELETE` |
+
+What one revision cannot carry is refused with an `*openadr.ValidationError`
+before anything is sent, never dropped: string targets, an event's
+`Duration` or a VEN's `ClientID` to a 3.0.1 VTN, typed targets or a report's
+`ProgramID` to a 3.1.0 one. What 3.0.1 does not have at all, such as
+`Notifiers`, `MQTTTopics` and resource groups, returns an error that matches
+`errors.ErrUnsupported`, again without a request.
+
+`objectjson.Marshal` and `Unmarshal` give an object the JSON of either
+revision, for a tool that shows objects or reads them from files.
+[examples/openadr301](examples/openadr301/main.go) runs a 3.0.1 VEN end to
+end and prints a program both ways; `go run ./examples/openadr301` prints:
+
+```text
+program p1 (group-a-flex), targets [{GROUP ["group-a"]}], attributes [{PROGRAM_LONG_NAME ["Flexibility of group A"]} {COUNTRY ["NL"]}]
+event e1: 2 intervals from 2030-01-01T17:00:00Z
+report r1 on event e1 of program p1
+notifiers: openadr: GET /notifiers is not in OpenADR 3.0.1: unsupported operation
+3.0.1: {"id":"p1","createdDateTime":"2030-01-01T00:00:00Z","modificationDateTime":"2030-01-01T00:00:00Z","objectType":"PROGRAM","programName":"group-a-flex","programLongName":"Flexibility of group A","country":"NL","targets":[{"type":"GROUP","values":["group-a"]}]}
+3.1.0: {"id":"p1","createdDateTime":"2030-01-01T00:00:00Z","modificationDateTime":"2030-01-01T00:00:00Z","objectType":"PROGRAM","programName":"group-a-flex","attributes":[{"type":"PROGRAM_LONG_NAME","values":["Flexibility of group A"]},{"type":"COUNTRY","values":["NL"]}]}
+```
+
+The clients are tested against OpenLEADR v0.1.4, a 3.0.1 VTN: see
+[INTEROP.md](INTEROP.md#openadr-301-this-modules-clients-against-openleadr-v014).
 
 ## A VTN
 
@@ -476,6 +559,7 @@ an outbox holds.
 | [prices](examples/prices/main.go) | A VTN with a public tariff, a client without credentials, the prices as a table. |
 | [resourcegroups](examples/resourcegroups/main.go) | Resource groups, as Business Logic and as a VEN see them. |
 | [discovery](examples/discovery/main.go) | Announcing a VTN on the local network, and finding it. |
+| [openadr301](examples/openadr301/main.go) | A VEN of OpenADR 3.0.1: typed targets, a report that names its program, and one program as JSON of either revision (`objectjson`). |
 | [vtn](examples/vtn/main.go) | A standalone VTN with flags for every option, to point clients at. |
 | [ven](examples/ven/main.go) | A VEN for the command line: finds a VTN, registers, prints its schedule, reports, watches. |
 | [tariff](examples/tariff/main.go) | Business Logic for the command line: publishes a schedule from a CSV file, and reads the reports on it. |
@@ -552,6 +636,8 @@ start,end,type,values
 - **Compression.** The VTN compresses answers of 1 KiB and more with gzip
   or deflate for a client that accepts one, which the clients of this
   module do (gzip).
+- **Revisions.** The clients speak 3.1.0 unless `Config.Version` says
+  3.0.1; the VTN speaks 3.1.0. See [OpenADR 3.0.1](#openadr-301).
 - **Extensions.** Resource groups and WebSocket notifications are not part
   of OpenADR 3.1.0. A VTN has neither unless its configuration says so, and
   the clients' methods for them are answered with 404 or 501 by a VTN that
@@ -582,7 +668,9 @@ start,end,type,values
 - [grid-coordination/openadr3-specification](https://github.com/grid-coordination/openadr3-specification):
   the documents themselves, per revision. This module implements
   [3.1.0](https://github.com/grid-coordination/openadr3-specification/tree/main/3.1.0):
-  the OpenAPI document (`openadr3.yaml`), the Definition and the User Guide.
+  the OpenAPI document (`openadr3.yaml`), the Definition and the User Guide;
+  its clients also [3.0.1](https://github.com/grid-coordination/openadr3-specification/tree/main/3.0.1),
+  of which there is the OpenAPI document only.
 - [docs/CONFORMANCE.md](docs/CONFORMANCE.md): which of it this module
   covers, and how it reads the parts that leave room.
 

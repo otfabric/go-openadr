@@ -161,7 +161,10 @@ func (p Program) Validate() error {
 	if err := valuesMaps("attributes", p.Attributes); err != nil {
 		return err
 	}
-	return targets("targets", p.Targets)
+	if err := targets("targets", p.Targets); err != nil {
+		return err
+	}
+	return valuesMaps("targets", p.TypedTargets)
 }
 
 // Validate checks the client-provided properties against the schema. It does
@@ -176,6 +179,9 @@ func (e Event) Validate() error {
 	if err := targets("targets", e.Targets); err != nil {
 		return err
 	}
+	if err := valuesMaps("targets", e.TypedTargets); err != nil {
+		return err
+	}
 	for i, d := range e.ReportDescriptors {
 		f := fmt.Sprintf("reportDescriptors[%d]", i)
 		if err := name(f+".payloadType", d.PayloadType, true); err != nil {
@@ -188,6 +194,9 @@ func (e Event) Validate() error {
 			return err
 		}
 		if err := targets(f+".targets", d.Targets); err != nil {
+			return err
+		}
+		if err := valuesMaps(f+".targets", d.TypedTargets); err != nil {
 			return err
 		}
 		switch d.ReportIntervals {
@@ -212,6 +221,9 @@ func (r Report) Validate() error {
 	}
 	if err := name("clientName", r.ClientName, true); err != nil {
 		return err
+	}
+	if r.ProgramID != "" && !ValidID(r.ProgramID) {
+		return invalid("programID", "is not an object ID")
 	}
 	for i, d := range r.PayloadDescriptors {
 		if err := d.validate(fmt.Sprintf("payloadDescriptors[%d]", i)); err != nil {
@@ -242,7 +254,10 @@ func (v VEN) Validate() error {
 	if err := valuesMaps("attributes", v.Attributes); err != nil {
 		return err
 	}
-	return targets("targets", v.Targets)
+	if err := targets("targets", v.Targets); err != nil {
+		return err
+	}
+	return valuesMaps("targets", v.TypedTargets)
 }
 
 // Validate checks the client-provided properties against the schema. ClientID
@@ -260,7 +275,10 @@ func (r Resource) Validate() error {
 	if err := valuesMaps("attributes", r.Attributes); err != nil {
 		return err
 	}
-	return targets("targets", r.Targets)
+	if err := targets("targets", r.Targets); err != nil {
+		return err
+	}
+	return valuesMaps("targets", r.TypedTargets)
 }
 
 // Validate checks the client-provided properties.

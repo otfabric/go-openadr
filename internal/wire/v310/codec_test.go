@@ -320,3 +320,54 @@ func FuzzUnmarshalEvent(f *testing.F) {
 		}
 	})
 }
+
+// TestRefuses301 checks that what only OpenADR 3.0.1 has is refused, not
+// dropped: typed targets, and the program of a report.
+func TestRefuses301(t *testing.T) {
+	c := Codec()
+	typed := []openadr.ValuesMap{{Type: "GROUP", Values: []openadr.Value{openadr.String("g")}}}
+	descriptor := openadr.NewReportDescriptor("USAGE")
+	descriptor.TypedTargets = typed
+	for name, tc := range map[string]struct {
+		err   error
+		field string
+	}{
+		"program": {func() error {
+			_, err := c.Programs.Marshal(openadr.Program{Name: "p", TypedTargets: typed}, wire.BLRequest)
+			return err
+		}(), "targets"},
+		"event": {func() error {
+			_, err := c.Events.Marshal(openadr.Event{ProgramID: "p", TypedTargets: typed}, wire.BLRequest)
+			return err
+		}(), "targets"},
+		"report descriptor": {func() error {
+			_, err := c.Events.Marshal(openadr.Event{ProgramID: "p", ReportDescriptors: []openadr.ReportDescriptor{descriptor}}, wire.BLRequest)
+			return err
+		}(), "reportDescriptors[0].targets"},
+		"report": {func() error {
+			_, err := c.Reports.Marshal(openadr.Report{ProgramID: "p", EventID: "e", ClientName: "c"}, wire.Request)
+			return err
+		}(), "programID"},
+		"VEN": {func() error {
+			_, err := c.VENs.Marshal(openadr.VEN{Name: "v", TypedTargets: typed}, wire.BLRequest)
+			return err
+		}(), "targets"},
+		"resource": {func() error {
+			_, err := c.Resources.Marshal(openadr.Resource{Name: "r", TypedTargets: typed}, wire.BLRequest)
+			return err
+		}(), "targets"},
+		"subscription": {func() error {
+			_, err := c.Subscriptions.Marshal(openadr.Subscription{ClientName: "c", TypedTargets: typed}, wire.Request)
+			return err
+		}(), "targets"},
+		"notification": {func() error {
+			_, err := c.MarshalNotification(openadr.Notification{ObjectType: openadr.ObjectVEN, Operation: openadr.OperationCreate, Object: openadr.VEN{Name: "v"}, TypedTargets: typed})
+			return err
+		}(), "targets"},
+	} {
+		var ve *openadr.ValidationError
+		if !errors.As(tc.err, &ve) || ve.Field != tc.field {
+			t.Errorf("%s: %v, want a ValidationError of %s", name, tc.err, tc.field)
+		}
+	}
+}
