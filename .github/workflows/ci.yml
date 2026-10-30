@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@v2.1.0
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v2.1.0.1.1
     with:
       codecov-name: go-openadr
       go-versions: '["1.23", "1.24", "1.25", "1.26"]'
