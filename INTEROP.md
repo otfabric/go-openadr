@@ -48,8 +48,8 @@ make interop
 skipped, unless `OPENADR_INTEROP_REQUIRE` is set.
 `OPENADR_INTEROP_OPENLEADR_IMAGE`, `OPENADR_INTEROP_ELAADNL_IMAGE` and
 `OPENADR_INTEROP_OPENLEADR301_IMAGE` select
-other images, for example the `:dev` tags that `make images` builds in a
-checkout of openadr-interop.
+other images, for example the `:dev` tags that
+`make -C ../openadr-interop images` builds in a checkout of openadr-interop.
 
 ## This module's clients against OpenLEADR
 

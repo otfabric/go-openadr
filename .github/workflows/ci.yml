@@ -13,10 +13,16 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@v2
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v2.1.0
     with:
       codecov-name: go-openadr
       go-versions: '["1.23", "1.24", "1.25", "1.26"]'
+      run-govulncheck: true
+      # Measured 91.5 % with the coverpkg below (go-ci method).
+      coverage-min: "91"
+      fuzz-time: 10s
+      # Match the Makefile's COVER_PKGS: the e2e tests drive client and server.
+      coverpkg: github.com/otfabric/go-openadr,github.com/otfabric/go-openadr/auth,github.com/otfabric/go-openadr/client,github.com/otfabric/go-openadr/discovery,github.com/otfabric/go-openadr/internal/mqtt,github.com/otfabric/go-openadr/internal/wire,github.com/otfabric/go-openadr/internal/wire/codecs,github.com/otfabric/go-openadr/internal/wire/common,github.com/otfabric/go-openadr/internal/wire/v301,github.com/otfabric/go-openadr/internal/wire/v310,github.com/otfabric/go-openadr/internal/ws,github.com/otfabric/go-openadr/notification/mqtt,github.com/otfabric/go-openadr/notification/webhook,github.com/otfabric/go-openadr/notification/websocket,github.com/otfabric/go-openadr/objectjson,github.com/otfabric/go-openadr/server,github.com/otfabric/go-openadr/server/storage,github.com/otfabric/go-openadr/server/storage/storagetest,github.com/otfabric/go-openadr/timeline
     secrets: inherit
 
   # The self-contained examples must keep running as they are.
