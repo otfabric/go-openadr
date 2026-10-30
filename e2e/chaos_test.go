@@ -922,14 +922,22 @@ func TestChaosNetwork(t *testing.T) {
 	for len(received) > 0 {
 		<-received
 	}
-	last := mustProgram(t, vtn.BL, openadr.Program{Name: "after the storm"})
+	// Ready may still see the session of the last cut, and what is sent
+	// while the listener is away is missed: it hears one of these.
+	heard := 0
 	eventually(t, "the listener heard of a program after the storm", func() bool {
-		select {
-		case n := <-received:
-			p, ok := n.Object.(openadr.Program)
-			return ok && p.ID == last.ID
-		default:
-			return false
+		heard++
+		last := mustProgram(t, vtn.BL, openadr.Program{Name: fmt.Sprintf("after the storm %d", heard)})
+		timeout := time.After(200 * time.Millisecond)
+		for {
+			select {
+			case n := <-received:
+				if p, ok := n.Object.(openadr.Program); ok && p.ID == last.ID {
+					return true
+				}
+			case <-timeout:
+				return false
+			}
 		}
 	})
 	t.Logf("%d connections cut; %d calls for %d programs, %d of them created without the client hearing of it; %d WebSocket sessions",
