@@ -1,5 +1,5 @@
 # Ignore the bin directory
-bin/
+/bin/
 
 # Ignore VS Code settings
 .vscode/
@@ -8,3 +8,22 @@ bin/
 cover.*
 coverage.*
 
+# Build artefacts live in /bin/ and /release/ (otfabric/engineering REPO-005)
+/release/
+*.test
+coverage.out
+
+# Output of a bare `go build`, anchored so it can never hide a source folder
+/examples/discovery/discovery
+/examples/notifications/notifications
+/examples/observability/observability
+/examples/openadr301/openadr301
+/examples/prices/prices
+/examples/quickstart/quickstart
+/examples/resourcegroups/resourcegroups
+/examples/storage/vtn/vtn
+/examples/tariff/tariff
+/examples/ven/ven
+/examples/vtn/vtn
+/examples/websocket/websocket
+/interop/mdnsprobe/mdnsprobe
