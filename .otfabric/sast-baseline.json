@@ -1,0 +1,17 @@
+{
+  "findings": [
+    {
+      "fingerprint": "gosec/G402/9b26ebebb2836b63d30e",
+      "justification": "The -insecure flag of this example is explicitly named, as standards/security.md asks; the libraries have no such default.",
+      "owner": "bartvanbos",
+      "path": "examples/ven/main.go",
+      "reconsider": "when the example changes how -insecure works",
+      "ref": "https://github.com/otfabric/engineering/blob/main/docs/adoption/sast-pilot-reports.md",
+      "reviewed": "2026-11-01",
+      "rule": "G402",
+      "state": "accepted-risk",
+      "tool": "gosec"
+    }
+  ],
+  "schema": 1
+}
