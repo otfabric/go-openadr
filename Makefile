@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage cover fuzz check clean interop test-interop e2e chaos nodeps storage coverage-check cross bench
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage coverage-pkg-check cover fuzz check clean interop test-interop e2e chaos nodeps storage coverage-check cross bench
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -23,7 +23,7 @@ BIN_DIR := bin
 TEST_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/interop$$' | grep -v '/interop/')
 # Coverage is measured over the library packages, whichever package's tests exercise them:
 # the end-to-end tests in the module root drive the client and the server.
-COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/interop$$' | grep -v '/interop/' | paste -sd, -)
+COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/internal/leakcheck' | grep -v '/interop$$' | grep -v '/interop/' | paste -sd, -)
 
 all: build ## Default target: build the examples
 
@@ -115,15 +115,17 @@ cover: coverage ## Open coverage report in browser
 # Duration each fuzz target runs. Override with FUZZTIME=... (e.g. FUZZTIME=5m).
 # Same minimum as coverage-min in ci.yml.
 COVER_MIN := 91
+# Per-package floor (TEST-012), over the packages of COVER_PKGS.
+COVER_PKG_MIN := 80
 FUZZTIME ?= 30s
-fuzz: ## Run the parser fuzz targets for FUZZTIME each (default 30s)
+fuzz: ## Run every fuzz target for FUZZTIME (default 30s; targets discovered, never listed)
 	@echo "Fuzzing (FUZZTIME=$(FUZZTIME))"
-	@go test -run='^$$' -fuzz='^FuzzParseDuration$$' -fuzztime=$(FUZZTIME) .
-	@go test -run='^$$' -fuzz='^FuzzUnmarshalEvent$$' -fuzztime=$(FUZZTIME) ./internal/wire/v310
-	@go test -run='^$$' -fuzz='^FuzzReadPacket$$' -fuzztime=$(FUZZTIME) ./internal/mqtt
-	@go test -run='^$$' -fuzz='^FuzzReadFrame$$' -fuzztime=$(FUZZTIME) ./internal/ws
-	@go test -run='^$$' -fuzz='^FuzzParseMessage$$' -fuzztime=$(FUZZTIME) ./discovery
-	@go test -run='^$$' -fuzz='^FuzzReadCSV$$' -fuzztime=$(FUZZTIME) ./timeline
+	@for pkg in $(TEST_PKGS); do \
+		for t in $$(go test -list '^Fuzz' $$pkg | grep '^Fuzz'); do \
+			echo "fuzz $$pkg $$t"; \
+			go test -run '^$$' -fuzz "^$$t$$" -fuzztime=$(FUZZTIME) $$pkg || exit 1; \
+		done; \
+	done
 
 # Reference implementations for 'make interop': otfabric/openadr-interop v0.5.0
 # (the OpenLEADR VTN v0.2.7 with a Mosquitto broker, the ElaadNL
@@ -151,6 +153,12 @@ test-interop: ## Run the interop suite: OpenLEADR (3.1.0 and 3.0.1) and ElaadNL 
 
 interop: test-interop ## Alias for test-interop
 
+coverage-pkg-check: coverage ## Fail when a package of COVER_PKGS is below COVER_PKG_MIN (reads coverage.out)
+	@awk -v m="$(COVER_PKG_MIN)" -v pkgs="$(COVER_PKGS)" 'BEGIN { split(pkgs, l, ","); for (i in l) want[l[i]] = 1 } \
+	NR > 1 { n[$$1] = $$2; if ($$3 > 0) h[$$1] = 1 } \
+	END { for (k in n) { p = k; sub(/\/[^\/]*$$/, "", p); if (p in want) { s[p] += n[k]; if (k in h) c[p] += n[k] } } \
+	for (p in s) { v = 100 * c[p] / s[p]; if (v < m) { printf "%s: %.1f%% < %s%%\n", p, v, m; bad = 1 } } exit bad }' coverage.out
+
 coverage-check: coverage ## Fail when total coverage is below COVER_MIN
 	@total=$$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%","",$$3); print $$3}'); \
 	awk -v t="$$total" -v m="$(COVER_MIN)" 'BEGIN { if (t+0 < m+0) { printf "coverage %.1f%% < %s%%\n", t, m; exit 1 } else printf "coverage %.1f%% >= %s%%\n", t, m }'
@@ -166,7 +174,7 @@ cross: ## Cross-compile without cgo for the supported platforms
 bench: ## Benchmarks
 	@go test -count=1 -run='^$$' -bench=. -benchmem $(TEST_PKGS)
 
-check: fmt fmt-check nodeps lint lint-ci vet vuln test coverage examples ## Run format + lint + vet + vuln + test
+check: fmt fmt-check nodeps lint lint-ci vet vuln test coverage coverage-pkg-check examples ## Run format + lint + vet + vuln + test
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"

@@ -53,3 +53,16 @@ jobs:
       - run: make storage
         env:
           OPENADR_STORAGE_REQUIRE: "1"
+
+  # The per-package floor (COVER_PKG_MIN in the Makefile) on top of the
+  # aggregate gate of the shared workflow.
+  coverage-floor:
+    name: Per-package coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make coverage-pkg-check

@@ -484,11 +484,14 @@ func TestWebSocketDeadClient(t *testing.T) {
 	// And the other way round: a VTN that has gone silent is noticed by a
 	// client that keeps the stream alive.
 	silent := http.NewServeMux()
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
 	silent.HandleFunc("/notifiers/ws", func(w http.ResponseWriter, r *http.Request) {
 		if conn, _, err := ws.Accept(w, r); err == nil {
-			// Never reads: no pong, no close.
-			<-r.Context().Done()
-			_ = conn
+			// Never reads: no pong, no close, until the test is over. The
+			// connection is hijacked, so the request's context is no signal.
+			<-done
+			_ = conn.Close(ws.CloseNormal, "")
 		}
 	})
 	srv := newPlainServer(t, silent)
