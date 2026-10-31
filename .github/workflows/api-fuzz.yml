@@ -24,7 +24,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Run
         id: run
         continue-on-error: true
