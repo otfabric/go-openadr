@@ -29,6 +29,15 @@ jobs:
       coverpkg: github.com/otfabric/go-openadr,github.com/otfabric/go-openadr/auth,github.com/otfabric/go-openadr/client,github.com/otfabric/go-openadr/discovery,github.com/otfabric/go-openadr/internal/mqtt,github.com/otfabric/go-openadr/internal/wire,github.com/otfabric/go-openadr/internal/wire/codecs,github.com/otfabric/go-openadr/internal/wire/common,github.com/otfabric/go-openadr/internal/wire/v301,github.com/otfabric/go-openadr/internal/wire/v310,github.com/otfabric/go-openadr/internal/ws,github.com/otfabric/go-openadr/notification/mqtt,github.com/otfabric/go-openadr/notification/webhook,github.com/otfabric/go-openadr/notification/websocket,github.com/otfabric/go-openadr/objectjson,github.com/otfabric/go-openadr/server,github.com/otfabric/go-openadr/server/storage,github.com/otfabric/go-openadr/server/storage/storagetest,github.com/otfabric/go-openadr/timeline
     secrets: inherit
 
+  # SAST pilot: the optional upload, on this branch only.
+  code-scanning:
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/ci/sast-pilot'
+    permissions:
+      contents: read
+      security-events: write
+    uses: otfabric/.github/.github/workflows/sast-code-scanning.yml@7839f4a42773bd1c51bbca2688a28f24d75cc12c
+
   # The self-contained examples must keep running as they are.
   examples:
     name: Examples
