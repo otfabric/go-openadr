@@ -1,0 +1,53 @@
+name: Nightly
+run-name: "Nightly (${{ github.event_name }}) on ${{ github.ref_name }}"
+
+# Long fuzzing and repeated chaos runs: too slow for every push. An input that
+# fails is kept as an artifact; commit it under the target's testdata/fuzz so
+# that every test run checks it. Interop has its own schedule (interop.yml).
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzztime:
+        description: "How long each target runs (a Go duration)"
+        required: false
+        default: "5m"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Fuzz every target
+        run: make fuzz FUZZTIME=${{ inputs.fuzztime || '5m' }}
+      - name: Keep the failing inputs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-failures
+          path: "**/testdata/fuzz/**"
+          if-no-files-found: ignore
+
+  chaos:
+    name: Chaos
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make chaos CHAOS_COUNT=20

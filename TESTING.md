@@ -30,6 +30,12 @@ How to run each tier. No external VTN is needed: tests run the clients against t
 
 `make coverage` measures `COVER_PKGS`: the library packages, whichever package's tests exercise them. Excluded: the examples, `e2e`, the interop suite and the test helper `internal/mqtttest` (see the `COVER_PKGS` line of the [Makefile](Makefile)). `make coverage-check` fails below `COVER_MIN` (91), the same minimum as `coverage-min` in `.github/workflows/ci.yml`.
 
+Each package of `COVER_PKGS` must also reach `COVER_PKG_MIN` (`make coverage-pkg-check`, in CI). Measured lowest at the time of writing: `internal/mqtt` at 83.6 %.
+
+## Goroutine leaks
+
+The packages that start goroutines, and `e2e`, run through `internal/leakcheck` in `TestMain`: the binary fails when a goroutine of this module is still running after the last test, and prints its stack. `internal/leakcheck` is a test helper of the standard library only, as the module has no dependencies.
+
 ## Fuzz regressions
 
 `make fuzz` lists its six targets by name. A failing input is written to `testdata/fuzz/<target>/` of the package. Commit it with the fix: `go test` replays it from then on.

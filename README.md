@@ -671,6 +671,7 @@ start,end,type,values
   the OpenAPI document (`openadr3.yaml`), the Definition and the User Guide;
   its clients also [3.0.1](https://github.com/grid-coordination/openadr3-specification/tree/main/3.0.1),
   of which there is the OpenAPI document only.
+- [docs/FEATURE-STATUS.md](docs/FEATURE-STATUS.md): each feature, and how far it is verified
 - [docs/CONFORMANCE.md](docs/CONFORMANCE.md): which of it this module
   covers, and how it reads the parts that leave room.
 
