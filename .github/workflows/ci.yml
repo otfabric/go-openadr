@@ -13,12 +13,12 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@adfcc7a0498f6b9761d111038cbce0c3fa0e07f1
+    uses: otfabric/.github/.github/workflows/go-ci.yml@4ba6b62616925de230bcee4ee6a18c04479d01b6
     with:
       # SAST pilot, on an unreleased commit of otfabric/.github.
       run-sast: true
       sast-mode: baseline
-      sast-bundle-ref: adfcc7a0498f6b9761d111038cbce0c3fa0e07f1
+      sast-bundle-ref: 4ba6b62616925de230bcee4ee6a18c04479d01b6
       codecov-name: go-openadr
       go-versions: '["1.23", "1.24", "1.25", "1.26"]'
       run-govulncheck: true
