@@ -13,12 +13,12 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@7839f4a42773bd1c51bbca2688a28f24d75cc12c
+    uses: otfabric/.github/.github/workflows/go-ci.yml@adfcc7a0498f6b9761d111038cbce0c3fa0e07f1
     with:
       # SAST pilot, on an unreleased commit of otfabric/.github.
       run-sast: true
       sast-mode: baseline
-      sast-bundle-ref: 7839f4a42773bd1c51bbca2688a28f24d75cc12c
+      sast-bundle-ref: adfcc7a0498f6b9761d111038cbce0c3fa0e07f1
       codecov-name: go-openadr
       go-versions: '["1.23", "1.24", "1.25", "1.26"]'
       run-govulncheck: true
@@ -28,15 +28,6 @@ jobs:
       # Match the Makefile's COVER_PKGS: the e2e tests drive client and server.
       coverpkg: github.com/otfabric/go-openadr,github.com/otfabric/go-openadr/auth,github.com/otfabric/go-openadr/client,github.com/otfabric/go-openadr/discovery,github.com/otfabric/go-openadr/internal/mqtt,github.com/otfabric/go-openadr/internal/wire,github.com/otfabric/go-openadr/internal/wire/codecs,github.com/otfabric/go-openadr/internal/wire/common,github.com/otfabric/go-openadr/internal/wire/v301,github.com/otfabric/go-openadr/internal/wire/v310,github.com/otfabric/go-openadr/internal/ws,github.com/otfabric/go-openadr/notification/mqtt,github.com/otfabric/go-openadr/notification/webhook,github.com/otfabric/go-openadr/notification/websocket,github.com/otfabric/go-openadr/objectjson,github.com/otfabric/go-openadr/server,github.com/otfabric/go-openadr/server/storage,github.com/otfabric/go-openadr/server/storage/storagetest,github.com/otfabric/go-openadr/timeline
     secrets: inherit
-
-  # SAST pilot: the optional upload, on this branch only.
-  code-scanning:
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/ci/sast-pilot'
-    permissions:
-      contents: read
-      security-events: write
-    uses: otfabric/.github/.github/workflows/sast-code-scanning.yml@7839f4a42773bd1c51bbca2688a28f24d75cc12c
 
   # The self-contained examples must keep running as they are.
   examples:
