@@ -20,13 +20,13 @@ import (
 	"time"
 )
 
-// The reference images of otfabric/openadr-interop v0.5.0, by multi-arch
+// The reference images of otfabric/openadr-interop v0.6.3, by multi-arch
 // index digest. Keep in step with the Makefile and .github/workflows/interop.yml.
 var defaultImages = map[string]string{
-	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:4f8eb4b1795bd3f21307346eb8cff0e3860f9c9753e841710de50a5af1353ab5",
-	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:3c8d2e56b87740f138d3e083303c8333a28cfe6d386aab1a9a009ae70c33d12f",
+	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:331f178d185537743fbda4b3d5cf9d03e629f41e5b1a7f0865ec1e07e6c7b3a3",
+	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:9be3e2939563d74ff125120726dfec55bc207fc5527bee2ddd3964f8cca384c2",
 	// OpenLEADR v0.1.4, a VTN of OpenADR 3.0.1.
-	"openleadr301": "ghcr.io/otfabric/openadr-interop-openleadr301@sha256:a2039fff5b7d3e4a3691883a543bb602b885a07ed8a3a2779fed238627c7e1a5",
+	"openleadr301": "ghcr.io/otfabric/openadr-interop-openleadr301@sha256:d8f50f88389b035fed014dc05249e804dd51215d62b7323b9d0a3f74c36585ea",
 
 	// MQTT brokers, as their makers publish them, for brokers_test.go:
 	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition
