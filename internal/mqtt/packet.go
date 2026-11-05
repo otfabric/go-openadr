@@ -221,16 +221,21 @@ func ParsePublish(p Packet) (topic string, payload []byte, qos byte, id uint16, 
 // filter of more than 65535 bytes, or a packet of more than MaxRemaining
 // bytes, is ErrTooLong.
 func Subscribe(id uint16, filters []string) (Packet, error) {
-	body := binary.BigEndian.AppendUint16(nil, id)
+	// The length is checked before anything is built.
+	n := 2
+	for _, f := range filters {
+		n += 2 + len(f) + 1
+	}
+	if err := checkLength(n); err != nil {
+		return Packet{}, err
+	}
+	body := binary.BigEndian.AppendUint16(make([]byte, 0, n), id)
 	for _, f := range filters {
 		var err error
 		if body, err = AppendString(body, f); err != nil {
 			return Packet{}, err
 		}
 		body = append(body, 1)
-	}
-	if err := checkLength(len(body)); err != nil {
-		return Packet{}, err
 	}
 	return Packet{Type: TypeSubscribe, Flags: 0x02, Body: body}, nil
 }

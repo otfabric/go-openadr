@@ -16,15 +16,18 @@ import (
 )
 
 // fickleBroker accepts every connection, answers CONNACK and, for a
-// SUBSCRIBE, SUBACK, and hangs up at the first PUBLISH, or right after the
-// SUBACK. It counts the connections.
+// SUBSCRIBE, a SUBACK with the given return code, and hangs up at the first
+// PUBLISH, or right after the SUBACK. With silent it never answers the
+// SUBSCRIBE. It counts the connections.
 type fickleBroker struct {
 	ln    net.Listener
 	conns atomic.Int64
 	wg    sync.WaitGroup
 }
 
-func newFickleBroker(t *testing.T) *fickleBroker {
+func newFickleBroker(t *testing.T) *fickleBroker { return newBroker(t, 1, false) }
+
+func newBroker(t *testing.T, code byte, silent bool) *fickleBroker {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -53,7 +56,12 @@ func newFickleBroker(t *testing.T) *fickleBroker {
 				if err != nil || p.Type != imqtt.TypeSubscribe || len(p.Body) < 2 {
 					return
 				}
-				_, _ = conn.Write([]byte{imqtt.TypeSuback << 4, 3, p.Body[0], p.Body[1], 1})
+				if silent {
+					// Until the client hangs up.
+					_, _ = imqtt.ReadPacket(conn)
+					return
+				}
+				_, _ = conn.Write([]byte{imqtt.TypeSuback << 4, 3, p.Body[0], p.Body[1], code})
 				// Long enough for the SUBACK to be taken before the hang-up.
 				time.Sleep(10 * time.Millisecond)
 			}()
@@ -113,6 +121,45 @@ func TestSubscriberBacksOffABrokerThatDropsEverySession(t *testing.T) {
 	}
 	if s.Sessions() == 0 {
 		t.Error("never subscribed")
+	}
+}
+
+// A broker that refuses every subscription is not dialled again at once
+// and for ever either.
+func TestSubscriberBacksOffABrokerThatRefusesSubscriptions(t *testing.T) {
+	b := newBroker(t, 0x80, false)
+	s, err := NewSubscriber(SubscriberConfig{Broker: Broker{URL: b.url(), Backoff: 50 * time.Millisecond}, Topics: []string{"events/+"},
+		Notify: func(context.Context, string, openadr.Notification) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	if n := b.countFor(t, 600*time.Millisecond); n > 8 {
+		t.Errorf("%d connections in 600 ms", n)
+	}
+	if s.Sessions() != 0 {
+		t.Errorf("%d sessions on refused subscriptions", s.Sessions())
+	}
+}
+
+// Close ends a Subscriber that waits for an answer to its SUBSCRIBE.
+func TestSubscriberCloseWhileSubscribing(t *testing.T) {
+	b := newBroker(t, 0, true)
+	s, err := NewSubscriber(SubscriberConfig{Broker: Broker{URL: b.url(), Backoff: 50 * time.Millisecond}, Topics: []string{"events/+"},
+		Notify: func(context.Context, string, openadr.Notification) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.countFor(t, 50*time.Millisecond)
+	done := make(chan struct{})
+	go func() { _ = s.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return")
+	}
+	if n := b.conns.Load(); n != 1 {
+		t.Errorf("%d connections", n)
 	}
 }
 

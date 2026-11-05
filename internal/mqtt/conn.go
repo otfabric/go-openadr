@@ -69,6 +69,12 @@ func (e *ConnectError) Error() string {
 	return fmt.Sprintf("mqtt: the broker refused the connection with code %d", e.Code)
 }
 
+// dial opens the TCP connection to a broker; tests replace it.
+var dial = func(ctx context.Context, address string) (net.Conn, error) {
+	var dialer net.Dialer
+	return dialer.DialContext(ctx, "tcp", address)
+}
+
 // Dial connects to the broker at uri, an mqtt:// or mqtts:// URL (tcp://,
 // ssl:// and tls:// are accepted for the same). The default ports are 1883
 // and 8883. ctx bounds the connection and the handshake.
@@ -77,8 +83,7 @@ func Dial(ctx context.Context, uri string, o Options) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	var dialer net.Dialer
-	nc, err := dialer.DialContext(ctx, "tcp", address)
+	nc, err := dial(ctx, address)
 	if err != nil {
 		return nil, err
 	}
