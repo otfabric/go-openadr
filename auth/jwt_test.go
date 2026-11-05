@@ -240,9 +240,13 @@ func jwk(kid string, key any) claims {
 	case *rsa.PublicKey:
 		return claims{"kty": "RSA", "kid": kid, "use": "sig", "n": b64.EncodeToString(key.N.Bytes()), "e": b64.EncodeToString(big.NewInt(int64(key.E)).Bytes())}
 	case *ecdsa.PublicKey:
-		size := (key.Curve.Params().BitSize + 7) / 8
+		point, err := key.Bytes()
+		if err != nil {
+			return nil
+		}
+		size := (len(point) - 1) / 2
 		return claims{"kty": "EC", "kid": kid, "crv": key.Curve.Params().Name,
-			"x": b64.EncodeToString(key.X.FillBytes(make([]byte, size))), "y": b64.EncodeToString(key.Y.FillBytes(make([]byte, size)))}
+			"x": b64.EncodeToString(point[1 : 1+size]), "y": b64.EncodeToString(point[1+size:])}
 	case ed25519.PublicKey:
 		return claims{"kty": "OKP", "kid": kid, "crv": "Ed25519", "x": b64.EncodeToString(key)}
 	}

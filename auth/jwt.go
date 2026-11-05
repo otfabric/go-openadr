@@ -401,9 +401,15 @@ func (v *JWTValidator) fetch(ctx context.Context) (map[string]any, error) {
 			if curve == nil || x == nil || y == nil {
 				continue
 			}
-			key := &ecdsa.PublicKey{Curve: curve, X: x, Y: y}
+			size := (curve.Params().BitSize + 7) / 8
+			if x.BitLen() > 8*size || y.BitLen() > 8*size {
+				continue
+			}
+			point := append([]byte{4}, x.FillBytes(make([]byte, size))...)
+			point = append(point, y.FillBytes(make([]byte, size))...)
 			// Refuses a point that is not on the curve.
-			if _, err := key.ECDH(); err != nil {
+			key, err := ecdsa.ParseUncompressedPublicKey(curve, point)
+			if err != nil {
 				continue
 			}
 			keys[k.Kid] = key
