@@ -118,6 +118,21 @@ func newCredentialSource(creds Credentials, c *core) (*credentialSource, error) 
 // that it does not expire on the way to the VTN.
 const expirySlack = 10 * time.Second
 
+// maxTokenLifetime is the longest a token is kept without the VTN
+// rejecting it. An expires_in beyond it, which a Duration may not even
+// hold, is taken as this.
+const maxTokenLifetime = 100 * 365 * 24 * time.Hour
+
+// tokenLifetime is how long a token that expires in the given number of
+// seconds is used: until expirySlack before it expires.
+func tokenLifetime(expiresIn float64) time.Duration {
+	life := maxTokenLifetime
+	if expiresIn < maxTokenLifetime.Seconds() {
+		life = time.Duration(expiresIn * float64(time.Second))
+	}
+	return life - expirySlack
+}
+
 func (s *credentialSource) Token(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -164,7 +179,7 @@ func (s *credentialSource) Token(ctx context.Context) (string, error) {
 	}
 	s.token, s.expires = resp.AccessToken, time.Time{}
 	if resp.ExpiresIn > 0 {
-		s.expires = time.Now().Add(time.Duration(resp.ExpiresIn*float64(time.Second)) - expirySlack)
+		s.expires = time.Now().Add(tokenLifetime(resp.ExpiresIn))
 	}
 	return s.token, nil
 }

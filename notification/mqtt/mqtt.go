@@ -38,7 +38,10 @@ type Broker struct {
 	// crypto/tls when nil.
 	TLS *tls.Config
 	// Backoff is the wait before a second attempt to connect, doubled for
-	// each one after, up to a minute; 1 second when zero.
+	// each one after, up to a minute; 1 second when zero. It is also the
+	// wait, doubled in the same way, before connecting again after a
+	// connection that was lost: a broker that drops every connection at
+	// once is not dialled again at once.
 	Backoff time.Duration
 }
 
@@ -46,13 +49,39 @@ func (b Broker) options() imqtt.Options {
 	return imqtt.Options{ClientID: b.ClientID, Username: b.Username, Password: b.Password, TLS: b.TLS}
 }
 
+// firstWait is the wait before a second attempt to connect.
+func (b Broker) firstWait() time.Duration {
+	if b.Backoff <= 0 {
+		return time.Second
+	}
+	return b.Backoff
+}
+
+// nextWait doubles a wait up to a minute, never past what a Duration holds.
+func nextWait(wait time.Duration) time.Duration {
+	if wait > time.Minute/2 {
+		return time.Minute
+	}
+	return wait * 2
+}
+
+// pause waits before the broker is tried again, and reports false when
+// stop was closed meanwhile.
+func pause(stop <-chan struct{}, wait time.Duration) bool {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-stop:
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
 // connect dials until it succeeds or stop is closed. Each failure is
 // reported once per change of its text, not once per attempt.
 func (b Broker) connect(stop <-chan struct{}, o imqtt.Options, report func(error)) *imqtt.Conn {
-	wait := b.Backoff
-	if wait <= 0 {
-		wait = time.Second
-	}
+	wait := b.firstWait()
 	last := ""
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -74,17 +103,10 @@ func (b Broker) connect(stop <-chan struct{}, o imqtt.Options, report func(error
 			last = err.Error()
 			report(err)
 		}
-		select {
-		case <-stop:
+		if !pause(stop, wait) {
 			return nil
-		case <-time.After(wait):
 		}
-		// Doubled up to a minute, never past what a Duration holds.
-		if wait > time.Minute/2 {
-			wait = time.Minute
-		} else {
-			wait *= 2
-		}
+		wait = nextWait(wait)
 	}
 }
 
@@ -223,6 +245,10 @@ func (p *Publisher) run() {
 			_ = conn.Close()
 		}
 	}()
+	// wait is the pause after a connection that took a message and lost
+	// it: a broker that accepts every connection and drops it at the first
+	// PUBLISH is not dialled again at once, and for ever.
+	wait := p.cfg.firstWait()
 	for m := range p.queue {
 		// Until the broker has it: a message that failed is sent again on
 		// the next connection, before anything that came after it.
@@ -245,6 +271,7 @@ func (p *Publisher) run() {
 				if p.cfg.Metrics != nil {
 					p.cfg.Metrics.OnPublished()
 				}
+				wait = p.cfg.firstWait()
 				break
 			}
 			if p.cfg.Metrics != nil {
@@ -253,11 +280,10 @@ func (p *Publisher) run() {
 			p.warn("mqtt: publishing failed, reconnecting", slog.String("topic", m.topic), slog.Any("error", err))
 			_ = conn.Close()
 			conn = nil
-			select {
-			case <-p.stop:
+			if !pause(p.stop, wait) {
 				return
-			default:
 			}
+			wait = nextWait(wait)
 		}
 	}
 }
@@ -409,6 +435,10 @@ func (s *Subscriber) run() {
 			s.cfg.Notify(ctx, topic, n)
 		}
 	}
+	// wait is the pause after a session that was lost: a broker that
+	// accepts every connection and subscription and drops it at once is
+	// not dialled again at once, and for ever.
+	wait := s.cfg.firstWait()
 	for {
 		conn := s.cfg.connect(s.stop, o, func(err error) {
 			s.warn("mqtt: cannot connect to the broker", slog.Any("error", err))
@@ -425,11 +455,10 @@ func (s *Subscriber) run() {
 				return
 			}
 			s.warn("mqtt: subscribing failed", slog.Any("error", err))
-			select {
-			case <-s.stop:
+			if !pause(s.stop, wait) {
 				return
-			case <-time.After(time.Second):
 			}
+			wait = nextWait(wait)
 			continue
 		}
 		// Reported before Ready returns: whoever was told the subscriber
@@ -441,6 +470,7 @@ func (s *Subscriber) run() {
 		s.sessions++
 		close(s.connected)
 		s.mu.Unlock()
+		began := time.Now()
 
 		select {
 		case <-conn.Done():
@@ -455,5 +485,13 @@ func (s *Subscriber) run() {
 		s.mu.Lock()
 		s.connected = make(chan struct{})
 		s.mu.Unlock()
+		if time.Since(began) > time.Minute {
+			// A session that lasted is not part of a run of failures.
+			wait = s.cfg.firstWait()
+		}
+		if !pause(s.stop, wait) {
+			return
+		}
+		wait = nextWait(wait)
 	}
 }

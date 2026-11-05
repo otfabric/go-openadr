@@ -40,7 +40,8 @@ func (s *Server) limited(w http.ResponseWriter, r *http.Request, id auth.Identit
 	if wait > 0 {
 		// Whole seconds, rounded up: a client that comes back a moment
 		// early is refused again.
-		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		// In int64: an int of 32 bits wraps at 68 years.
+		w.Header().Set("Retry-After", strconv.FormatInt(int64(math.Ceil(wait.Seconds())), 10))
 	}
 	s.problem(w, r, http.StatusTooManyRequests, "too many requests; slow down")
 	return true
@@ -99,14 +100,28 @@ func (l *RateLimiter) Allow(clientID, _ string) (bool, time.Duration) {
 		b.tokens--
 		return true, 0
 	}
-	return false, time.Duration((1 - b.tokens) / l.rate * float64(time.Second))
+	return false, seconds((1 - b.tokens) / l.rate)
+}
+
+// seconds converts a number of seconds to a Duration, which holds 292
+// years: beyond that, the conversion of a float to an integer is not
+// defined, and on some processors negative.
+func seconds(s float64) time.Duration {
+	if s >= math.MaxInt64/float64(time.Second) {
+		return math.MaxInt64
+	}
+	return time.Duration(s * float64(time.Second))
 }
 
 // sweep forgets, now and then, the clients whose bucket is full again: a
 // client that is not heard of costs no memory. The caller holds the lock.
 func (l *RateLimiter) sweep(now time.Time) {
-	full := time.Duration(l.burst / l.rate * float64(time.Second))
-	if now.Sub(l.swept) < full+time.Minute {
+	full := seconds(l.burst / l.rate)
+	period := time.Duration(math.MaxInt64)
+	if full < period-time.Minute {
+		period = full + time.Minute
+	}
+	if now.Sub(l.swept) < period {
 		return
 	}
 	l.swept = now

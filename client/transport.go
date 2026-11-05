@@ -46,6 +46,10 @@ type Config struct {
 	Version openadr.Version
 	// HTTPClient makes the requests; it is where TLS, proxies and timeouts
 	// are configured. When nil, a client with a 30 second timeout is used.
+	// A client without a CheckRedirect of its own follows a redirect only
+	// to the scheme, host and port the request went to: elsewhere the
+	// bearer token, or the client secret of a token request, would follow
+	// it. A redirect it does not follow is answered as the status it is.
 	HTTPClient *http.Client
 	// Credentials authenticate with the OAuth2 client-credentials flow.
 	Credentials *Credentials
@@ -139,6 +143,12 @@ func newCore(cfg Config) (*core, error) {
 	if c.hc == nil {
 		c.hc = &http.Client{Timeout: 30 * time.Second}
 	}
+	if c.hc.CheckRedirect == nil {
+		// A copy: the caller's client may serve others too.
+		copied := *c.hc
+		copied.CheckRedirect = sameOrigin
+		c.hc = &copied
+	}
 	if c.maxBody <= 0 {
 		c.maxBody = 16 << 20
 	}
@@ -150,6 +160,27 @@ func newCore(cfg Config) (*core, error) {
 		c.tokens = src
 	}
 	return c, nil
+}
+
+// maxRedirects is how many redirects a request follows, as many as the
+// default of net/http.
+const maxRedirects = 10
+
+// sameOrigin is the redirect policy of a client that was not given one: a
+// redirect is followed within the origin of the first request only. Go
+// drops the Authorization header on a redirect to another host name, but
+// not to another port or from https to http, and it sends the body of a
+// POST again on a 307 or 308 wherever it leads: the client secret of a
+// token request with it.
+func sameOrigin(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return fmt.Errorf("openadr: stopped after %d redirects", maxRedirects)
+	}
+	first := via[0].URL
+	if !strings.EqualFold(req.URL.Scheme, first.Scheme) || !strings.EqualFold(req.URL.Host, first.Host) {
+		return http.ErrUseLastResponse
+	}
+	return nil
 }
 
 // url returns the URL of an API path such as "programs/abc".
@@ -213,6 +244,11 @@ attempts:
 		}
 		// The VTN's own word on when to come back counts for more.
 		wait = max(wait, retryAfter(err))
+		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < wait {
+			// The call would run out of time while it waits: it fails
+			// now as it would then, without keeping the caller.
+			break
+		}
 		if c.logger != nil {
 			c.logger.WarnContext(ctx, "openadr: retrying", slog.String("op", op), slog.Int("attempt", n), slog.Duration("wait", wait), slog.Any("error", err))
 		}

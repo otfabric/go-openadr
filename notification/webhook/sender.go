@@ -96,8 +96,11 @@ type Sender struct {
 	closed bool
 	queues []chan delivery
 	wg     sync.WaitGroup
-	// stop ends the waits between attempts when Close runs out of time.
-	stop chan struct{}
+	// stop ends the waits between attempts when Close runs out of time;
+	// stopped is cancelled with it, and ends the requests on their way.
+	stop    chan struct{}
+	stopped context.Context
+	abort   context.CancelFunc
 }
 
 type delivery struct {
@@ -147,6 +150,7 @@ func NewSender(cfg SenderConfig) *Sender {
 		cfg.Workers = 4
 	}
 	s := &Sender{cfg: cfg, client: cfg.HTTPClient, stop: make(chan struct{})}
+	s.stopped, s.abort = context.WithCancel(context.Background())
 	if s.client == nil {
 		s.client = defaultClient(cfg.AllowInsecure)
 	}
@@ -304,6 +308,8 @@ func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, don
 
 // Close stops accepting notifications and waits until those that are queued
 // have been delivered or given up on, or until ctx ends, whichever is first.
+// When ctx ends first, the requests on their way are cancelled and what is
+// still queued is given up on without being sent.
 func (s *Sender) Close(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.closed {
@@ -317,6 +323,7 @@ func (s *Sender) Close(ctx context.Context) error {
 	go func() { s.wg.Wait(); close(done) }()
 	select {
 	case <-done:
+		s.abort()
 		return nil
 	case <-ctx.Done():
 		// Give up on what is still waiting between attempts.
@@ -325,6 +332,7 @@ func (s *Sender) Close(ctx context.Context) error {
 		default:
 			close(s.stop)
 		}
+		s.abort()
 		<-done
 		return ctx.Err()
 	}
@@ -346,6 +354,13 @@ func (s *Sender) deliver(d delivery) {
 		}
 		d.finish(err)
 	}
+	select {
+	case <-s.stop:
+		// Close ran out of time: what is still queued is not sent.
+		failed(0, fmt.Errorf("%w: the sender", openadr.ErrClosed))
+		return
+	default:
+	}
 	wait := s.cfg.Backoff
 	for attempt := 1; ; attempt++ {
 		retry, after, err := s.post(d)
@@ -361,6 +376,10 @@ func (s *Sender) deliver(d delivery) {
 		}
 		if !retry || attempt >= s.cfg.Attempts {
 			failed(attempt, err)
+			return
+		}
+		if s.stopped.Err() != nil {
+			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
 			return
 		}
 		// A webhook that says when to come back is taken at its word, up
@@ -386,7 +405,7 @@ func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
 	if _, err := s.checkURL(d.url); err != nil {
 		return false, 0, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+	ctx, cancel := context.WithTimeout(s.stopped, s.cfg.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url, bytes.NewReader(d.body))
 	if err != nil {

@@ -36,6 +36,8 @@ type RetryPolicy interface {
 	// attempt counts the attempts made so far, from 1. It returns whether
 	// to try again and how long to wait first. When the VTN named a wait
 	// in a Retry-After header and it is longer, the client waits that long.
+	// A wait that would outlast the deadline of the call's context is not
+	// begun: the call fails at once, with the error of the last attempt.
 	ShouldRetry(attempt int, err error) (retry bool, wait time.Duration)
 }
 

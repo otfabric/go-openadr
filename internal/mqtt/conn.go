@@ -207,9 +207,32 @@ func (c *Conn) Close() error {
 	c.mu.Lock()
 	c.closing = true
 	c.mu.Unlock()
-	_ = c.write(Packet{Type: TypeDisconnect})
+	// The goodbye is a courtesy. A write that is stuck on a broker that
+	// does not read holds the lock for up to a keep-alive period: then
+	// there is no goodbye, and closing the connection ends that write.
+	if c.lockWithin(closeTimeout) {
+		_ = c.conn.SetWriteDeadline(time.Now().Add(min(c.keepAlive, closeTimeout)))
+		_, _ = c.conn.Write(Packet{Type: TypeDisconnect}.Encode())
+		c.writeMu.Unlock()
+	}
 	c.shut(nil)
 	return nil
+}
+
+// closeTimeout bounds what Close waits for: a write that is on its way,
+// and then its DISCONNECT.
+const closeTimeout = 2 * time.Second
+
+// lockWithin takes writeMu if it can within d, and reports whether it did.
+func (c *Conn) lockWithin(d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for !c.writeMu.TryLock() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return true
 }
 
 func (c *Conn) write(p Packet) error {
@@ -333,7 +356,12 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error
 	if err := c.write(p); err != nil {
 		forget()
 		c.shut(fmt.Errorf("mqtt: connection lost: %w", err))
-		return Packet{}, c.Err()
+		// After Close the connection ended without an error of its own,
+		// but this packet still did not go.
+		if err := c.Err(); err != nil {
+			return Packet{}, err
+		}
+		return Packet{}, ErrClosed
 	}
 	select {
 	case p := <-ch:
