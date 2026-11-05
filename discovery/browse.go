@@ -144,9 +144,7 @@ func Browse(ctx context.Context, o Options) ([]VTN, error) {
 	answers := make(chan message)
 	var readers sync.WaitGroup
 	for _, conn := range conns {
-		readers.Add(1)
-		go func() {
-			defer readers.Done()
+		readers.Go(func() {
 			buf := make([]byte, maxMessage)
 			for {
 				n, _, err := conn.ReadFrom(buf)
@@ -161,7 +159,7 @@ func Browse(ctx context.Context, o Options) ([]VTN, error) {
 					}
 				}
 			}
-		}()
+		})
 	}
 	defer func() {
 		// The readers wait to hand over an answer, or to read one.

@@ -1,5 +1,130 @@
 # go-openadr Releases
 
+## v0.6.0
+
+**Date:** 2026-11-05
+**Previous release:** v0.5.1
+
+## Summary
+
+A security hardening release, after a static analysis (gosec, opengrep) at its
+lowest thresholds and new hostile-peer, chaos and fuzz tests. Go 1.26 is now the
+minimum. The exported API does not change. A few behaviours change: see the
+upgrade notes.
+
+**Upgrade notes**
+
+- Go 1.26 or later is required. CI tests Go 1.26 and 1.27.
+- Clients follow a redirect only to the scheme, host and port of the request,
+  when the `http.Client` they are given has no `CheckRedirect` of their own.
+  Any other redirect is returned as its 3xx status (`*openadr.Error`, or
+  `*client.TokenError` for the token endpoint).
+- A request body that is not valid UTF-8 is answered 400 by the VTN.
+- `auth.Issuer` keeps at most 1024 valid tokens per client; a new token beyond
+  that replaces the oldest.
+- `auth` refuses at setup a configured key it cannot verify with (an Ed25519 key
+  of the wrong length, an RSA or ECDSA key without its numbers), and refuses
+  tokens with a `crit` header or an `nbf` that is not a number.
+- The MQTT publisher and subscriber of `notification/mqtt` now wait `Backoff`
+  before they reconnect after a lost connection. Before, they reconnected at
+  once.
+- `webhook.Sender.Close`: when its context ends, requests in flight are cancelled
+  and queued notifications are given up without being sent, with
+  `openadr.ErrClosed`.
+- A client retry whose wait would outlast the context's deadline fails at once,
+  with the error the wait would have ended in.
+- **The VTN limits what one client keeps:** at most 100 subscriptions per
+  client by default, each with at most 16 distinct callback URLs. A create past
+  a limit is answered 409, and too many URLs 400. `server.Config.Limits`
+  changes the limits, adds limits on VENs, resources and reports, and a
+  negative value removes a limit.
+- `client.Each` ends with an error that matches `openadr.ErrProtocol` when the
+  VTN returns the same full page again: such a VTN does not honour `skip`.
+
+## Changes
+
+### Fixed
+
+- **Credentials no longer follow a redirect off-origin.** A VTN or token
+  endpoint that redirected with 307 or 308 got the form with `client_secret`
+  sent again to the target. A redirect to another port, or from https to http,
+  also kept the bearer token.
+- **`auth`:**
+  - An Ed25519 key of the wrong length made every EdDSA token panic the request.
+  - A JWKS provider that was never reached was fetched again on every request,
+    holding a lock, which serialised all validations.
+  - HTTP Basic credentials are now form-decoded as RFC 6749 2.3.1 asks, so a
+    secret with `+`, `/`, `=` or `%` works with golang.org/x/oauth2.
+  - The issuer's token map no longer grows without bound.
+  - The issuer no longer echoes arbitrary requested scopes in
+    `error_description`.
+  - The secret compare of the test MQTT broker is now constant-time.
+- **WebSocket:**
+  - A client write, and with it `Close`, `NotificationStream.Next` and
+    `websocket.Subscriber.Close`, could block for ever on a VTN that floods pings
+    and never reads.
+  - A close code outside the codes that may be sent was cut to 16 bits; it is
+    now sent as a close frame without a body.
+  - A close reason is cut between UTF-8 characters.
+- **MQTT:**
+  - A client identifier, user name, password, topic or filter longer than 65535
+    bytes had its length wrapped. It is now refused with `ErrTooLong`, before
+    anything is sent.
+  - The publisher and subscriber reconnected in a hot loop to a broker that drops
+    every session.
+  - `Publish` cut off by `Close` reported success.
+  - `Close` could block for up to twice the keep-alive.
+- **Backoff:** the waits of the client retry policy, the webhook sender and the
+  MQTT and WebSocket reconnects no longer overflow when they are near the largest
+  `time.Duration`. The client policy panicked; the reconnects turned into hot
+  loops.
+- **`server.RateLimiter`** with a very low rate reset every bucket on each call
+  on amd64 (a float-to-Duration overflow), so it limited nothing. `Retry-After`
+  is now correct on 32-bit platforms.
+- **`Duration.AddTo`:** a clock part longer than a `time.Duration` (for example
+  `PT3000000H`) was dropped, so such an event counted as already ended. Years,
+  months and days were truncated on 32-bit. Components now saturate at about
+  two million years.
+- **`timeline`:** intervals longer than about 292 years were split and repeated
+  wrongly.
+- **`discovery`:** DNS records with more than 65535 bytes of data, and messages
+  with more records than a header count can hold, are refused instead of having
+  their lengths wrapped.
+- **`client`:** a token `expires_in` beyond what a Duration holds is capped at
+  100 years.
+- **webhook:** the queue of a callback URL is chosen without a
+  platform-dependent conversion. The echo of the verification request is
+  answered with `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+
+### Added
+
+- **`server.Config.Limits`**: limits per client on subscriptions, VENs,
+  resources and reports, and on the callback URLs of one subscription. The
+  callback URLs of a subscription are now verified four at a time instead of
+  one after another.
+- Fuzz targets:
+  - `FuzzCodec` for every decoder of both revisions;
+  - `FuzzUnmarshal` (objectjson);
+  - `FuzzJWTValidate`, `FuzzParseKeySet` and `FuzzIssuer` (auth);
+  - `FuzzOfEvent` and `FuzzOfSplit` (timeline);
+  - `FuzzDurationAddTo`.
+- Hostile-peer tests:
+  - the VTN against hostile bodies, queries and concurrent deletes;
+  - the clients against redirecting, endless and truncating VTNs;
+  - WebSocket, MQTT and webhook peers that do not read, flood or drop.
+
+### Changed
+
+- Go 1.26 minimum, with `go fix` applied. EC keys are built with
+  `ecdsa.ParseUncompressedPublicKey`, not the deprecated coordinates.
+- The reference images are those of openadr-interop v0.6.3 (OpenLEADR v0.2.8),
+  pinned by digest. The shared workflows are at v3.3.1.
+- LIMITATIONS.md now names what is still not bounded: VENs, resources and
+  reports without a configured limit, and `client.Each` against a VTN that
+  keeps returning full pages of new objects.
+
+---
+
 ## v0.5.1
 
 **Date:** 2026-10-31

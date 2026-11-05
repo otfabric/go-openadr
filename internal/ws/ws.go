@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -108,7 +109,7 @@ func accept(key string) string {
 // hasToken reports whether a comma-separated header names token.
 func hasToken(h http.Header, name, token string) bool {
 	for _, value := range h.Values(name) {
-		for _, part := range strings.Split(value, ",") {
+		for part := range strings.SplitSeq(value, ",") {
 			if strings.EqualFold(strings.TrimSpace(part), token) {
 				return true
 			}
@@ -190,9 +191,7 @@ func Dial(ctx context.Context, hc *http.Client, target string, header http.Heade
 		return nil, err
 	}
 	key := base64.StdEncoding.EncodeToString(raw)
-	for name, values := range header {
-		req.Header[name] = values
-	}
+	maps.Copy(req.Header, header)
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Sec-WebSocket-Version", "13")
@@ -261,11 +260,14 @@ func (c *Conn) SetIdleTimeout(d time.Duration) {
 	c.idle.Store(int64(d))
 }
 
-// setWriteDeadline bounds a write, where the connection can.
-func (c *Conn) setWriteDeadline(t time.Time) {
+// setWriteDeadline bounds a write, where the connection can, and reports
+// whether it could.
+func (c *Conn) setWriteDeadline(t time.Time) bool {
 	if nc, ok := c.rw.(net.Conn); ok {
 		_ = nc.SetWriteDeadline(t)
+		return true
 	}
+	return false
 }
 
 // ReadMessage returns the next text message. It answers pings, and when
@@ -287,8 +289,7 @@ func (c *Conn) ReadMessage() ([]byte, error) {
 		}
 		fin, opcode, payload, err := c.readFrame(limit - int64(len(message)))
 		if err != nil {
-			var failed *protocolError
-			if errors.As(err, &failed) {
+			if failed, ok := errors.AsType[*protocolError](err); ok {
 				_ = c.Close(failed.code, failed.reason)
 			}
 			return nil, err
@@ -398,6 +399,14 @@ func (c *Conn) readFrame(room int64) (fin bool, opcode byte, payload []byte, err
 
 // writeFrame writes one whole frame.
 func (c *Conn) writeFrame(opcode byte, payload []byte, timeout time.Duration) error {
+	frame := c.encode(opcode, payload)
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+	return c.writeLocked(frame, timeout)
+}
+
+// encode returns a frame as it goes on the wire, masked by a client.
+func (c *Conn) encode(opcode byte, payload []byte) []byte {
 	frame := make([]byte, 0, len(payload)+14)
 	frame = append(frame, 0x80|opcode)
 	var maskBit byte
@@ -414,32 +423,54 @@ func (c *Conn) writeFrame(opcode byte, payload []byte, timeout time.Duration) er
 		frame = append(frame, maskBit|127)
 		frame = binary.BigEndian.AppendUint64(frame, uint64(n))
 	}
-	if c.client {
-		var mask [4]byte
-		if _, err := rand.Read(mask[:]); err != nil {
-			return err
-		}
-		frame = append(frame, mask[:]...)
-		start := len(frame)
-		frame = append(frame, payload...)
-		for i := range payload {
-			frame[start+i] ^= mask[i%4]
-		}
-	} else {
-		frame = append(frame, payload...)
+	if !c.client {
+		return append(frame, payload...)
 	}
+	// crypto/rand.Read never fails: it fills the mask or crashes.
+	var mask [4]byte
+	_, _ = rand.Read(mask[:])
+	frame = append(frame, mask[:]...)
+	start := len(frame)
+	frame = append(frame, payload...)
+	for i := range payload {
+		frame[start+i] ^= mask[i%4]
+	}
+	return frame
+}
 
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
+// writeLocked writes a frame; the caller holds wmu.
+func (c *Conn) writeLocked(frame []byte, timeout time.Duration) error {
 	if c.closed {
 		return net.ErrClosed
 	}
 	if timeout > 0 {
-		c.setWriteDeadline(time.Now().Add(timeout))
+		if !c.setWriteDeadline(time.Now().Add(timeout)) {
+			// The connection of an HTTP client has no deadlines: a peer
+			// that does not read would hold the write, and with it every
+			// other write and Close, for ever. It is closed instead.
+			expired := time.AfterFunc(timeout, func() { _ = c.rw.Close() })
+			defer expired.Stop()
+		}
 	}
 	_, err := c.rw.Write(frame)
 	return err
 }
+
+// lockWithin takes wmu if it can within d, and reports whether it did.
+func (c *Conn) lockWithin(d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for !c.wmu.TryLock() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return true
+}
+
+// closeTimeout bounds what Close waits for: a write that is on its way,
+// and then its own close frame.
+const closeTimeout = 2 * time.Second
 
 // WriteText sends a text message. A write that takes longer than timeout
 // fails, where the connection can tell; 0 is no limit.
@@ -456,18 +487,39 @@ func (c *Conn) Ping(timeout time.Duration) error {
 // to agree. It is safe to call more than once and from any goroutine.
 func (c *Conn) Close(code int, reason string) error {
 	if len(reason) > 123 {
-		reason = reason[:123]
+		// The reason is UTF-8 (RFC 6455, 5.5.1): cut between characters.
+		cut := 123
+		for cut > 0 && !utf8.RuneStart(reason[cut]) {
+			cut--
+		}
+		reason = reason[:cut]
 	}
-	payload := binary.BigEndian.AppendUint16(make([]byte, 0, 2+len(reason)), uint16(code))
-	_ = c.writeFrame(opClose, append(payload, reason...), 2*time.Second)
-
-	c.wmu.Lock()
+	// A code that may not be sent (RFC 6455, 7.4) goes as a Close frame
+	// without a body, which says nothing about why.
+	var payload []byte
+	if code >= 1000 && code <= 4999 && code != 1004 && code != 1005 && code != 1006 && code != 1015 {
+		payload = binary.BigEndian.AppendUint16(make([]byte, 0, 2+len(reason)), uint16(code))
+		payload = append(payload, reason...)
+	}
+	var closeErr error
+	closedNow := false
+	if c.lockWithin(closeTimeout) {
+		_ = c.writeLocked(c.encode(opClose, payload), closeTimeout)
+	} else {
+		// A write is stuck on a peer that does not read. The close frame
+		// would wait behind it; closing the connection ends that write.
+		closeErr, closedNow = c.rw.Close(), true
+		c.wmu.Lock()
+	}
 	already := c.closed
 	c.closed = true
 	c.wmu.Unlock()
 	c.SetReadDeadline(time.Time{})
 	if already {
 		return nil
+	}
+	if closedNow {
+		return closeErr
 	}
 	return c.rw.Close()
 }

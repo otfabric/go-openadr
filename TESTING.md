@@ -6,7 +6,7 @@ How to run each tier. No external VTN is needed: tests run the clients against t
 
 | Tier | Command | Prerequisites | In CI |
 |---|---|---|---|
-| Unit | `make test` | none | yes, Go 1.23 to 1.26, with `-race` |
+| Unit | `make test` | none | yes, Go 1.26 and 1.27, with `-race` |
 | End-to-end | `make e2e` | none | yes |
 | Parallel, failure injection | `make chaos` (`CHAOS_COUNT`, default 5) | none | once, as part of the tests |
 | Fuzz | `make fuzz` (`FUZZTIME`, default 30s) | none | yes, 10s per target |

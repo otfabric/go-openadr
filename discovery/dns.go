@@ -87,11 +87,12 @@ var errMalformed = errors.New("discovery: malformed DNS message")
 func appendName(b []byte, n name) ([]byte, error) {
 	total := 1
 	for _, label := range n {
-		if label == "" || len(label) > 63 {
+		size := len(label)
+		if size == 0 || size > 63 {
 			return nil, errors.New("discovery: a label of a name is empty or longer than 63 bytes")
 		}
-		total += 1 + len(label)
-		b = append(b, byte(len(label)))
+		total += 1 + size
+		b = append(b, byte(size))
 		b = append(b, label...)
 	}
 	if total > 255 {
@@ -108,10 +109,12 @@ func (m message) marshal() ([]byte, error) {
 	b := make([]byte, 0, 512)
 	b = binary.BigEndian.AppendUint16(b, m.id)
 	b = binary.BigEndian.AppendUint16(b, flags)
-	b = binary.BigEndian.AppendUint16(b, uint16(len(m.questions)))
-	b = binary.BigEndian.AppendUint16(b, uint16(len(m.answers)))
-	b = binary.BigEndian.AppendUint16(b, 0)
-	b = binary.BigEndian.AppendUint16(b, uint16(len(m.additional)))
+	for _, count := range []int{len(m.questions), len(m.answers), 0, len(m.additional)} {
+		if count < 0 || count > 0xFFFF {
+			return nil, errors.New("discovery: the message is too large")
+		}
+		b = binary.BigEndian.AppendUint16(b, uint16(count))
+	}
 	var err error
 	for _, q := range m.questions {
 		if b, err = appendName(b, q.name); err != nil {
@@ -163,10 +166,11 @@ func appendRecord(b []byte, r record) ([]byte, error) {
 			b = append(b, 0)
 		}
 		for _, s := range r.text {
-			if len(s) > 255 {
+			size := len(s)
+			if size > 255 {
 				return nil, errors.New("discovery: a TXT entry is longer than 255 bytes")
 			}
-			b = append(b, byte(len(s)))
+			b = append(b, byte(size))
 			b = append(b, s...)
 		}
 	case typeA:
@@ -187,7 +191,11 @@ func appendRecord(b []byte, r record) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	binary.BigEndian.PutUint16(b[lengthAt:], uint16(len(b)-lengthAt-2))
+	size := len(b) - lengthAt - 2
+	if size < 0 || size > 0xFFFF {
+		return nil, errors.New("discovery: the data of a record is longer than 65535 bytes")
+	}
+	binary.BigEndian.PutUint16(b[lengthAt:], uint16(size))
 	return b, nil
 }
 

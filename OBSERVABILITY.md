@@ -173,7 +173,8 @@ up to its `MaxBackoff`.
 **The context still rules.** A call's context bounds all its attempts and
 the waits between them. When it ends during a wait, the call returns the
 failure it was going to retry, not the context's error: that is what went
-wrong.
+wrong. A wait that would outlast the context's deadline is not begun: the
+call returns that failure at once.
 
 **A delete that is retried** after the first attempt arrived finds nothing
 and is answered 404. The object is gone either way.
@@ -189,4 +190,6 @@ any other, as a response with status 429 for its operation.
 
 The other things that reconnect by themselves have a backoff of their own,
 doubling to a minute: `mqtt.Publisher`, `mqtt.Subscriber` and
-`websocket.Subscriber` (`Backoff` in their configuration).
+`websocket.Subscriber` (`Backoff` in their configuration). The MQTT ones
+also wait it out after a connection that was lost, so that a broker that
+drops every connection at once is not dialled again at once.

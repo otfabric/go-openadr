@@ -547,3 +547,21 @@ func TestIdleTimeout(t *testing.T) {
 	}
 	_ = conn.Close(CloseNormal, "")
 }
+
+// A code that may not be sent goes as a Close without a body; it is never
+// cut to 16 bits.
+func TestCloseWithACodeThatMayNotBeSent(t *testing.T) {
+	for _, code := range []int{-1, 0, 999, 1005, 1006, 1015, 5000, 65536 + CloseNormal} {
+		got := make(chan error, 1)
+		ts := serve(t, false, func(c *Conn) {
+			_, err := c.ReadMessage()
+			got <- err
+		})
+		conn := dial(t, ts)
+		_ = conn.Close(code, "why")
+		var closed *CloseError
+		if err := <-got; !errors.As(err, &closed) || closed.Code != 1005 || closed.Reason != "" {
+			t.Errorf("Close(%d): the server saw %v", code, err)
+		}
+	}
+}

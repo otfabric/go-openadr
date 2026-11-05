@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	openadr "github.com/otfabric/go-openadr"
 )
@@ -28,7 +29,15 @@ func Invalid(field, format string, args ...any) error {
 
 // Decode unmarshals data into v. Properties the schema does not define are
 // ignored, as the specification allows.
+//
+// JSON is UTF-8 (RFC 8259 section 8.1). encoding/json would read a string
+// that is not as U+FFFD, so that two different names could read as one,
+// and what is written back would not be what was sent: such a body is
+// refused.
 func Decode(data []byte, v any) error {
+	if !utf8.Valid(data) {
+		return &openadr.ValidationError{Field: "body", Reason: "is not UTF-8"}
+	}
 	if err := json.Unmarshal(data, v); err != nil {
 		return &openadr.ValidationError{Field: "body", Reason: err.Error()}
 	}
@@ -547,6 +556,7 @@ func MarshalProblem(p openadr.Problem) ([]byte, error) { return json.Marshal(Pro
 // UnmarshalProblem reads a problem.
 func UnmarshalProblem(data []byte) (openadr.Problem, error) {
 	var p Problem
+	// Diagnostics only: read whatever the peer sent, as best can be.
 	err := json.Unmarshal(data, &p)
 	return openadr.Problem(p), err
 }

@@ -186,16 +186,14 @@ func TestFileConcurrentWrites(t *testing.T) {
 	f := openFile(t, path)
 	var wg sync.WaitGroup
 	for i := range 40 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id := fmt.Sprintf("p%02d", i)
 			_ = f.Programs().Create(ctx, openadr.Program{Metadata: meta(id), Name: id})
 			_ = f.Programs().Update(ctx, openadr.Program{Metadata: meta(id), Name: id + "-renamed"})
 			if i%4 == 0 {
 				_, _ = f.Programs().Delete(ctx, id)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	want := dump(t, f)

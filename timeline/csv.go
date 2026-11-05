@@ -32,8 +32,7 @@ func (t Table) WriteCSV(w io.Writer) error {
 	// A row that cannot be written is the table's fault; anything else is
 	// the writer's.
 	err := t.writeCSV(w)
-	var bad *rowError
-	if errors.As(err, &bad) {
+	if _, ok := errors.AsType[*rowError](err); ok {
 		return fmt.Errorf("%w: %w", openadr.ErrInvalid, err)
 	}
 	return err
@@ -113,7 +112,9 @@ func readCSV(r io.Reader) (Table, error) {
 		}
 	}
 	var out Table
-	for line := 0; ; line++ {
+	// line is the interval id of a row without one: an int32, which a
+	// table of at most maxRows rows never wraps.
+	for line := int32(0); ; line++ {
 		rec, err := cr.Read()
 		if errors.Is(err, io.EOF) {
 			return out, nil
@@ -130,7 +131,7 @@ func readCSV(r io.Reader) (Table, error) {
 		fail := func(name string, err error) (Table, error) {
 			return nil, fmt.Errorf("timeline: row %d, column %s: %w", line, name, err)
 		}
-		row := Row{IntervalID: int32(line), Type: cell("type")}
+		row := Row{IntervalID: line, Type: cell("type")}
 		if row.Type == "" {
 			return fail("type", errors.New("is empty"))
 		}

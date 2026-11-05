@@ -3,12 +3,14 @@
 package mqtt
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 )
@@ -67,6 +69,12 @@ func (e *ConnectError) Error() string {
 	return fmt.Sprintf("mqtt: the broker refused the connection with code %d", e.Code)
 }
 
+// dial opens the TCP connection to a broker; tests replace it.
+var dial = func(ctx context.Context, address string) (net.Conn, error) {
+	var dialer net.Dialer
+	return dialer.DialContext(ctx, "tcp", address)
+}
+
 // Dial connects to the broker at uri, an mqtt:// or mqtts:// URL (tcp://,
 // ssl:// and tls:// are accepted for the same). The default ports are 1883
 // and 8883. ctx bounds the connection and the handshake.
@@ -75,8 +83,7 @@ func Dial(ctx context.Context, uri string, o Options) (*Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	var dialer net.Dialer
-	nc, err := dialer.DialContext(ctx, "tcp", address)
+	nc, err := dial(ctx, address)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +117,11 @@ func Dial(ctx context.Context, uri string, o Options) (*Conn, error) {
 		keepAlive = 30 * time.Second
 	}
 	seconds := min(max(int(keepAlive/time.Second), 1), 65535)
-	if _, err := nc.Write(Connect(o.ClientID, o.Username, o.Password, uint16(seconds)).Encode()); err != nil {
+	connect, err := Connect(o.ClientID, o.Username, o.Password, uint16(seconds))
+	if err != nil {
+		return fail(err)
+	}
+	if _, err := nc.Write(connect.Encode()); err != nil {
 		return fail(err)
 	}
 	ack, err := ReadPacket(nc)
@@ -202,9 +213,32 @@ func (c *Conn) Close() error {
 	c.mu.Lock()
 	c.closing = true
 	c.mu.Unlock()
-	_ = c.write(Packet{Type: TypeDisconnect})
+	// The goodbye is a courtesy. A write that is stuck on a broker that
+	// does not read holds the lock for up to a keep-alive period: then
+	// there is no goodbye, and closing the connection ends that write.
+	if c.lockWithin(closeTimeout) {
+		_ = c.conn.SetWriteDeadline(time.Now().Add(min(c.keepAlive, closeTimeout)))
+		_, _ = c.conn.Write(Packet{Type: TypeDisconnect}.Encode())
+		c.writeMu.Unlock()
+	}
 	c.shut(nil)
 	return nil
+}
+
+// closeTimeout bounds what Close waits for: a write that is on its way,
+// and then its DISCONNECT.
+const closeTimeout = 2 * time.Second
+
+// lockWithin takes writeMu if it can within d, and reports whether it did.
+func (c *Conn) lockWithin(d time.Duration) bool {
+	deadline := time.Now().Add(d)
+	for !c.writeMu.TryLock() {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return true
 }
 
 func (c *Conn) write(p Packet) error {
@@ -289,7 +323,7 @@ func (c *Conn) ping() {
 
 // request sends a packet that is answered by one with the same packet
 // identifier, and waits for the answer.
-func (c *Conn) request(ctx context.Context, build func(id uint16) Packet) (Packet, error) {
+func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error)) (Packet, error) {
 	c.mu.Lock()
 	select {
 	case <-c.done:
@@ -320,10 +354,17 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) Packet) (Packe
 		c.mu.Unlock()
 	}
 
-	if err := c.write(build(id)); err != nil {
+	p, err := build(id)
+	if err != nil {
+		forget()
+		return Packet{}, err
+	}
+	if err := c.write(p); err != nil {
 		forget()
 		c.shut(fmt.Errorf("mqtt: connection lost: %w", err))
-		return Packet{}, c.Err()
+		// After Close the connection ended without an error of its own,
+		// but this packet still did not go.
+		return Packet{}, cmp.Or(c.Err(), ErrClosed)
 	}
 	select {
 	case p := <-ch:
@@ -333,10 +374,7 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) Packet) (Packe
 		return Packet{}, ctx.Err()
 	case <-c.done:
 		forget()
-		if err := c.Err(); err != nil {
-			return Packet{}, err
-		}
-		return Packet{}, ErrClosed
+		return Packet{}, cmp.Or(c.Err(), ErrClosed)
 	}
 }
 
@@ -347,7 +385,7 @@ func (c *Conn) Publish(ctx context.Context, topic string, payload []byte) error 
 	if !ValidTopic(topic) {
 		return fmt.Errorf("mqtt: %q is not a topic to publish to", topic)
 	}
-	_, err := c.request(ctx, func(id uint16) Packet { return Publish(topic, payload, 1, id, false) })
+	_, err := c.request(ctx, func(id uint16) (Packet, error) { return Publish(topic, payload, 1, id, false) })
 	return err
 }
 
@@ -357,12 +395,10 @@ func (c *Conn) Subscribe(ctx context.Context, filters ...string) error {
 	if len(filters) == 0 {
 		return nil
 	}
-	for _, f := range filters {
-		if f == "" {
-			return errors.New("mqtt: an empty topic filter")
-		}
+	if slices.Contains(filters, "") {
+		return errors.New("mqtt: an empty topic filter")
 	}
-	ack, err := c.request(ctx, func(id uint16) Packet { return Subscribe(id, filters) })
+	ack, err := c.request(ctx, func(id uint16) (Packet, error) { return Subscribe(id, filters) })
 	if err != nil {
 		return err
 	}

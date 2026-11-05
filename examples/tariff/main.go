@@ -184,8 +184,7 @@ func run(ctx context.Context, url, clientID, programName, file, name, target str
 		event.Targets = []string{target}
 	}
 	created, err := bl.CreateEvent(ctx, event)
-	var invalid *openadr.ValidationError
-	if errors.As(err, &invalid) {
+	if invalid, ok := errors.AsType[*openadr.ValidationError](err); ok {
 		// Refused before it was sent: the schedule does not make an event.
 		return fmt.Errorf("the schedule is not a valid event: %s %s", invalid.Field, invalid.Reason)
 	}

@@ -23,11 +23,21 @@ in [INTEROP.md](INTEROP.md), the security consequences in
 - The stores in `examples/storage` are examples and are not covered by the
   support of this module.
 
+## Limits not enforced
+
+- VENs, resources and reports have no limit per client unless
+  `server.Config.Limits` sets one. Subscriptions are limited to 100 per
+  client by default, and callback URLs to 16 per subscription.
+- `client.Each` stops at a VTN that returns the same full page again, which
+  means it ignores `skip`. A VTN that keeps returning full pages of new
+  objects is not told apart from a long result: end it with the context or
+  by breaking out of the loop.
+
 ## Verification
 
 - Tested against the images of
   [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop),
-  pinned by digest: OpenLEADR v0.2.7 and v0.1.4, the ElaadNL openadr3-client
+  pinned by digest: OpenLEADR v0.2.8 and v0.1.4, the ElaadNL openadr3-client
   2.4.0, Avahi 0.8, and four MQTT brokers. The matrix, with how and where each
   row last ran, is in [INTEROP.md](INTEROP.md#matrix). Mosquitto, NanoMQ,
   HiveMQ CE and EMQX were tested with this module's own publisher and

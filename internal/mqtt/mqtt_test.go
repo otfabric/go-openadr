@@ -18,6 +18,13 @@ import (
 	"github.com/otfabric/go-openadr/internal/mqtttest"
 )
 
+func must(p mqtt.Packet, err error) mqtt.Packet {
+	if err != nil {
+		panic(err)
+	}
+	return p
+}
+
 // The bytes of each packet, written out from the MQTT 3.1.1 specification
 // (sections 3.1, 3.3, 3.4, 3.8), not taken from the encoder.
 func TestPacketBytes(t *testing.T) {
@@ -25,16 +32,16 @@ func TestPacketBytes(t *testing.T) {
 		packet mqtt.Packet
 		want   string
 	}{
-		"CONNECT, clean session, keep alive 60": {mqtt.Connect("ven", "", "", 60),
+		"CONNECT, clean session, keep alive 60": {must(mqtt.Connect("ven", "", "", 60)),
 			"10 0f 0004 4d515454 04 02 003c 0003 76656e"},
-		"CONNECT with user name and password": {mqtt.Connect("c", "u", "pw", 10),
+		"CONNECT with user name and password": {must(mqtt.Connect("c", "u", "pw", 10)),
 			"10 14 0004 4d515454 04 c2 000a 0001 63 0001 75 0002 7077"},
-		"PUBLISH QoS 1, packet 10, topic a/b": {mqtt.Publish("a/b", []byte("hi"), 1, 10, false),
+		"PUBLISH QoS 1, packet 10, topic a/b": {must(mqtt.Publish("a/b", []byte("hi"), 1, 10, false)),
 			"32 09 0003 612f62 000a 6869"},
-		"PUBLISH QoS 1, duplicate": {mqtt.Publish("a", nil, 1, 1, true), "3a 05 0001 61 0001"},
-		"PUBLISH QoS 0":            {mqtt.Publish("a", []byte("x"), 0, 0, false), "30 04 0001 61 78"},
+		"PUBLISH QoS 1, duplicate": {must(mqtt.Publish("a", nil, 1, 1, true)), "3a 05 0001 61 0001"},
+		"PUBLISH QoS 0":            {must(mqtt.Publish("a", []byte("x"), 0, 0, false)), "30 04 0001 61 78"},
 		"PUBACK for packet 10":     {mqtt.Ack(mqtt.TypePuback, 10), "40 02 000a"},
-		"SUBSCRIBE to a/+ and #":   {mqtt.Subscribe(2, []string{"a/+", "#"}), "82 0c 0002 0003 612f2b 01 0001 23 01"},
+		"SUBSCRIBE to a/+ and #":   {must(mqtt.Subscribe(2, []string{"a/+", "#"})), "82 0c 0002 0003 612f2b 01 0001 23 01"},
 		"PINGREQ":                  {mqtt.Packet{Type: mqtt.TypePingreq}, "c0 00"},
 		"DISCONNECT":               {mqtt.Packet{Type: mqtt.TypeDisconnect}, "e0 00"},
 	} {
@@ -75,8 +82,8 @@ func TestPacketBytes(t *testing.T) {
 }
 
 func FuzzReadPacket(f *testing.F) {
-	f.Add(mqtt.Publish("a/b", []byte("hi"), 1, 10, false).Encode())
-	f.Add(mqtt.Connect("c", "u", "p", 10).Encode())
+	f.Add(must(mqtt.Publish("a/b", []byte("hi"), 1, 10, false)).Encode())
+	f.Add(must(mqtt.Connect("c", "u", "p", 10)).Encode())
 	f.Fuzz(func(t *testing.T, data []byte) {
 		p, err := mqtt.ReadPacket(bytes.NewReader(data))
 		if err != nil {
@@ -140,13 +147,11 @@ func TestPublishSubscribe(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for i := range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := pub.Publish(ctx, "events/update", fmt.Appendf(nil, "%d", i)); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	seen := map[string]bool{}
@@ -275,5 +280,80 @@ func TestMatch(t *testing.T) {
 		if got := mqtttest.Match(tc.filter, tc.topic); got != tc.want {
 			t.Errorf("Match(%q, %q) = %v", tc.filter, tc.topic, got)
 		}
+	}
+}
+
+// A string MQTT cannot carry is refused, never sent with a wrapped length.
+func TestTooLong(t *testing.T) {
+	long := strings.Repeat("x", 0x10000)
+	if _, err := mqtt.AppendString(nil, long); !errors.Is(err, mqtt.ErrTooLong) {
+		t.Errorf("AppendString of 65536 bytes: %v", err)
+	}
+	if b, err := mqtt.AppendString(nil, long[:0xFFFF]); err != nil || len(b) != 0x10001 || b[0] != 0xff || b[1] != 0xff {
+		t.Errorf("AppendString of 65535 bytes: %d bytes, %v", len(b), err)
+	}
+	for name, err := range map[string]error{
+		"client identifier": second(mqtt.Connect(long, "", "", 1)),
+		"user name":         second(mqtt.Connect("c", long, "", 1)),
+		"password":          second(mqtt.Connect("c", "u", long, 1)),
+		"topic":             second(mqtt.Publish(long, nil, 1, 1, false)),
+		"filter":            second(mqtt.Subscribe(1, []string{"a", long})),
+		"payload":           second(mqtt.Publish("a", make([]byte, mqtt.MaxRemaining), 1, 1, false)),
+	} {
+		if !errors.Is(err, mqtt.ErrTooLong) {
+			t.Errorf("%s: %v, want ErrTooLong", name, err)
+		}
+	}
+	if b := (mqtt.Packet{Type: mqtt.TypePublish, Body: make([]byte, mqtt.MaxRemaining+1)}).Encode(); b != nil {
+		t.Errorf("Encode of a body over MaxRemaining: %d bytes", len(b))
+	}
+	if b := (mqtt.Packet{Type: mqtt.TypePublish, Body: make([]byte, mqtt.MaxRemaining)}).Encode(); len(b) != 1+4+mqtt.MaxRemaining || b[4] != 0x7f {
+		t.Errorf("Encode of a body of MaxRemaining: %d bytes", len(b))
+	}
+}
+
+func second(_ mqtt.Packet, err error) error { return err }
+
+// What MQTT cannot carry fails the call that asked for it, before anything
+// is written, and leaves the connection usable.
+func TestConnTooLong(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	b := broker(t, map[string]string{"ven": "pw"})
+	long := strings.Repeat("x", 0x10000)
+	if _, err := mqtt.Dial(ctx, b.URL(), mqtt.Options{ClientID: "c", Username: "ven", Password: long}); !errors.Is(err, mqtt.ErrTooLong) {
+		t.Fatalf("Dial with a 64 KiB password: %v", err)
+	}
+	c, err := mqtt.Dial(ctx, b.URL(), mqtt.Options{ClientID: "c", Username: "ven", Password: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if err := c.Subscribe(ctx, long); !errors.Is(err, mqtt.ErrTooLong) {
+		t.Errorf("Subscribe to a 64 KiB filter: %v", err)
+	}
+	if err := c.Subscribe(ctx, "a/#"); err != nil {
+		t.Errorf("Subscribe after the refusal: %v", err)
+	}
+	if err := c.Publish(ctx, "a/b", []byte("ok")); err != nil {
+		t.Errorf("Publish after the refusal: %v", err)
+	}
+}
+
+// An empty topic filter is refused before anything is sent.
+func TestSubscribeEmptyFilter(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	b := broker(t, map[string]string{"ven": "pw"})
+	c, err := mqtt.Dial(ctx, b.URL(), mqtt.Options{ClientID: "c", Username: "ven", Password: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if err := c.Subscribe(ctx, "a/#", ""); err == nil {
+		t.Error("a subscription with an empty filter was sent")
+	}
+	if err := c.Subscribe(ctx); err != nil {
+		t.Errorf("Subscribe to nothing: %v", err)
 	}
 }

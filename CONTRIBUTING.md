@@ -19,7 +19,7 @@ Thank you for your interest in contributing to `go-openadr`! This document cover
 
 ### Prerequisites
 
-- Go 1.23+ (see [go.mod](go.mod)); the code must build and pass on Go 1.23, so do not use newer language or standard-library features
+- Go 1.26+ (see [go.mod](go.mod)); the code must build and pass on Go 1.26, so do not use newer language or standard-library features
 - [staticcheck](https://staticcheck.dev/), [golangci-lint](https://golangci-lint.run/) and [govulncheck](https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck) for the checks
 - No external VTN: tests run the clients against the VTN of this module over loopback HTTP
 - Docker, for `make interop` only

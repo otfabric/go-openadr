@@ -140,29 +140,25 @@ func TestMemoryOrderAndConcurrency(t *testing.T) {
 	m := NewMemory()
 	var wg sync.WaitGroup
 	for i := range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id := fmt.Sprintf("p%02d", i)
 			_ = m.Programs().Create(ctx, openadr.Program{Metadata: meta(id), Name: id})
 			_, _ = m.Programs().List(ctx, ProgramFilter{})
 			_, _ = m.Programs().Get(ctx, id)
-		}()
+		})
 	}
 	wg.Wait()
 	// One name, many writers: exactly one wins.
 	var created int
 	var mu sync.Mutex
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if m.VENs().Create(ctx, openadr.VEN{Metadata: meta(fmt.Sprintf("v%d", i)), Name: "contested"}) == nil {
 				mu.Lock()
 				created++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if created != 1 {

@@ -28,6 +28,10 @@ type kind[T interface{ Validate() error }, F any] struct {
 	// subject describes v to the notifications; see notify. Nil for a
 	// kind of object that nobody is notified of.
 	subject func(ctx context.Context, v T) subject
+	// owner is the client that keeps v, for quota; nil for a kind that
+	// is not limited per client.
+	owner func(v T) string
+	quota quota
 }
 
 func (k kind[T, F]) notify(s *Server, r *http.Request, op openadr.Operation, v T) {
@@ -114,13 +118,26 @@ func create[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) han
 			return
 		}
 		*k.meta(&v) = meta
-		if err := k.coll.Create(r.Context(), v); err != nil {
+		if err := k.store(r.Context(), s, v); err != nil {
 			s.fail(w, r, err)
 			return
 		}
 		k.notify(s, r, openadr.OperationCreate, v)
 		writeObject(s, w, r, http.StatusCreated, k.codec, v)
 	}
+}
+
+// store creates v, within the quota of the client that keeps it.
+func (k kind[T, F]) store(ctx context.Context, s *Server, v T) error {
+	if k.owner == nil || k.quota.max <= 0 {
+		return k.coll.Create(ctx, v)
+	}
+	s.creating.Lock()
+	defer s.creating.Unlock()
+	if err := k.quota.admit(ctx, k.owner(v)); err != nil {
+		return err
+	}
+	return k.coll.Create(ctx, v)
 }
 
 func update[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) handler {

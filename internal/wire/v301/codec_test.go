@@ -14,8 +14,6 @@ import (
 	"github.com/otfabric/go-openadr/internal/wire"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 var (
 	t0    = time.Date(2024, 7, 25, 8, 31, 10, 0, time.UTC)
 	meta  = openadr.Metadata{ID: "object-999", Created: t0, Modified: t0.Add(time.Minute)}
@@ -76,7 +74,7 @@ func TestRoundTrip(t *testing.T) {
 		Descriptions:   []openadr.ProgramDescription{{URL: "https://example.com/p"}},
 		PayloadDescriptors: []openadr.PayloadDescriptor{
 			openadr.EventPayloadDescriptor{PayloadType: "PRICE", Units: "KWH", Currency: "USD"},
-			openadr.ReportPayloadDescriptor{PayloadType: "USAGE", ReadingType: "DIRECT_READ", Units: "KWH", Accuracy: ptr(0.5), Confidence: ptr(90)},
+			openadr.ReportPayloadDescriptor{PayloadType: "USAGE", ReadingType: "DIRECT_READ", Units: "KWH", Accuracy: new(0.5), Confidence: new(90)},
 		},
 		Attributes:   programAttributes,
 		TypedTargets: group,
@@ -86,7 +84,7 @@ func TestRoundTrip(t *testing.T) {
 	descriptor := openadr.NewReportDescriptor("USAGE")
 	descriptor.TypedTargets, descriptor.Historical, descriptor.Repeat = group, false, -1
 	roundTrip(t, c.Events, openadr.Event{
-		Metadata: meta, ProgramID: "program-1", Name: "e", Priority: ptr(0),
+		Metadata: meta, ProgramID: "program-1", Name: "e", Priority: new(0),
 		TypedTargets:       group,
 		ReportDescriptors:  []openadr.ReportDescriptor{descriptor, openadr.NewReportDescriptor("X")},
 		PayloadDescriptors: []openadr.EventPayloadDescriptor{{PayloadType: "PRICE"}},

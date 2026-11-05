@@ -104,9 +104,7 @@ func outbox(t *testing.T, cfg Config) {
 	// Many at once: all are kept, none twice.
 	var wg sync.WaitGroup
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id := fmt.Sprintf("p%02d", i)
 			if err := box.AddDelivery(ctx, delivery(id)); err != nil {
 				t.Errorf("adding %s: %v", id, err)
@@ -116,7 +114,7 @@ func outbox(t *testing.T, cfg Config) {
 					t.Errorf("removing %s: %v", id, err)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if list, _ := box.Deliveries(ctx); len(list) != 13 {
@@ -437,9 +435,7 @@ func concurrency(t *testing.T, s storage.Store) {
 	ctx := context.Background()
 	var wg sync.WaitGroup
 	for i := range 40 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id := fmt.Sprintf("p%02d", i)
 			if err := s.Programs().Create(ctx, openadr.Program{Metadata: meta(id), Name: id}); err != nil {
 				t.Errorf("creating %s: %v", id, err)
@@ -450,7 +446,7 @@ func concurrency(t *testing.T, s storage.Store) {
 			if _, err := s.Programs().Get(ctx, id); err != nil {
 				t.Errorf("reading %s: %v", id, err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if got, _ := s.Programs().List(ctx, storage.ProgramFilter{}); len(got) != 40 {
@@ -464,9 +460,7 @@ func concurrency(t *testing.T, s storage.Store) {
 		created int
 	)
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			err := s.VENs().Create(ctx, openadr.VEN{Metadata: meta(fmt.Sprintf("v%d", i)), Name: "contested"})
 			mu.Lock()
 			defer mu.Unlock()
@@ -476,7 +470,7 @@ func concurrency(t *testing.T, s storage.Store) {
 			case !errors.Is(err, openadr.ErrConflict):
 				t.Errorf("a writer that lost the name was told: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if created != 1 {
@@ -487,15 +481,13 @@ func concurrency(t *testing.T, s storage.Store) {
 	// either it is gone and has none, or it is there.
 	must(t, "program", s.Programs().Create(ctx, openadr.Program{Metadata: meta("contested"), Name: "contested"}))
 	for i := range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if i == 10 {
 				_, _ = s.Programs().Delete(ctx, "contested")
 				return
 			}
 			_ = s.Events().Create(ctx, openadr.Event{Metadata: meta(fmt.Sprintf("ce%d", i)), ProgramID: "contested"})
-		}()
+		})
 	}
 	wg.Wait()
 	events, _ := s.Events().List(ctx, storage.EventFilter{ProgramID: "contested"})
@@ -645,7 +637,7 @@ func normal(v any) any {
 	return normalize(reflect.ValueOf(v)).Interface()
 }
 
-var timeType = reflect.TypeOf(time.Time{})
+var timeType = reflect.TypeFor[time.Time]()
 
 func normalize(v reflect.Value) reflect.Value {
 	out := reflect.New(v.Type()).Elem()

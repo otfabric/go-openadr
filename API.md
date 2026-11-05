@@ -236,7 +236,8 @@ type AttemptMetrics interface { OnAttempt(op string, attempt int, duration time.
 
 - **Nothing is retried by default.** With a policy, the client asks it only about failures another attempt can cure (no answer, 429, 502, 503, 504) and only for requests that are safe to send twice: a read, an update and a delete always; a create only when it certainly did not happen, unless `RetryCreates`. A policy cannot widen that. The table is in [OBSERVABILITY.md](OBSERVABILITY.md#retries).
 - **`Retry-After`** of a 429 or 503 is honoured: the client waits at least that long. It is in `openadr.Error.RetryAfter`.
-- **A call's context bounds all its attempts** and the waits between them.
+- **A call's context bounds all its attempts** and the waits between them; a wait that would outlast its deadline is not begun.
+- **Redirects** are followed within the scheme, host and port of the request only, unless `Config.HTTPClient` has a `CheckRedirect` of its own: the bearer token and the client secret of a token request do not follow a redirect elsewhere. One that is not followed is answered as its 3xx status.
 - **`Metrics`** is told of every call, once when it begins and once when it ends; a call is what a method does, token request and retries included. `op` is method and path with `{id}` for an ID, a small fixed set. A value that is also an `AttemptMetrics` is told of every attempt.
 - **`Logger`** gets one debug line per call, an info line when a token is renewed after a 401, and a warning per retry. Never bodies, tokens or secrets.
 - All of it applies to opening a notification stream as well.
@@ -262,6 +263,7 @@ type Config struct {
 	MQTT         *MQTTConfig     // optional: notifications by MQTT
 	Logger       *slog.Logger    // optional: internal errors
 	MaxBodyBytes int64           // default 1 MiB
+	Limits       Limits          // per client: default 100 subscriptions, 16 callback URLs each
 	Now          func() time.Time
 
 	Metrics            Metrics          // callbacks per request, and for notifications and WebSockets
@@ -301,6 +303,7 @@ those connections.
 
 - **`Outbox`** makes webhook notifications durable. Each is recorded there before it is handed to the sender and removed when the webhook has confirmed it, or has refused it for good, or when its subscription is gone, or after `NotificationTTL`. What is recorded and not on its way is handed to the sender again when the VTN starts and every `RedeliverEvery`. One callback URL gets one notification at a time, the oldest first, so the order holds across a restart; a webhook that is down holds back its own notifications and no others. Delivery is at least once: a VTN that stops between the webhook's answer and the removal sends that one again. `storage.Memory` and `storage.File` are outboxes, and so are the stores of [examples/storage](examples/storage/README.md); `Webhooks` has to be a `ConfirmingSender`, which `*webhook.Sender` is. Notifications by MQTT and over WebSockets are not kept.
 - **`Limiter`** is asked once per request, after the token was checked and the scope found sufficient, with the client ID (empty for a request without a token on a VTN with `AllowAnonymous`) and the operation as the metrics name it. A refusal is answered 429 with a problem object and `Retry-After` in whole seconds, rounded up. `NewRateLimiter` is a token bucket per client ID: `perSecond` on average, `burst` at once. It guards against a client gone wrong; what arrives without a valid token never reaches it, and is a gateway's to limit.
+- **`Limits`** bounds what one client keeps: `Subscriptions` (100 when zero), `VENs`, `Resources` and `Reports` (no limit when zero), and `CallbackURLs`, the distinct callback URLs of one subscription (16 when zero). A negative value is no limit. A create past a limit is answered 409 with a problem that names it; the client can delete some and try again. Creates that a limit applies to are serialised, so two of them never both take the last place. The callback URLs of a subscription are verified four at a time, and the first that fails in the order of `objectOperations` is the one reported. OpenADR 3.1.0 sets no such limits: see [docs/CONFORMANCE.md](docs/CONFORMANCE.md).
 - **`NotifyReads`** makes a subscription to `READ` mean something: every object that is read, by ID or in a search, is notified of to the subscribers that asked for `READ` of its type and may see it, by webhook and over WebSockets. Not by MQTT, which has no topic for it. It is one notification per object per read, and off by default.
 
 - **`TokenURL`** is what clients are told, so it is the address as *they* see it, proxies and path prefixes included.
@@ -405,7 +408,7 @@ type SenderConfig struct {
 }
 ```
 
-- **Lifecycle.** `NewSender` starts the workers. `Close` stops accepting, and waits until what is queued is delivered or given up on, or until its context ends; after that `Send` does nothing.
+- **Lifecycle.** `NewSender` starts the workers. `Close` stops accepting, and waits until what is queued is delivered or given up on, or until its context ends; then the requests on their way are cancelled and what is still queued is given up on unsent. After that `Send` does nothing.
 - **`Send` never blocks.** A notification for a full queue is dropped and logged.
 - **Order.** Notifications for one callback URL are delivered one at a time, in the order they were sent, retries included. A webhook that is slow or down delays the callbacks that share its worker, and no others.
 - **Retries.** A network failure, a 5xx, a 408 and a 429 are tried again, `Attempts` times in all. A webhook that sends `Retry-After` with such an answer is waited for that long, up to `MaxBackoff`. Any other answer outside 2xx, redirects included, is final.
@@ -725,6 +728,9 @@ type JWTConfig struct {
 | Names, targets, payload types | 128 characters | the schema; checked by `Validate` |
 | Object IDs | 1 to 128 characters of `[a-zA-Z0-9_-]` | the schema |
 | Request body | 1 MiB | `server.Config.MaxBodyBytes` |
+| Subscriptions per client | 100 | `server.Config.Limits` |
+| Distinct callback URLs per subscription | 16 | `server.Config.Limits` |
+| VENs, resources, reports per client | no limit | `server.Config.Limits` |
 | Response body | 16 MiB | `client.Config.MaxResponseBytes` |
 | HTTP exchange | 30 s | the default `http.Client` of the client |
 | Numbers in payloads | `float64` | exact for integers up to 2^53 |

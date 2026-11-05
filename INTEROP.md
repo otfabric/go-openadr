@@ -9,22 +9,22 @@ specific tests against specific versions.
 | Client | VTN | Result | How |
 |---|---|---|---|
 | go-openadr VEN and BL | go-openadr | Passing, in CI; every feature | `make e2e` |
-| go-openadr VEN and BL | [OpenLEADR](https://github.com/OpenLEADR/openleadr-rs) v0.2.7 (Rust) | Passing, run locally | `make interop` |
+| go-openadr VEN and BL | [OpenLEADR](https://github.com/OpenLEADR/openleadr-rs) v0.2.8 (Rust) | Passing, run locally | `make interop` |
 | [ElaadNL openadr3-client](https://github.com/ElaadNL/openadr3-client) 2.4.0 (Python), VEN and BL | go-openadr | Passing, run locally | `make interop` |
 | ElaadNL client over TLS, and its answers compressed | go-openadr | Passing, run locally | `make interop` |
 | ElaadNL client: subscriptions (webhook delivered), MQTT listener, resource groups, no token | go-openadr | Passing, run locally | `make interop` |
-| go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ CE 2026.5, EMQX 6.3.1 | Passing, run locally | `make interop` |
-| go-openadr WebSocket subscriber | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
-| go-openadr BL and VEN, resource groups | OpenLEADR v0.2.7 | Passing, run locally | `make interop` |
+| go-openadr WebSocket subscriber | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
+| go-openadr BL and VEN, resource groups | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr VEN and BL, **OpenADR 3.0.1** | OpenLEADR v0.1.4 (Rust) | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
-| go-openadr `discovery`, both directions | OpenLEADR v0.2.7, VTN and client library | Passing, run locally | `make interop` |
+| go-openadr `discovery`, both directions | OpenLEADR v0.2.8, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
-| the specification-driven suite of openadr-interop v0.5.0 | go-openadr | 24 of 24 scenarios, run locally | see below |
+| the specification-driven suite of openadr-interop v0.6.3 | go-openadr | 24 of 24 scenarios, run locally | see below |
 
-Last run: 2026-10-29, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.5.0, pinned by
+Last run: 2026-11-05, on a developer machine (linux/arm64 containers on
+macOS), against the published images of openadr-interop v0.6.3, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -36,7 +36,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.5.0, pinned by
+Needs Docker. The images are those of openadr-interop v0.6.3, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -209,7 +209,7 @@ beside the other implementation.
   host, port, addresses and TXT record;
 - with both on the network, one `Browse` returns both.
 
-**OpenLEADR** v0.2.7, in both directions. The reference image has OpenLEADR
+**OpenLEADR** v0.2.8, in both directions. The reference image has OpenLEADR
 built with its `mdns` feature since openadr-interop v0.3.0 (the feature
 `serverMdns`), which is the one pinned here.
 

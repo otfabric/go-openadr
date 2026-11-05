@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/netip"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,10 @@ func TestMarshalRefuses(t *testing.T) {
 		{answers: []record{{name: name{"a"}, rtype: typeAAAA, addr: netip.MustParseAddr("1.2.3.4")}}},
 		{answers: []record{{name: name{"a"}, rtype: 99}}},
 		{answers: []record{{name: name{"a"}, rtype: typePTR, target: name{long}}}},
+		// TXT data of more than 65535 bytes: its length would wrap.
+		{answers: []record{{name: name{"a"}, rtype: typeTXT, text: slices.Repeat([]string{strings.Repeat("x", 255)}, 257)}}},
+		// More records than a count of the header holds.
+		{questions: make([]question, 0x10000)},
 	}
 	for i, m := range bad {
 		if _, err := m.marshal(); err == nil {

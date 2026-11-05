@@ -3,6 +3,7 @@
 package openadr
 
 import (
+	"math"
 	"regexp"
 	"testing"
 	"time"
@@ -72,6 +73,9 @@ func TestDurationArithmetic(t *testing.T) {
 		if td > -1<<62 && td < 1<<62 && (!ok || back != td) {
 			t.Errorf("DurationOf(%v) = %v, back to %v, %v", td, DurationOf(td), back, ok)
 		}
+	} // The most negative duration has no positive counterpart in int64.
+	if d := DurationOf(-1 << 63); !d.Negative || d.Hours != 2562047 || d.Minutes != 47 || math.Abs(d.Seconds-16.854775808) > 1e-9 {
+		t.Errorf("DurationOf(math.MinInt64) = %+v", d)
 	}
 }
 

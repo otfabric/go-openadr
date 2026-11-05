@@ -94,6 +94,15 @@ as another VEN, and as Business Logic.
 The Definition leaves some behaviour open, and in places contradicts the
 OpenAPI document. These are the choices made here.
 
+**A create past a limit of the VTN is answered 409.** OpenADR 3.1.0 sets no
+limit on what a client keeps, nor on the callback URLs of a subscription
+(`objectOperations` has no `maxItems`). The VTN has limits per client
+(`server.Config.Limits`: by default 100 subscriptions, each with at most 16
+distinct callback URLs). A create past one is answered 409 Conflict, a status
+the document lists for creates. The conflict is with what the client already
+keeps, and deleting some resolves it. Too many callback URLs is a fault of the
+request, and is answered 400 on the field.
+
 **Targets match on any common target.** An object with targets `[a, b]`
 matches a request or a grant that has `a`. The Definition says "target
 matching" without defining it.
@@ -193,6 +202,20 @@ not ask gets none.
 `problem` schema for errors of `/auth/token`, while its unreferenced
 `authError` schema describes the RFC 6749 body. `auth.Issuer` returns a body
 with the members of both.
+
+**A body that is not UTF-8 is refused.** RFC 8259 section 8.1 requires
+JSON exchanged between systems to be UTF-8. `encoding/json` would read the
+bytes of a string that is not as U+FFFD, so that two different names would
+look alike and be written back as neither; the codecs of both revisions
+refuse such a body as a `ValidationError` on `body` (the VTN answers 400).
+A problem in an error answer is read as best it can be.
+
+**`/auth/token` reads Basic credentials both ways.** RFC 6749 section
+2.3.1 has a client form-encode its ID and secret before HTTP Basic
+authentication encodes them, as golang.org/x/oauth2 does; many clients
+(curl `-u`, say) do not. `auth.Issuer` compares the credentials as sent and,
+when they do not match, as form-decoded, so that a secret with `+` or `%`
+in it works with either kind of client.
 
 **A subscriber is told of what its own search would show it.** The
 Definition says to process targets for a notification "as described" for

@@ -36,6 +36,8 @@ type RetryPolicy interface {
 	// attempt counts the attempts made so far, from 1. It returns whether
 	// to try again and how long to wait first. When the VTN named a wait
 	// in a Retry-After header and it is longer, the client waits that long.
+	// A wait that would outlast the deadline of the call's context is not
+	// begun: the call fails at once, with the error of the last attempt.
 	ShouldRetry(attempt int, err error) (retry bool, wait time.Duration)
 }
 
@@ -99,7 +101,13 @@ func (p exponentialBackoff) ShouldRetry(attempt int, err error) (bool, time.Dura
 		return false, 0
 	}
 	delay := p.cfg.BaseDelay
+	// Doubled up to MaxDelay; a doubling past it, or past what a Duration
+	// holds, is MaxDelay.
 	for i := 1; i < attempt && delay < p.cfg.MaxDelay; i++ {
+		if delay > p.cfg.MaxDelay/2 {
+			delay = p.cfg.MaxDelay
+			break
+		}
 		delay *= 2
 	}
 	delay = min(delay, p.cfg.MaxDelay)
@@ -115,8 +123,7 @@ func retryable(method string, err error, retryCreates bool) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
-	var apiErr *openadr.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openadr.Error](err); ok {
 		switch apiErr.StatusCode {
 		case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 			// Refused before anything was done.
@@ -127,8 +134,7 @@ func retryable(method string, err error, retryCreates bool) bool {
 		}
 		return false
 	}
-	var tokenErr *TokenError
-	if errors.As(err, &tokenErr) {
+	if tokenErr, ok := errors.AsType[*TokenError](err); ok {
 		// No request went to the VTN; the token endpoint may recover.
 		return tokenErr.StatusCode == http.StatusTooManyRequests || tokenErr.StatusCode >= 502 && tokenErr.StatusCode <= 504
 	}
@@ -153,8 +159,7 @@ var errNotSent = errors.New("openadr: the request was not sent")
 
 // retryAfter returns the wait a VTN asked for, if it did.
 func retryAfter(err error) time.Duration {
-	var apiErr *openadr.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openadr.Error](err); ok {
 		return apiErr.RetryAfter
 	}
 	return 0

@@ -15,6 +15,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/netip"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/backoff"
 )
 
 // SenderConfig configures a Sender. The zero value is a Sender for
@@ -95,8 +97,11 @@ type Sender struct {
 	closed bool
 	queues []chan delivery
 	wg     sync.WaitGroup
-	// stop ends the waits between attempts when Close runs out of time.
-	stop chan struct{}
+	// stop ends the waits between attempts when Close runs out of time;
+	// stopped is cancelled with it, and ends the requests on their way.
+	stop    chan struct{}
+	stopped context.Context
+	abort   context.CancelFunc
 }
 
 type delivery struct {
@@ -146,6 +151,7 @@ func NewSender(cfg SenderConfig) *Sender {
 		cfg.Workers = 4
 	}
 	s := &Sender{cfg: cfg, client: cfg.HTTPClient, stop: make(chan struct{})}
+	s.stopped, s.abort = context.WithCancel(context.Background())
 	if s.client == nil {
 		s.client = defaultClient(cfg.AllowInsecure)
 	}
@@ -289,7 +295,7 @@ func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, don
 		return
 	}
 	select {
-	case s.queues[int(h.Sum32()%uint32(len(s.queues)))] <- d:
+	case s.queues[queueOf(h.Sum32(), len(s.queues))] <- d:
 		s.mu.Unlock()
 	default:
 		s.mu.Unlock()
@@ -303,6 +309,8 @@ func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, don
 
 // Close stops accepting notifications and waits until those that are queued
 // have been delivered or given up on, or until ctx ends, whichever is first.
+// When ctx ends first, the requests on their way are cancelled and what is
+// still queued is given up on without being sent.
 func (s *Sender) Close(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.closed {
@@ -316,6 +324,7 @@ func (s *Sender) Close(ctx context.Context) error {
 	go func() { s.wg.Wait(); close(done) }()
 	select {
 	case <-done:
+		s.abort()
 		return nil
 	case <-ctx.Done():
 		// Give up on what is still waiting between attempts.
@@ -324,6 +333,7 @@ func (s *Sender) Close(ctx context.Context) error {
 		default:
 			close(s.stop)
 		}
+		s.abort()
 		<-done
 		return ctx.Err()
 	}
@@ -345,6 +355,13 @@ func (s *Sender) deliver(d delivery) {
 		}
 		d.finish(err)
 	}
+	select {
+	case <-s.stop:
+		// Close ran out of time: what is still queued is not sent.
+		failed(0, fmt.Errorf("%w: the sender", openadr.ErrClosed))
+		return
+	default:
+	}
 	wait := s.cfg.Backoff
 	for attempt := 1; ; attempt++ {
 		retry, after, err := s.post(d)
@@ -362,6 +379,10 @@ func (s *Sender) deliver(d delivery) {
 			failed(attempt, err)
 			return
 		}
+		if s.stopped.Err() != nil {
+			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
+			return
+		}
 		// A webhook that says when to come back is taken at its word, up
 		// to the longest wait there is.
 		select {
@@ -370,9 +391,7 @@ func (s *Sender) deliver(d delivery) {
 			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
 			return
 		}
-		if wait *= 2; wait > s.cfg.MaxBackoff {
-			wait = s.cfg.MaxBackoff
-		}
+		wait = backoff.Double(wait, s.cfg.MaxBackoff)
 	}
 }
 
@@ -382,7 +401,7 @@ func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
 	if _, err := s.checkURL(d.url); err != nil {
 		return false, 0, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.Timeout)
+	ctx, cancel := context.WithTimeout(s.stopped, s.cfg.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url, bytes.NewReader(d.body))
 	if err != nil {
@@ -428,4 +447,18 @@ func (s *Sender) log(msg, callbackURL string, err error) {
 		attrs = append(attrs, slog.Any("error", err))
 	}
 	s.cfg.Logger.Warn(msg, attrs...)
+}
+
+// queueOf is the queue of the hash among n, the same for a callback URL on
+// any platform: the remainder is taken in uint32, never in an int that is
+// 32 bits wide and would go negative.
+func queueOf(hash uint32, n int) int {
+	if n <= 1 {
+		return 0
+	}
+	m := uint32(math.MaxInt32)
+	if n < math.MaxInt32 {
+		m = uint32(n)
+	}
+	return int(hash % m)
 }

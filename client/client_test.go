@@ -81,13 +81,11 @@ func TestTokenIsCachedAndRefreshed(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 20 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := ven.Programs(ctx, ProgramQuery{}); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if n := f.issued.Load(); n != 1 {

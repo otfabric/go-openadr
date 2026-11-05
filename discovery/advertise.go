@@ -162,10 +162,8 @@ func Advertise(a Advertisement) (*Advertiser, error) {
 	}
 	// Announce, twice a second apart, so that those who already listen
 	// need not ask.
-	ad.wg.Add(1)
-	go func() {
-		defer ad.wg.Done()
-		for i := 0; i < 2; i++ {
+	ad.wg.Go(func() {
+		for range 2 {
 			for _, p := range ad.ports {
 				ad.announce(p, false)
 			}
@@ -175,7 +173,7 @@ func Advertise(a Advertisement) (*Advertiser, error) {
 			case <-time.After(time.Second):
 			}
 		}
-	}()
+	})
 	return ad, nil
 }
 

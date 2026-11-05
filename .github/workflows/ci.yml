@@ -13,16 +13,16 @@ permissions:
 
 jobs:
   ci:
-    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.0
+    uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.1
     with:
       codecov-name: go-openadr
-      go-versions: '["1.23", "1.24", "1.25", "1.26"]'
+      go-versions: '["1.26", "1.27"]'
       run-govulncheck: true
       # Measured 91.5 % with the coverpkg below (go-ci method).
       coverage-min: "91"
       fuzz-time: 10s
       # Match the Makefile's COVER_PKGS: the e2e tests drive client and server.
-      coverpkg: github.com/otfabric/go-openadr,github.com/otfabric/go-openadr/auth,github.com/otfabric/go-openadr/client,github.com/otfabric/go-openadr/discovery,github.com/otfabric/go-openadr/internal/mqtt,github.com/otfabric/go-openadr/internal/wire,github.com/otfabric/go-openadr/internal/wire/codecs,github.com/otfabric/go-openadr/internal/wire/common,github.com/otfabric/go-openadr/internal/wire/v301,github.com/otfabric/go-openadr/internal/wire/v310,github.com/otfabric/go-openadr/internal/ws,github.com/otfabric/go-openadr/notification/mqtt,github.com/otfabric/go-openadr/notification/webhook,github.com/otfabric/go-openadr/notification/websocket,github.com/otfabric/go-openadr/objectjson,github.com/otfabric/go-openadr/server,github.com/otfabric/go-openadr/server/storage,github.com/otfabric/go-openadr/server/storage/storagetest,github.com/otfabric/go-openadr/timeline
+      coverpkg: github.com/otfabric/go-openadr,github.com/otfabric/go-openadr/auth,github.com/otfabric/go-openadr/client,github.com/otfabric/go-openadr/discovery,github.com/otfabric/go-openadr/internal/backoff,github.com/otfabric/go-openadr/internal/mqtt,github.com/otfabric/go-openadr/internal/wire,github.com/otfabric/go-openadr/internal/wire/codecs,github.com/otfabric/go-openadr/internal/wire/common,github.com/otfabric/go-openadr/internal/wire/v301,github.com/otfabric/go-openadr/internal/wire/v310,github.com/otfabric/go-openadr/internal/ws,github.com/otfabric/go-openadr/notification/mqtt,github.com/otfabric/go-openadr/notification/webhook,github.com/otfabric/go-openadr/notification/websocket,github.com/otfabric/go-openadr/objectjson,github.com/otfabric/go-openadr/server,github.com/otfabric/go-openadr/server/storage,github.com/otfabric/go-openadr/server/storage/storagetest,github.com/otfabric/go-openadr/timeline
     secrets: inherit
 
   # The self-contained examples must keep running as they are.
@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.23.x"
+          go-version: "1.26.x"
       - run: make build examples
 
   # The module has no dependencies, and the examples that need a database

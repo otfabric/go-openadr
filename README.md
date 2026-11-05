@@ -1,6 +1,6 @@
 # go-openadr — OpenADR 3 for Go
 
-[![Go Version](https://img.shields.io/badge/Go-1.23%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![Go Version](https://img.shields.io/badge/Go-1.26%2B-00ADD8?style=flat&logo=go)](https://go.dev/)
 [![Go Reference](https://pkg.go.dev/badge/github.com/otfabric/go-openadr.svg)](https://pkg.go.dev/github.com/otfabric/go-openadr)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI Status](https://github.com/otfabric/go-openadr/actions/workflows/ci.yml/badge.svg)](https://github.com/otfabric/go-openadr/actions/workflows/ci.yml)
@@ -233,7 +233,7 @@ Python, or need OpenADR 3.0.1.
 go get github.com/otfabric/go-openadr
 ```
 
-Go 1.23 or later. No dependencies outside the standard library.
+Go 1.26 or later. No dependencies outside the standard library.
 
 ## A VEN
 

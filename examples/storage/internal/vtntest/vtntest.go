@@ -7,6 +7,7 @@ package vtntest
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -28,10 +29,12 @@ type stack struct {
 
 func start(t *testing.T, store storage.Store) stack {
 	t.Helper()
+	// Secrets of this run only.
+	secrets := map[string]string{"bl": rand.Text(), "ven-1": rand.Text(), "ven-2": rand.Text()}
 	issuer, err := auth.NewIssuer(auth.IssuerConfig{Clients: []auth.Client{
-		{ID: "bl", Secret: "bl-secret", Scopes: auth.BusinessLogicScopes()},
-		{ID: "ven-1", Secret: "ven-1-secret", Scopes: auth.VENScopes()},
-		{ID: "ven-2", Secret: "ven-2-secret", Scopes: auth.VENScopes()},
+		{ID: "bl", Secret: secrets["bl"], Scopes: auth.BusinessLogicScopes()},
+		{ID: "ven-1", Secret: secrets["ven-1"], Scopes: auth.VENScopes()},
+		{ID: "ven-2", Secret: secrets["ven-2"], Scopes: auth.VENScopes()},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -45,7 +48,7 @@ func start(t *testing.T, store storage.Store) stack {
 	}
 	mux.Handle("/", vtn)
 	credentials := func(id string) client.Config {
-		return client.Config{BaseURL: ts.URL, Credentials: &client.Credentials{ClientID: id, ClientSecret: id + "-secret"}}
+		return client.Config{BaseURL: ts.URL, Credentials: &client.Credentials{ClientID: id, ClientSecret: secrets[id]}}
 	}
 	var s stack
 	if s.bl, err = client.NewBL(credentials("bl")); err != nil {

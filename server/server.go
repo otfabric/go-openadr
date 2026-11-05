@@ -36,6 +36,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
@@ -130,6 +131,9 @@ type Config struct {
 	Metrics Metrics
 	// MaxBodyBytes limits the size of a request body; 1 MiB when zero.
 	MaxBodyBytes int64
+	// Limits bounds what one client keeps in the VTN: by default at most
+	// 100 subscriptions, each with at most 16 callback URLs. See Limits.
+	Limits Limits
 	// Now replaces the clock, for tests.
 	Now func() time.Time
 }
@@ -188,8 +192,12 @@ type Server struct {
 	notifications NotificationMetrics
 	socketMetrics SocketMetrics
 	maxBody       int64
-	now           func() time.Time
-	mux           *http.ServeMux
+	limits        limits
+	// creating is held while a create that is limited by Limits counts
+	// what the client keeps and stores the new object.
+	creating sync.Mutex
+	now      func() time.Time
+	mux      *http.ServeMux
 }
 
 // New returns a Server for cfg.
@@ -240,6 +248,7 @@ func newServer(cfg Config) (*Server, error) {
 		logger:    cfg.Logger,
 		metrics:   cfg.Metrics,
 		maxBody:   cfg.MaxBodyBytes,
+		limits:    newLimits(cfg.Limits),
 		now:       cfg.Now,
 		mux:       http.NewServeMux(),
 	}
@@ -464,7 +473,7 @@ const compressFrom = 1024
 // library can write; br and zstd are not among them.
 func contentCoding(accept string) string {
 	weights := map[string]float64{}
-	for _, part := range strings.Split(accept, ",") {
+	for part := range strings.SplitSeq(accept, ",") {
 		coding, params, _ := strings.Cut(part, ";")
 		coding = strings.ToLower(strings.TrimSpace(coding))
 		if coding == "" {
@@ -580,8 +589,7 @@ func readObject[T interface{ Validate() error }](s *Server, w http.ResponseWrite
 	var zero T
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBody))
 	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return zero, 0, err
 		}
 		return zero, 0, &openadr.ValidationError{Field: "body", Reason: "could not be read"}

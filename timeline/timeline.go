@@ -23,6 +23,7 @@ package timeline
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"slices"
 	"time"
 
@@ -167,10 +168,7 @@ func layOut(period *openadr.IntervalPeriod, intervals []openadr.Interval, o Opti
 			// The k-th of n parts of the interval begins at k/n of its
 			// length: computed without multiplying the whole length by
 			// k, which for a year of hourly values would not fit.
-			length, parts := end.Sub(start), time.Duration(n)
-			at := func(k int) time.Time {
-				return start.Add(length/parts*time.Duration(k) + length%parts*time.Duration(k)/parts)
-			}
+			at := fractions(start, end, n)
 			for k := range n {
 				row.Sub = k
 				row.Start, row.End = at(k), at(k+1)
@@ -186,6 +184,43 @@ func layOut(period *openadr.IntervalPeriod, intervals []openadr.Interval, o Opti
 		slices.SortStableFunc(rows[first:], func(a, b Row) int { return a.Start.Compare(b.Start) })
 	}
 	return rows, nil
+}
+
+// fractions returns the function that gives the start of the k-th of n
+// equal parts of the period from start to end.
+func fractions(start, end time.Time, n int) func(k int) time.Time {
+	length, parts := end.Sub(start), time.Duration(n)
+	if start.Add(length).Equal(end) {
+		// Computed without multiplying the whole length by k, which for a
+		// year of hourly values would not fit.
+		return func(k int) time.Time {
+			return start.Add(length/parts*time.Duration(k) + length%parts*time.Duration(k)/parts)
+		}
+	}
+	// Longer than a time.Duration holds (about 292 years): in nanoseconds
+	// as a big number.
+	total := new(big.Int).Mul(big.NewInt(end.Unix()-start.Unix()), big.NewInt(int64(time.Second)))
+	total.Add(total, big.NewInt(int64(end.Nanosecond()-start.Nanosecond())))
+	return func(k int) time.Time {
+		if k == n {
+			return end
+		}
+		off := new(big.Int).Mul(total, big.NewInt(int64(k)))
+		sec, nsec := off.QuoRem(off.Quo(off, big.NewInt(int64(n))), big.NewInt(int64(time.Second)), new(big.Int))
+		return time.Unix(start.Unix()+sec.Int64(), int64(start.Nanosecond())+nsec.Int64()).In(start.Location())
+	}
+}
+
+// shifter returns the function that moves a time by the span from start to
+// end. The rows it moves all have an end.
+func shifter(start, end time.Time) func(time.Time) time.Time {
+	if span := end.Sub(start); start.Add(span).Equal(end) {
+		return func(t time.Time) time.Time { return t.Add(span) }
+	}
+	sec, nsec := end.Unix()-start.Unix(), int64(end.Nanosecond()-start.Nanosecond())
+	return func(t time.Time) time.Time {
+		return time.Unix(t.Unix()+sec, int64(t.Nanosecond())+nsec).In(t.Location())
+	}
 }
 
 func isPoint(v openadr.Value) bool { return v.Kind() == openadr.KindPoint }
@@ -209,17 +244,21 @@ func OfEvent(e openadr.Event, o Options) (Table, error) {
 		// The intervals repeat without end, and nobody said how far to go.
 		return rows, nil
 	}
-	cycle := end.Sub(start)
-	if !end.IsZero() && cycle > 0 && end.Before(limit) {
-		once := rows
-		for shift := cycle; start.Add(shift).Before(limit); shift += cycle {
-			if len(rows)+len(once) > maxRows {
+	if !end.IsZero() && end.After(start) && end.Before(limit) {
+		// Each repetition is the one before moved by the span of the
+		// intervals, which may be too long for a time.Duration.
+		shift := shifter(start, end)
+		prev := rows
+		for first := shift(start); first.Before(limit); first = shift(first) {
+			if len(rows)+len(prev) > maxRows {
 				return nil, ErrTooLarge
 			}
-			for _, row := range once {
-				row.Start, row.End = row.Start.Add(shift), row.End.Add(shift)
+			from := len(rows)
+			for _, row := range prev {
+				row.Start, row.End = shift(row.Start), shift(row.End)
 				rows = append(rows, row)
 			}
+			prev = rows[from:]
 		}
 	}
 	out := rows[:0:0]
