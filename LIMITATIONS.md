@@ -25,16 +25,13 @@ in [INTEROP.md](INTEROP.md), the security consequences in
 
 ## Limits not enforced
 
-- The VTN has no per-client limit on the objects a client with write scope
-  stores (subscriptions, VENs, resources, reports). Each write is checked
-  against every subscription, so many subscriptions slow every write down.
-  A subscription's callback URLs are verified one after another, each within
-  the sender's `Timeout`. Limit request rates and body sizes in front of the
-  VTN (`server.RateLimiter`, `server.Config.MaxBodyBytes`) where clients are not
-  trusted.
-- `client.Each` pages until the VTN returns a short page. A VTN that always
-  returns a full page, or ignores `skip`, keeps it going: end it with the
-  context or by breaking out of the loop.
+- VENs, resources and reports have no limit per client unless
+  `server.Config.Limits` sets one. Subscriptions are limited to 100 per
+  client by default, and callback URLs to 16 per subscription.
+- `client.Each` stops at a VTN that returns the same full page again, which
+  means it ignores `skip`. A VTN that keeps returning full pages of new
+  objects is not told apart from a long result: end it with the context or
+  by breaking out of the loop.
 
 ## Verification
 

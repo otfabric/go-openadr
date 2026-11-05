@@ -94,6 +94,15 @@ as another VEN, and as Business Logic.
 The Definition leaves some behaviour open, and in places contradicts the
 OpenAPI document. These are the choices made here.
 
+**A create past a limit of the VTN is answered 409.** OpenADR 3.1.0 sets no
+limit on what a client keeps, nor on the callback URLs of a subscription
+(`objectOperations` has no `maxItems`). The VTN has limits per client
+(`server.Config.Limits`: by default 100 subscriptions, each with at most 16
+distinct callback URLs). A create past one is answered 409 Conflict, a status
+the document lists for creates. The conflict is with what the client already
+keeps, and deleting some resolves it. Too many callback URLs is a fault of the
+request, and is answered 400 on the field.
+
 **Targets match on any common target.** An object with targets `[a, b]`
 matches a request or a grant that has `a`. The Definition says "target
 matching" without defining it.

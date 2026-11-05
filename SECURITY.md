@@ -100,7 +100,7 @@ A VTN with subscriptions sends HTTP requests to callback URLs that clients name.
 
 `SenderConfig.AllowInsecure` turns the scheme and address rules off and is for tests and closed networks. A custom `SenderConfig.HTTPClient` replaces the default client and its address rule entirely: the rules are then yours to keep.
 
-What remains with the operator: a client with `write_subscriptions` can make the VTN send requests to any public https server that echoes a challenge, at the rate objects change. Rate-limit subscriptions if that matters.
+What remains with the operator: a client with `write_subscriptions` can make the VTN send requests to any public https server that echoes a challenge, at the rate objects change. `server.Config.Limits` bounds how many subscriptions a client keeps (100 by default) and how many distinct callback URLs one names (16, verified four at a time); rate-limit subscriptions if more matters.
 
 **On the receiving side**, a `webhook.Handler` without a `BearerToken` accepts notifications from anyone who can reach it, and a client that acts on events would act on forged ones. Set a token made up for the subscription, serve the handler over https, and treat a notification as a prompt to read from the VTN when the consequence of a forged one is serious. The subscription's bearer token is stored by the VTN and returned to the subscriber and to Business Logic when they read the subscription.
 
@@ -157,4 +157,5 @@ A retry policy makes a client send a request again. The client only does so wher
 ### What is not there
 
 - **Rate limiting of clients the VTN knows, and nothing before that.** `server.Config.Limiter` (with `server.NewRateLimiter`, a token bucket per client ID) is asked after a token was checked: it keeps a client that has gone wrong from taking the VTN down with it. Requests without a valid token are refused before it, at the cost of checking a token each, and are for a gateway to limit
+- **Limits per client on subscriptions only, by default.** Every write is checked against every subscription, so `server.Config.Limits` keeps at most 100 per client unless told otherwise. VENs, resources and reports have no limit unless one is set: a VEN that reports for as long as it runs makes ever more reports, and only the application knows when old ones can go
 - **No audit log.** Put one in front of the handler

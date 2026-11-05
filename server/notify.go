@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"sync"
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/auth"
@@ -161,7 +162,10 @@ func (s *Server) findSubscription(r *http.Request, id auth.Identity) (storage.Su
 }
 
 // verifyCallbacks checks every callback URL of a subscription that old, the
-// subscription it replaces, did not already have.
+// subscription it replaces, did not already have. A subscription names at
+// most Limits.CallbackURLs distinct URLs; they are verified a few at a
+// time, and the first that fails, in the order of objectOperations, is the
+// one reported.
 func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, old *openadr.Subscription) error {
 	verified := map[string]bool{}
 	if old != nil {
@@ -171,6 +175,11 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 			}
 		}
 	}
+	type check struct {
+		field, url string
+	}
+	var checks []check
+	distinct := map[string]bool{}
 	for i, oo := range sub.ObjectOperations {
 		field := fmt.Sprintf("objectOperations[%d]", i)
 		if oo.Mechanism == openadr.MechanismWebSocket {
@@ -182,19 +191,41 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 		if s.webhooks == nil {
 			return &openadr.ValidationError{Field: field + ".mechanism", Reason: "is WEBHOOK, and this VTN does not notify by webhook"}
 		}
-		if verified[oo.CallbackURL] {
-			continue
+		if !distinct[oo.CallbackURL] {
+			distinct[oo.CallbackURL] = true
+			if most := s.limits.callbackURLs; most > 0 && len(distinct) > most {
+				return &openadr.ValidationError{Field: field + ".callbackUrl", Reason: fmt.Sprintf("is one more than the %d distinct callback URLs this VTN takes in a subscription", most)}
+			}
+			if !verified[oo.CallbackURL] {
+				checks = append(checks, check{field, oo.CallbackURL})
+			}
 		}
-		if err := s.webhooks.Verify(ctx, oo.CallbackURL); err != nil {
+	}
+	errs := make([]error, len(checks))
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, verifyAtOnce)
+	for i, c := range checks {
+		wg.Go(func() {
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			errs[i] = s.webhooks.Verify(ctx, c.url)
+		})
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return &openadr.ValidationError{Field: field + ".callbackUrl", Reason: err.Error()}
+			return &openadr.ValidationError{Field: checks[i].field + ".callbackUrl", Reason: err.Error()}
 		}
-		verified[oo.CallbackURL] = true
 	}
 	return nil
 }
+
+// verifyAtOnce is how many callback URLs of one subscription are verified
+// at the same time.
+const verifyAtOnce = 4
 
 func (s *Server) getSubscription(w http.ResponseWriter, r *http.Request, id auth.Identity) {
 	rec, err := s.findSubscription(r, id)
@@ -225,7 +256,7 @@ func (s *Server) createSubscription(w http.ResponseWriter, r *http.Request, id a
 	// client subscribed.
 	sub.ClientID = id.ClientID
 	rec := storage.SubscriptionRecord{Subscription: sub, ReadsAll: id.IsBusinessLogic()}
-	if err := s.store.Subscriptions().Create(r.Context(), rec); err != nil {
+	if err := s.storeSubscription(r.Context(), rec); err != nil {
 		s.fail(w, r, err)
 		return
 	}
@@ -316,4 +347,20 @@ func (s *Server) listSubscriptions(w http.ResponseWriter, r *http.Request, id au
 		}
 	}
 	writeList(s, w, r, s.codec.Subscriptions, out, pg)
+}
+
+// storeSubscription creates rec, within the client's limit of
+// subscriptions.
+func (s *Server) storeSubscription(ctx context.Context, rec storage.SubscriptionRecord) error {
+	q := quota{max: s.limits.subscriptions, noun: "subscriptions", count: counter(s.store.Subscriptions(),
+		func(c string) storage.SubscriptionFilter { return storage.SubscriptionFilter{ClientID: c} })}
+	if q.max <= 0 {
+		return s.store.Subscriptions().Create(ctx, rec)
+	}
+	s.creating.Lock()
+	defer s.creating.Unlock()
+	if err := q.admit(ctx, rec.ClientID); err != nil {
+		return err
+	}
+	return s.store.Subscriptions().Create(ctx, rec)
 }

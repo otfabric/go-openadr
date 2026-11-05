@@ -263,8 +263,8 @@ func TestHostileVTNThatDoesNotRead(t *testing.T) {
 	}
 }
 
-// A VTN whose every page is full would make Each go on for ever; the
-// caller's context ends it, with the context's error.
+// A VTN that ignores skip would make Each go on for ever: the repeated
+// page ends it with ErrProtocol.
 func TestHostileEndlessPages(t *testing.T) {
 	var pages atomic.Int64
 	page := "[" + strings.Repeat(`{"id":"p1","objectType":"PROGRAM","createdDateTime":"2030-01-01T00:00:00Z","modificationDateTime":"2030-01-01T00:00:00Z","programName":"n"},`, 49) +
@@ -272,6 +272,39 @@ func TestHostileEndlessPages(t *testing.T) {
 	url := newPlainServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		pages.Add(1)
 		_, _ = fmt.Fprint(w, page)
+	}))
+	ven, err := client.NewVEN(client.Config{BaseURL: url})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// A VTN that ignores skip returns the same page again: Each stops at
+	// the second one.
+	var last error
+	n := 0
+	for _, err := range client.Each(ctx, func(ctx context.Context, p client.Page) ([]openadr.Program, error) {
+		return ven.Programs(ctx, client.ProgramQuery{Page: p})
+	}) {
+		last = err
+		n++
+	}
+	if !errors.Is(last, openadr.ErrProtocol) || pages.Load() != 2 || n != 51 {
+		t.Errorf("Each ended with %v after %d pages and %d items, want ErrProtocol after 2 pages", last, pages.Load(), n)
+	}
+}
+
+// A VTN whose every page is full of new objects is not told from a long
+// result: the caller's context ends Each, with the context's error.
+func TestHostileEndlessDistinctPages(t *testing.T) {
+	var pages atomic.Int64
+	url := newPlainServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n := pages.Add(1)
+		items := make([]string, 50)
+		for i := range items {
+			items[i] = fmt.Sprintf(`{"id":"p%d-%d","objectType":"PROGRAM","createdDateTime":"2030-01-01T00:00:00Z","modificationDateTime":"2030-01-01T00:00:00Z","programName":"n"}`, n, i)
+		}
+		_, _ = fmt.Fprint(w, "["+strings.Join(items, ",")+"]")
 	}))
 	ven, err := client.NewVEN(client.Config{BaseURL: url})
 	if err != nil {

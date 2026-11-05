@@ -33,6 +33,13 @@ upgrade notes.
   `openadr.ErrClosed`.
 - A client retry whose wait would outlast the context's deadline fails at once,
   with the error the wait would have ended in.
+- **The VTN limits what one client keeps:** at most 100 subscriptions per
+  client by default, each with at most 16 distinct callback URLs. A create past
+  a limit is answered 409, and too many URLs 400. `server.Config.Limits`
+  changes the limits, adds limits on VENs, resources and reports, and a
+  negative value removes a limit.
+- `client.Each` ends with an error that matches `openadr.ErrProtocol` when the
+  VTN returns the same full page again: such a VTN does not honour `skip`.
 
 ## Changes
 
@@ -91,6 +98,10 @@ upgrade notes.
 
 ### Added
 
+- **`server.Config.Limits`**: limits per client on subscriptions, VENs,
+  resources and reports, and on the callback URLs of one subscription. The
+  callback URLs of a subscription are now verified four at a time instead of
+  one after another.
 - Fuzz targets:
   - `FuzzCodec` for every decoder of both revisions;
   - `FuzzUnmarshal` (objectjson);
@@ -108,10 +119,9 @@ upgrade notes.
   `ecdsa.ParseUncompressedPublicKey`, not the deprecated coordinates.
 - The reference images are those of openadr-interop v0.6.3 (OpenLEADR v0.2.8),
   pinned by digest. The shared workflows are at v3.3.1.
-- LIMITATIONS.md now names the limits the VTN does not enforce:
-  - objects stored per client;
-  - the callback URLs of a subscription;
-  - `client.Each` against a VTN that never returns a short page.
+- LIMITATIONS.md now names what is still not bounded: VENs, resources and
+  reports without a configured limit, and `client.Each` against a VTN that
+  keeps returning full pages of new objects.
 
 ---
 

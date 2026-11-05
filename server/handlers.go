@@ -176,6 +176,8 @@ func (s *Server) reports() kind[openadr.Report, storage.ReportFilter] {
 	return kind[openadr.Report, storage.ReportFilter]{
 		codec: s.codec.Reports,
 		coll:  s.store.Reports(),
+		owner: func(rep openadr.Report) string { return rep.ClientID },
+		quota: quota{max: s.limits.reports, noun: "reports", count: counter(s.store.Reports(), func(c string) storage.ReportFilter { return storage.ReportFilter{ClientID: c} })},
 		meta:  func(rep *openadr.Report) *openadr.Metadata { return &rep.Metadata },
 		see: func(_ context.Context, id auth.Identity, rep openadr.Report) (openadr.Report, bool, error) {
 			return rep, owns(id, rep.ClientID), nil
@@ -244,6 +246,8 @@ func (s *Server) vens() kind[openadr.VEN, storage.VENFilter] {
 	return kind[openadr.VEN, storage.VENFilter]{
 		codec: s.codec.VENs,
 		coll:  s.store.VENs(),
+		owner: func(v openadr.VEN) string { return v.ClientID },
+		quota: quota{max: s.limits.vens, noun: "VENs", count: counter(s.store.VENs(), func(c string) storage.VENFilter { return storage.VENFilter{ClientID: c} })},
 		meta:  func(v *openadr.VEN) *openadr.Metadata { return &v.Metadata },
 		see: func(_ context.Context, id auth.Identity, v openadr.VEN) (openadr.VEN, bool, error) {
 			return v, owns(id, v.ClientID), nil
@@ -323,6 +327,8 @@ func (s *Server) resources() kind[openadr.Resource, storage.ResourceFilter] {
 	return kind[openadr.Resource, storage.ResourceFilter]{
 		codec: s.codec.Resources,
 		coll:  s.store.Resources(),
+		owner: func(res openadr.Resource) string { return res.ClientID },
+		quota: quota{max: s.limits.resources, noun: "resources", count: counter(s.store.Resources(), func(c string) storage.ResourceFilter { return storage.ResourceFilter{ClientID: c} })},
 		meta:  func(res *openadr.Resource) *openadr.Metadata { return &res.Metadata },
 		see: func(_ context.Context, id auth.Identity, res openadr.Resource) (openadr.Resource, bool, error) {
 			return res, owns(id, res.ClientID), nil
