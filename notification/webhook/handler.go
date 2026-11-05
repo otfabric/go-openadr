@@ -52,7 +52,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "an echo parameter is required", http.StatusBadRequest)
 			return
 		}
+		// The echo goes back as it came, as plain text that no browser may
+		// take for anything else.
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Cache-Control", "no-store")
 		_, _ = io.WriteString(w, echo)
 	case http.MethodPost:
 		h.receive(w, r)

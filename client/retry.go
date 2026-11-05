@@ -99,7 +99,13 @@ func (p exponentialBackoff) ShouldRetry(attempt int, err error) (bool, time.Dura
 		return false, 0
 	}
 	delay := p.cfg.BaseDelay
+	// Doubled up to MaxDelay; a doubling past it, or past what a Duration
+	// holds, is MaxDelay.
 	for i := 1; i < attempt && delay < p.cfg.MaxDelay; i++ {
+		if delay > p.cfg.MaxDelay/2 {
+			delay = p.cfg.MaxDelay
+			break
+		}
 		delay *= 2
 	}
 	delay = min(delay, p.cfg.MaxDelay)

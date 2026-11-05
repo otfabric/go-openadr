@@ -79,8 +79,11 @@ func (b Broker) connect(stop <-chan struct{}, o imqtt.Options, report func(error
 			return nil
 		case <-time.After(wait):
 		}
-		if wait *= 2; wait > time.Minute {
+		// Doubled up to a minute, never past what a Duration holds.
+		if wait > time.Minute/2 {
 			wait = time.Minute
+		} else {
+			wait *= 2
 		}
 	}
 }

@@ -110,7 +110,7 @@ func (m message) marshal() ([]byte, error) {
 	b = binary.BigEndian.AppendUint16(b, m.id)
 	b = binary.BigEndian.AppendUint16(b, flags)
 	for _, count := range []int{len(m.questions), len(m.answers), 0, len(m.additional)} {
-		if count > 0xFFFF {
+		if count < 0 || count > 0xFFFF {
 			return nil, errors.New("discovery: the message is too large")
 		}
 		b = binary.BigEndian.AppendUint16(b, uint16(count))
@@ -192,7 +192,7 @@ func appendRecord(b []byte, r record) ([]byte, error) {
 		return nil, err
 	}
 	size := len(b) - lengthAt - 2
-	if size > 0xFFFF {
+	if size < 0 || size > 0xFFFF {
 		return nil, errors.New("discovery: the data of a record is longer than 65535 bytes")
 	}
 	binary.BigEndian.PutUint16(b[lengthAt:], uint16(size))

@@ -187,8 +187,11 @@ func (s *Subscriber) run() {
 				return
 			case <-time.After(wait):
 			}
-			if wait *= 2; wait > time.Minute {
+			// Doubled up to a minute, never past what a Duration holds.
+			if wait > time.Minute/2 {
 				wait = time.Minute
+			} else {
+				wait *= 2
 			}
 			continue
 		}

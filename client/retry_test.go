@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -286,6 +287,17 @@ func TestExponentialBackoff(t *testing.T) {
 	endless := NewExponentialBackoff(ExponentialBackoffConfig{MaxAttempts: -1, NoJitter: true})
 	if again, wait := endless.ShouldRetry(1000, errors.New("x")); !again || wait != 30*time.Second {
 		t.Errorf("attempt 1000: %v, %v", again, wait)
+	}
+	// A MaxDelay a doubling would overflow: the wait stops at MaxDelay, it
+	// never goes negative and the jitter never panics.
+	for _, jitter := range []bool{false, true} {
+		huge := NewExponentialBackoff(ExponentialBackoffConfig{BaseDelay: 3 * time.Second, MaxDelay: math.MaxInt64, MaxAttempts: -1, NoJitter: !jitter})
+		for attempt := 1; attempt < 100; attempt++ {
+			again, wait := huge.ShouldRetry(attempt, errors.New("x"))
+			if !again || wait < 0 || (!jitter && attempt > 40 && wait != math.MaxInt64) {
+				t.Fatalf("MaxDelay MaxInt64, jitter %v, attempt %d: %v, %v", jitter, attempt, again, wait)
+			}
+		}
 	}
 	if again, _ := NoRetry().ShouldRetry(1, errors.New("x")); again {
 		t.Error("NoRetry retries")

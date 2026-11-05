@@ -278,6 +278,15 @@ func TestHandler(t *testing.T) {
 	if rec := call("GET", "/hook?echo=abc123", "", ""); rec.Code != 200 || rec.Body.String() != "abc123" {
 		t.Errorf("echo = %d %q", rec.Code, rec.Body)
 	}
+	// Markup in the echo goes back as it came, as plain text no browser sniffs.
+	if rec := call("GET", "/hook?echo=%3Cscript%3E", "", ""); rec.Code != 200 || rec.Body.String() != "<script>" ||
+		rec.Header().Get("Content-Type") != "text/plain; charset=utf-8" || rec.Header().Get("X-Content-Type-Options") != "nosniff" ||
+		rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("echo of markup = %d %q %v", rec.Code, rec.Body, rec.Header())
+	}
+	if rec := call("GET", "/hook?echo="+strings.Repeat("x", 257), "", ""); rec.Code != 400 {
+		t.Errorf("GET with a 257-byte echo = %d", rec.Code)
+	}
 	if rec := call("GET", "/hook", "", ""); rec.Code != 400 {
 		t.Errorf("GET without echo = %d", rec.Code)
 	}

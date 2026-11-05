@@ -15,6 +15,7 @@ import (
 	"hash/fnv"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/netip"
@@ -289,7 +290,7 @@ func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, don
 		return
 	}
 	select {
-	case s.queues[int(h.Sum32()%uint32(len(s.queues)))] <- d:
+	case s.queues[queueOf(h.Sum32(), len(s.queues))] <- d:
 		s.mu.Unlock()
 	default:
 		s.mu.Unlock()
@@ -370,8 +371,11 @@ func (s *Sender) deliver(d delivery) {
 			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
 			return
 		}
-		if wait *= 2; wait > s.cfg.MaxBackoff {
+		// Doubled up to MaxBackoff, never past what a Duration holds.
+		if wait > s.cfg.MaxBackoff/2 {
 			wait = s.cfg.MaxBackoff
+		} else {
+			wait *= 2
 		}
 	}
 }
@@ -428,4 +432,18 @@ func (s *Sender) log(msg, callbackURL string, err error) {
 		attrs = append(attrs, slog.Any("error", err))
 	}
 	s.cfg.Logger.Warn(msg, attrs...)
+}
+
+// queueOf is the queue of the hash among n, the same for a callback URL on
+// any platform: the remainder is taken in uint32, never in an int that is
+// 32 bits wide and would go negative.
+func queueOf(hash uint32, n int) int {
+	if n <= 1 {
+		return 0
+	}
+	m := uint32(math.MaxInt32)
+	if n < math.MaxInt32 {
+		m = uint32(n)
+	}
+	return int(hash % m)
 }
