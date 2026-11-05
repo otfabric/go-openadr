@@ -251,9 +251,13 @@ func (is *Issuer) authenticate(r *http.Request) (Client, bool) {
 	if client, ok := is.check(id, secret); ok {
 		return client, true
 	}
+	// Form decoding changes nothing without a '%' or a '+'.
+	if !strings.ContainsAny(id, "%+") && !strings.ContainsAny(secret, "%+") {
+		return Client{}, false
+	}
 	decodedID, errID := url.QueryUnescape(id)
 	decodedSecret, errSecret := url.QueryUnescape(secret)
-	if errID != nil || errSecret != nil || decodedID == id && decodedSecret == secret {
+	if errID != nil || errSecret != nil {
 		return Client{}, false
 	}
 	return is.check(decodedID, decodedSecret)
