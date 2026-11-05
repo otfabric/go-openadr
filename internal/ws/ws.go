@@ -399,17 +399,14 @@ func (c *Conn) readFrame(room int64) (fin bool, opcode byte, payload []byte, err
 
 // writeFrame writes one whole frame.
 func (c *Conn) writeFrame(opcode byte, payload []byte, timeout time.Duration) error {
-	frame, err := c.encode(opcode, payload)
-	if err != nil {
-		return err
-	}
+	frame := c.encode(opcode, payload)
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
 	return c.writeLocked(frame, timeout)
 }
 
 // encode returns a frame as it goes on the wire, masked by a client.
-func (c *Conn) encode(opcode byte, payload []byte) ([]byte, error) {
+func (c *Conn) encode(opcode byte, payload []byte) []byte {
 	frame := make([]byte, 0, len(payload)+14)
 	frame = append(frame, 0x80|opcode)
 	var maskBit byte
@@ -427,19 +424,18 @@ func (c *Conn) encode(opcode byte, payload []byte) ([]byte, error) {
 		frame = binary.BigEndian.AppendUint64(frame, uint64(n))
 	}
 	if !c.client {
-		return append(frame, payload...), nil
+		return append(frame, payload...)
 	}
+	// crypto/rand.Read never fails: it fills the mask or crashes.
 	var mask [4]byte
-	if _, err := rand.Read(mask[:]); err != nil {
-		return nil, err
-	}
+	_, _ = rand.Read(mask[:])
 	frame = append(frame, mask[:]...)
 	start := len(frame)
 	frame = append(frame, payload...)
 	for i := range payload {
 		frame[start+i] ^= mask[i%4]
 	}
-	return frame, nil
+	return frame
 }
 
 // writeLocked writes a frame; the caller holds wmu.
@@ -505,29 +501,25 @@ func (c *Conn) Close(code int, reason string) error {
 		payload = binary.BigEndian.AppendUint16(make([]byte, 0, 2+len(reason)), uint16(code))
 		payload = append(payload, reason...)
 	}
-	frame, err := c.encode(opClose, payload)
 	var closeErr error
 	closedNow := false
-	if !c.lockWithin(closeTimeout) {
+	if c.lockWithin(closeTimeout) {
+		_ = c.writeLocked(c.encode(opClose, payload), closeTimeout)
+	} else {
 		// A write is stuck on a peer that does not read. The close frame
 		// would wait behind it; closing the connection ends that write.
 		closeErr, closedNow = c.rw.Close(), true
 		c.wmu.Lock()
-	} else if err == nil {
-		_ = c.writeLocked(frame, closeTimeout)
 	}
 	already := c.closed
 	c.closed = true
 	c.wmu.Unlock()
 	c.SetReadDeadline(time.Time{})
-	switch {
-	case closedNow:
-		if already {
-			return nil
-		}
-		return closeErr
-	case already:
+	if already {
 		return nil
+	}
+	if closedNow {
+		return closeErr
 	}
 	return c.rw.Close()
 }

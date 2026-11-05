@@ -20,6 +20,7 @@ import (
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/backoff"
 	imqtt "github.com/otfabric/go-openadr/internal/mqtt"
 	v310 "github.com/otfabric/go-openadr/internal/wire/v310"
 )
@@ -57,13 +58,18 @@ func (b Broker) firstWait() time.Duration {
 	return b.Backoff
 }
 
-// nextWait doubles a wait up to a minute, never past what a Duration holds.
-func nextWait(wait time.Duration) time.Duration {
-	if wait > time.Minute/2 {
-		return time.Minute
+// afterSession is the wait after a session that lasted as long as it did: a
+// session of more than a minute is not part of a run of failures, and the
+// waits start again.
+func (b Broker) afterSession(lasted, wait time.Duration) time.Duration {
+	if lasted > time.Minute {
+		return b.firstWait()
 	}
-	return wait * 2
+	return wait
 }
+
+// nextWait doubles a wait up to a minute, never past what a Duration holds.
+func nextWait(wait time.Duration) time.Duration { return backoff.Double(wait, time.Minute) }
 
 // pause waits before the broker is tried again, and reports false when
 // stop was closed meanwhile.
@@ -449,49 +455,48 @@ func (s *Subscriber) run() {
 		subCtx, subCancel := context.WithTimeout(ctx, 30*time.Second)
 		err := conn.Subscribe(subCtx, s.cfg.Topics...)
 		subCancel()
-		if err != nil {
+		if err == nil {
+			wait = s.cfg.afterSession(s.session(conn), wait)
+		} else {
 			_ = conn.Close()
 			if ctx.Err() != nil {
 				return
 			}
 			s.warn("mqtt: subscribing failed", slog.Any("error", err))
-			if !pause(s.stop, wait) {
-				return
-			}
-			wait = nextWait(wait)
-			continue
-		}
-		// Reported before Ready returns: whoever was told the subscriber
-		// is connected finds it in the metrics.
-		if s.cfg.Metrics != nil {
-			s.cfg.Metrics.OnConnected()
-		}
-		s.mu.Lock()
-		s.sessions++
-		close(s.connected)
-		s.mu.Unlock()
-		began := time.Now()
-
-		select {
-		case <-conn.Done():
-			if s.cfg.Metrics != nil {
-				s.cfg.Metrics.OnDisconnected(conn.Err())
-			}
-			s.warn("mqtt: connection to the broker lost", slog.Any("error", conn.Err()))
-		case <-s.stop:
-			_ = conn.Close()
-			return
-		}
-		s.mu.Lock()
-		s.connected = make(chan struct{})
-		s.mu.Unlock()
-		if time.Since(began) > time.Minute {
-			// A session that lasted is not part of a run of failures.
-			wait = s.cfg.firstWait()
 		}
 		if !pause(s.stop, wait) {
 			return
 		}
 		wait = nextWait(wait)
 	}
+}
+
+// session runs a subscribed connection until it is lost or the subscriber
+// stops, and returns how long it lasted.
+func (s *Subscriber) session(conn *imqtt.Conn) time.Duration {
+	// Reported before Ready returns: whoever was told the subscriber
+	// is connected finds it in the metrics.
+	if s.cfg.Metrics != nil {
+		s.cfg.Metrics.OnConnected()
+	}
+	s.mu.Lock()
+	s.sessions++
+	close(s.connected)
+	s.mu.Unlock()
+	began := time.Now()
+
+	select {
+	case <-conn.Done():
+		if s.cfg.Metrics != nil {
+			s.cfg.Metrics.OnDisconnected(conn.Err())
+		}
+		s.warn("mqtt: connection to the broker lost", slog.Any("error", conn.Err()))
+	case <-s.stop:
+		// The pause that follows sees stop and ends the run.
+		_ = conn.Close()
+	}
+	s.mu.Lock()
+	s.connected = make(chan struct{})
+	s.mu.Unlock()
+	return time.Since(began)
 }

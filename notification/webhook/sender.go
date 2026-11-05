@@ -26,6 +26,7 @@ import (
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/backoff"
 )
 
 // SenderConfig configures a Sender. The zero value is a Sender for
@@ -390,12 +391,7 @@ func (s *Sender) deliver(d delivery) {
 			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
 			return
 		}
-		// Doubled up to MaxBackoff, never past what a Duration holds.
-		if wait > s.cfg.MaxBackoff/2 {
-			wait = s.cfg.MaxBackoff
-		} else {
-			wait *= 2
-		}
+		wait = backoff.Double(wait, s.cfg.MaxBackoff)
 	}
 }
 

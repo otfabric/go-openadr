@@ -3,6 +3,7 @@
 package mqtt
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -358,10 +359,7 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error
 		c.shut(fmt.Errorf("mqtt: connection lost: %w", err))
 		// After Close the connection ended without an error of its own,
 		// but this packet still did not go.
-		if err := c.Err(); err != nil {
-			return Packet{}, err
-		}
-		return Packet{}, ErrClosed
+		return Packet{}, cmp.Or(c.Err(), ErrClosed)
 	}
 	select {
 	case p := <-ch:
@@ -371,10 +369,7 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error
 		return Packet{}, ctx.Err()
 	case <-c.done:
 		forget()
-		if err := c.Err(); err != nil {
-			return Packet{}, err
-		}
-		return Packet{}, ErrClosed
+		return Packet{}, cmp.Or(c.Err(), ErrClosed)
 	}
 }
 

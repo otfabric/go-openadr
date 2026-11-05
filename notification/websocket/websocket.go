@@ -24,6 +24,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/client"
+	"github.com/otfabric/go-openadr/internal/backoff"
 )
 
 // SubscriberConfig configures a Subscriber.
@@ -187,12 +188,7 @@ func (s *Subscriber) run() {
 				return
 			case <-time.After(wait):
 			}
-			// Doubled up to a minute, never past what a Duration holds.
-			if wait > time.Minute/2 {
-				wait = time.Minute
-			} else {
-				wait *= 2
-			}
+			wait = backoff.Double(wait, time.Minute)
 			continue
 		}
 		wait, last = s.cfg.Backoff, ""

@@ -201,3 +201,23 @@ func TestHostileResponseBodies(t *testing.T) {
 		t.Errorf("truncated JSON: %v, want ErrProtocol", err)
 	}
 }
+
+// A VTN that redirects to itself for ever is left after ten redirects.
+func TestRedirectLoop(t *testing.T) {
+	var hops atomic.Int64
+	vtn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hops.Add(1)
+		http.Redirect(w, r, fmt.Sprintf("/api/programs?hop=%d", hops.Load()), http.StatusFound)
+	}))
+	defer vtn.Close()
+	ven, err := NewVEN(Config{BaseURL: vtn.URL + "/api", Tokens: StaticToken("static")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ven.Programs(context.Background(), ProgramQuery{}); err == nil || !strings.Contains(err.Error(), "stopped after 10 redirects") {
+		t.Errorf("a redirect loop: %v", err)
+	}
+	if n := hops.Load(); n != 10 {
+		t.Errorf("%d requests, want 10: the first and nine redirects", n)
+	}
+}

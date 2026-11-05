@@ -339,3 +339,21 @@ func TestConnTooLong(t *testing.T) {
 		t.Errorf("Publish after the refusal: %v", err)
 	}
 }
+
+// An empty topic filter is refused before anything is sent.
+func TestSubscribeEmptyFilter(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	b := broker(t, map[string]string{"ven": "pw"})
+	c, err := mqtt.Dial(ctx, b.URL(), mqtt.Options{ClientID: "c", Username: "ven", Password: "pw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if err := c.Subscribe(ctx, "a/#", ""); err == nil {
+		t.Error("a subscription with an empty filter was sent")
+	}
+	if err := c.Subscribe(ctx); err != nil {
+		t.Errorf("Subscribe to nothing: %v", err)
+	}
+}

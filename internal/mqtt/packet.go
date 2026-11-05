@@ -122,11 +122,12 @@ func AppendString(b []byte, s string) ([]byte, error) {
 	return append(b, s...), nil
 }
 
-func checkBody(p Packet) (Packet, error) {
-	if n := len(p.Body); n > MaxRemaining {
-		return Packet{}, fmt.Errorf("%w: a packet of %d bytes", ErrTooLong, n)
+// checkLength refuses a packet body of n bytes that MQTT cannot carry.
+func checkLength(n int) error {
+	if n > MaxRemaining {
+		return fmt.Errorf("%w: a packet of %d bytes", ErrTooLong, n)
 	}
-	return p, nil
+	return nil
 }
 
 // String takes a length-prefixed string off the front of b.
@@ -228,7 +229,10 @@ func Subscribe(id uint16, filters []string) (Packet, error) {
 		}
 		body = append(body, 1)
 	}
-	return checkBody(Packet{Type: TypeSubscribe, Flags: 0x02, Body: body})
+	if err := checkLength(len(body)); err != nil {
+		return Packet{}, err
+	}
+	return Packet{Type: TypeSubscribe, Flags: 0x02, Body: body}, nil
 }
 
 // Ack builds a PUBACK or the like: a packet that is a packet identifier.

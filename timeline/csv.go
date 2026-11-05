@@ -112,14 +112,12 @@ func readCSV(r io.Reader) (Table, error) {
 		}
 	}
 	var out Table
+	// line is the interval id of a row without one: an int32, which a
+	// table of at most maxRows rows never wraps.
 	for line := int32(0); ; line++ {
 		rec, err := cr.Read()
 		if errors.Is(err, io.EOF) {
 			return out, nil
-		}
-		if line == math.MaxInt32 {
-			// The row number is the interval id, an int32.
-			return nil, errors.New("timeline: the CSV has more rows than interval ids")
 		}
 		if err != nil {
 			return nil, fmt.Errorf("timeline: %w", err)

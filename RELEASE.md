@@ -85,7 +85,6 @@ upgrade notes.
   their lengths wrapped.
 - **`client`:** a token `expires_in` beyond what a Duration holds is capped at
   100 years.
-- **`timeline.ReadCSV`:** more rows than interval IDs are refused.
 - **webhook:** the queue of a callback URL is chosen without a
   platform-dependent conversion. The echo of the verification request is
   answered with `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
