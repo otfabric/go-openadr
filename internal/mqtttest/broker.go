@@ -7,6 +7,7 @@
 package mqtttest
 
 import (
+	"crypto/subtle"
 	"net"
 	"strings"
 	"sync"
@@ -211,7 +212,7 @@ func (b *Broker) connect(body []byte) byte {
 		}
 	}
 	if b.users != nil {
-		if want, ok := b.users[user]; !ok || want != password {
+		if want, ok := b.users[user]; !ok || subtle.ConstantTimeCompare([]byte(want), []byte(password)) != 1 {
 			return 4
 		}
 	}
@@ -237,7 +238,9 @@ func (b *Broker) route(topic string, payload []byte) {
 	}
 	b.mu.Unlock()
 	for _, s := range to {
-		s.write(mqtt.Publish(topic, payload, 1, ids[s], false))
+		if p, err := mqtt.Publish(topic, payload, 1, ids[s], false); err == nil {
+			s.write(p)
+		}
 	}
 }
 

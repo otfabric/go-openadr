@@ -21,7 +21,11 @@ func handshake(t *testing.T, b *Broker, user, password string) (net.Conn, int) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
-	if _, err := conn.Write(mqtt.Connect("c1", user, password, 0).Encode()); err != nil {
+	connect, err := mqtt.Connect("c1", user, password, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(connect.Encode()); err != nil {
 		t.Fatal(err)
 	}
 	p, err := mqtt.ReadPacket(conn)

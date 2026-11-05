@@ -32,8 +32,17 @@ const (
 // far below what the protocol allows (256 MiB).
 const MaxPacket = 4 << 20
 
+// MaxRemaining is the largest remaining length a packet can announce: four
+// bytes of seven bits (MQTT 3.1.1, 2.2.3).
+const MaxRemaining = 268435455
+
 // ErrMalformed reports a packet that violates the protocol.
 var ErrMalformed = errors.New("mqtt: malformed packet")
+
+// ErrTooLong reports a string or a packet this client cannot send because
+// MQTT cannot carry it: a string of more than 65535 bytes (MQTT 3.1.1,
+// 1.5.3) or a packet of more than MaxRemaining bytes.
+var ErrTooLong = errors.New("mqtt: too long for MQTT")
 
 // Packet is a control packet: its type and flags, and what follows the
 // fixed header.
@@ -43,10 +52,15 @@ type Packet struct {
 	Body  []byte
 }
 
-// Encode returns the bytes of the packet on the wire.
+// Encode returns the bytes of the packet on the wire. The builders of this
+// package refuse a body longer than MaxRemaining; Encode of such a body
+// returns nil.
 func (p Packet) Encode() []byte {
-	out := []byte{p.Type<<4 | p.Flags&0x0f}
 	n := len(p.Body)
+	if n > MaxRemaining {
+		return nil
+	}
+	out := []byte{p.Type<<4 | p.Flags&0x0f}
 	for {
 		b := byte(n % 128)
 		if n /= 128; n > 0 {
@@ -97,10 +111,22 @@ func unexpected(err error) error {
 	return err
 }
 
-// AppendString appends a UTF-8 string with its two-byte length.
-func AppendString(b []byte, s string) []byte {
-	b = binary.BigEndian.AppendUint16(b, uint16(len(s)))
-	return append(b, s...)
+// AppendString appends a UTF-8 string with its two-byte length. A string of
+// more than 65535 bytes is ErrTooLong.
+func AppendString(b []byte, s string) ([]byte, error) {
+	n := len(s)
+	if n > 0xFFFF {
+		return nil, fmt.Errorf("%w: a string of %d bytes", ErrTooLong, n)
+	}
+	b = binary.BigEndian.AppendUint16(b, uint16(n))
+	return append(b, s...), nil
+}
+
+func checkBody(p Packet) (Packet, error) {
+	if n := len(p.Body); n > MaxRemaining {
+		return Packet{}, fmt.Errorf("%w: a packet of %d bytes", ErrTooLong, n)
+	}
+	return p, nil
 }
 
 // String takes a length-prefixed string off the front of b.
@@ -123,8 +149,9 @@ func Uint16(b []byte) (v uint16, rest []byte, err error) {
 	return binary.BigEndian.Uint16(b), b[2:], nil
 }
 
-// Connect builds a CONNECT packet for a clean session.
-func Connect(clientID, username, password string, keepAliveSeconds uint16) Packet {
+// Connect builds a CONNECT packet for a clean session. A client identifier,
+// user name or password of more than 65535 bytes is ErrTooLong.
+func Connect(clientID, username, password string, keepAliveSeconds uint16) (Packet, error) {
 	flags := byte(0x02) // clean session
 	if username != "" {
 		flags |= 0x80
@@ -132,23 +159,32 @@ func Connect(clientID, username, password string, keepAliveSeconds uint16) Packe
 			flags |= 0x40
 		}
 	}
-	body := AppendString(nil, "MQTT")
-	body = append(body, 4, flags) // protocol level 4 is MQTT 3.1.1
+	body := []byte{0, 4, 'M', 'Q', 'T', 'T', 4, flags} // protocol level 4 is MQTT 3.1.1
 	body = binary.BigEndian.AppendUint16(body, keepAliveSeconds)
-	body = AppendString(body, clientID)
+	fields := []string{clientID}
 	if username != "" {
-		body = AppendString(body, username)
+		fields = append(fields, username)
 		if password != "" {
-			body = AppendString(body, password)
+			fields = append(fields, password)
 		}
 	}
-	return Packet{Type: TypeConnect, Body: body}
+	for _, f := range fields {
+		var err error
+		if body, err = AppendString(body, f); err != nil {
+			return Packet{}, err
+		}
+	}
+	return Packet{Type: TypeConnect, Body: body}, nil
 }
 
 // Publish builds a PUBLISH packet. id is the packet identifier and is used
-// when qos is 1.
-func Publish(topic string, payload []byte, qos byte, id uint16, dup bool) Packet {
-	body := AppendString(nil, topic)
+// when qos is 1. A topic of more than 65535 bytes, or a packet of more than
+// MaxRemaining bytes, is ErrTooLong.
+func Publish(topic string, payload []byte, qos byte, id uint16, dup bool) (Packet, error) {
+	body, err := AppendString(nil, topic)
+	if err != nil {
+		return Packet{}, err
+	}
 	flags := qos << 1
 	if qos > 0 {
 		body = binary.BigEndian.AppendUint16(body, id)
@@ -156,7 +192,10 @@ func Publish(topic string, payload []byte, qos byte, id uint16, dup bool) Packet
 			flags |= 0x08
 		}
 	}
-	return Packet{Type: TypePublish, Flags: flags, Body: append(body, payload...)}
+	if len(payload) > MaxRemaining-len(body) {
+		return Packet{}, fmt.Errorf("%w: a payload of %d bytes", ErrTooLong, len(payload))
+	}
+	return Packet{Type: TypePublish, Flags: flags, Body: append(body, payload...)}, nil
 }
 
 // ParsePublish takes a PUBLISH packet apart.
@@ -177,13 +216,19 @@ func ParsePublish(p Packet) (topic string, payload []byte, qos byte, id uint16, 
 	return topic, rest, qos, id, nil
 }
 
-// Subscribe builds a SUBSCRIBE packet for the filters, each at QoS 1.
-func Subscribe(id uint16, filters []string) Packet {
+// Subscribe builds a SUBSCRIBE packet for the filters, each at QoS 1. A
+// filter of more than 65535 bytes, or a packet of more than MaxRemaining
+// bytes, is ErrTooLong.
+func Subscribe(id uint16, filters []string) (Packet, error) {
 	body := binary.BigEndian.AppendUint16(nil, id)
 	for _, f := range filters {
-		body = append(AppendString(body, f), 1)
+		var err error
+		if body, err = AppendString(body, f); err != nil {
+			return Packet{}, err
+		}
+		body = append(body, 1)
 	}
-	return Packet{Type: TypeSubscribe, Flags: 0x02, Body: body}
+	return checkBody(Packet{Type: TypeSubscribe, Flags: 0x02, Body: body})
 }
 
 // Ack builds a PUBACK or the like: a packet that is a packet identifier.

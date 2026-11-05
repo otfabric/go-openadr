@@ -111,7 +111,11 @@ func Dial(ctx context.Context, uri string, o Options) (*Conn, error) {
 		keepAlive = 30 * time.Second
 	}
 	seconds := min(max(int(keepAlive/time.Second), 1), 65535)
-	if _, err := nc.Write(Connect(o.ClientID, o.Username, o.Password, uint16(seconds)).Encode()); err != nil {
+	connect, err := Connect(o.ClientID, o.Username, o.Password, uint16(seconds))
+	if err != nil {
+		return fail(err)
+	}
+	if _, err := nc.Write(connect.Encode()); err != nil {
 		return fail(err)
 	}
 	ack, err := ReadPacket(nc)
@@ -290,7 +294,7 @@ func (c *Conn) ping() {
 
 // request sends a packet that is answered by one with the same packet
 // identifier, and waits for the answer.
-func (c *Conn) request(ctx context.Context, build func(id uint16) Packet) (Packet, error) {
+func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error)) (Packet, error) {
 	c.mu.Lock()
 	select {
 	case <-c.done:
@@ -321,7 +325,12 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) Packet) (Packe
 		c.mu.Unlock()
 	}
 
-	if err := c.write(build(id)); err != nil {
+	p, err := build(id)
+	if err != nil {
+		forget()
+		return Packet{}, err
+	}
+	if err := c.write(p); err != nil {
 		forget()
 		c.shut(fmt.Errorf("mqtt: connection lost: %w", err))
 		return Packet{}, c.Err()
@@ -348,7 +357,7 @@ func (c *Conn) Publish(ctx context.Context, topic string, payload []byte) error 
 	if !ValidTopic(topic) {
 		return fmt.Errorf("mqtt: %q is not a topic to publish to", topic)
 	}
-	_, err := c.request(ctx, func(id uint16) Packet { return Publish(topic, payload, 1, id, false) })
+	_, err := c.request(ctx, func(id uint16) (Packet, error) { return Publish(topic, payload, 1, id, false) })
 	return err
 }
 
@@ -361,7 +370,7 @@ func (c *Conn) Subscribe(ctx context.Context, filters ...string) error {
 	if slices.Contains(filters, "") {
 		return errors.New("mqtt: an empty topic filter")
 	}
-	ack, err := c.request(ctx, func(id uint16) Packet { return Subscribe(id, filters) })
+	ack, err := c.request(ctx, func(id uint16) (Packet, error) { return Subscribe(id, filters) })
 	if err != nil {
 		return err
 	}
