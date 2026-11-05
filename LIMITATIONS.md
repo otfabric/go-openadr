@@ -40,7 +40,7 @@ in [INTEROP.md](INTEROP.md), the security consequences in
 
 - Tested against the images of
   [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop),
-  pinned by digest: OpenLEADR v0.2.7 and v0.1.4, the ElaadNL openadr3-client
+  pinned by digest: OpenLEADR v0.2.8 and v0.1.4, the ElaadNL openadr3-client
   2.4.0, Avahi 0.8, and four MQTT brokers. The matrix, with how and where each
   row last ran, is in [INTEROP.md](INTEROP.md#matrix). Mosquitto, NanoMQ,
   HiveMQ CE and EMQX were tested with this module's own publisher and
