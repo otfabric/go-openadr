@@ -81,13 +81,13 @@ func DurationOf(td time.Duration) Duration {
 	d := Duration{}
 	if td < 0 {
 		d.Negative = true
-		// Negating math.MinInt64 overflows; work on the unsigned magnitude.
-		u := uint64(-(td + 1)) + 1
-		d.Hours = int64(u / uint64(time.Hour))
-		u %= uint64(time.Hour)
-		d.Minutes = int64(u / uint64(time.Minute))
-		u %= uint64(time.Minute)
-		d.Seconds = float64(u) / float64(time.Second)
+		// Negating math.MinInt64 overflows: negate each part instead, which
+		// is at most an hour's worth or td/time.Hour.
+		d.Hours = -int64(td / time.Hour)
+		td %= time.Hour
+		d.Minutes = -int64(td / time.Minute)
+		td %= time.Minute
+		d.Seconds = -td.Seconds()
 		return d
 	}
 	d.Hours = int64(td / time.Hour)

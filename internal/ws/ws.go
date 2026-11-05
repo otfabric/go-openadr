@@ -456,8 +456,14 @@ func (c *Conn) Close(code int, reason string) error {
 	if len(reason) > 123 {
 		reason = reason[:123]
 	}
-	payload := binary.BigEndian.AppendUint16(make([]byte, 0, 2+len(reason)), uint16(code))
-	_ = c.writeFrame(opClose, append(payload, reason...), 2*time.Second)
+	// A code that may not be sent (RFC 6455, 7.4) goes as a Close frame
+	// without a body, which says nothing about why.
+	var payload []byte
+	if code >= 1000 && code <= 4999 && code != 1004 && code != 1005 && code != 1006 && code != 1015 {
+		payload = binary.BigEndian.AppendUint16(make([]byte, 0, 2+len(reason)), uint16(code))
+		payload = append(payload, reason...)
+	}
+	_ = c.writeFrame(opClose, payload, 2*time.Second)
 
 	c.wmu.Lock()
 	already := c.closed
