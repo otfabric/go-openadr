@@ -23,6 +23,19 @@ in [INTEROP.md](INTEROP.md), the security consequences in
 - The stores in `examples/storage` are examples and are not covered by the
   support of this module.
 
+## Limits not enforced
+
+- The VTN has no per-client limit on the objects a client with write scope
+  stores (subscriptions, VENs, resources, reports). Each write is checked
+  against every subscription, so many subscriptions slow every write down.
+  A subscription's callback URLs are verified one after another, each within
+  the sender's `Timeout`. Limit request rates and body sizes in front of the
+  VTN (`server.RateLimiter`, `server.Config.MaxBodyBytes`) where clients are not
+  trusted.
+- `client.Each` pages until the VTN returns a short page. A VTN that always
+  returns a full page, or ignores `skip`, keeps it going: end it with the
+  context or by breaking out of the loop.
+
 ## Verification
 
 - Tested against the images of

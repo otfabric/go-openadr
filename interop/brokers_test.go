@@ -299,9 +299,11 @@ func TestMQTTBrokers(t *testing.T) {
 			for len(forVEN) > 0 {
 				<-forVEN
 			}
+			// The restart may have used up c: what follows has a time of its own.
+			after := ctx(t)
 			arrived := false
 			for i := 0; i < 60 && !arrived; i++ {
-				if _, err := vtn.bl.CreateEvent(c, openadr.Event{ProgramID: program.ID, Name: fmt.Sprintf("after-restart-%d", i)}); err != nil {
+				if _, err := vtn.bl.CreateEvent(after, openadr.Event{ProgramID: program.ID, Name: fmt.Sprintf("after-restart-%d", i)}); err != nil {
 					t.Fatal(err)
 				}
 				select {
