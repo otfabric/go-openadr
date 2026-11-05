@@ -39,7 +39,7 @@ OpenADR 3.1 requires HTTPS. The library speaks HTTP over whatever it is given an
 
 - The client sends its secret only to the token endpoint. That endpoint is either configured (`Credentials.TokenURL`) or named by the VTN (`GET /auth/server`). A VTN reached over HTTPS cannot name a cleartext token endpoint: the client refuses and sends nothing. A VTN can still name any HTTPS endpoint, so configure `TokenURL` when the VTN is not trusted to choose it
 - Tokens are kept in memory only, and neither tokens nor secrets are logged or put in error messages
-- `auth.Issuer` is a token service for tests, examples and small deployments: clients and their secrets are held in memory in the clear, tokens are opaque random values lost on restart, and there is no rate limiting of failed attempts. Put an identity provider behind an `auth.Validator` for anything else
+- `auth.Issuer` is a token service for tests, examples and small deployments: clients and their secrets are held in memory in the clear, tokens are opaque random values lost on restart, at most 1024 are valid per client at a time (a new one beyond that replaces the oldest), and there is no rate limiting of failed attempts. Put an identity provider behind an `auth.Validator` for anything else
 
 ### Authorization in the VTN
 
@@ -120,7 +120,7 @@ The MQTT client in this module is its own implementation of MQTT 3.1.1. It is fu
 
 ### Tokens from an identity provider
 
-`auth.JWTValidator` verifies the signature before it reads any claim, binds each key to the algorithms of its kind (so a public key cannot be passed off as an HMAC secret), refuses unsigned tokens, and requires an expiry. What it cannot know is your provider:
+`auth.JWTValidator` verifies the signature before it reads any claim, binds each key to the algorithms of its kind (so a public key cannot be passed off as an HMAC secret), refuses unsigned tokens and tokens with a `crit` header (RFC 7515: it understands no extensions), and requires an expiry; an `nbf` that is not a NumericDate is refused, not ignored. `NewJWTValidator` refuses keys it could not verify with, such as an Ed25519 key of the wrong length. A key set that cannot be fetched is asked for again once a minute at most, also before it has ever been had. What it cannot know is your provider:
 
 - **Set `Audiences`** when the provider also issues tokens for other services. Otherwise any of its tokens, for any service, is accepted here
 - **Set `Issuer`** when the key set is shared between issuers

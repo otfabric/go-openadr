@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -146,15 +147,9 @@ func (is *Issuer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	id, secret, basic := r.BasicAuth()
-	if !basic {
-		id, secret = r.PostForm.Get("client_id"), r.PostForm.Get("client_secret")
-	}
-	client, known := is.clients[id]
-	// Compare digests so that the comparison takes the same time whatever
-	// the length of the presented secret, and run it for unknown clients too.
-	want, got := sha256.Sum256([]byte(client.Secret)), sha256.Sum256([]byte(secret))
-	if subtle.ConstantTimeCompare(want[:], got[:]) != 1 || !known {
+	client, ok := is.authenticate(r)
+	if !ok {
+		_, _, basic := r.BasicAuth()
 		if basic {
 			w.Header().Set("WWW-Authenticate", `Basic realm="openadr"`)
 		}
@@ -164,13 +159,21 @@ func (is *Issuer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	scopes := client.Scopes
 	if requested := strings.Fields(r.PostForm.Get("scope")); len(requested) > 0 {
+		scopes = nil
 		for _, s := range requested {
 			if !slices.Contains(client.Scopes, s) {
-				writeTokenError(w, http.StatusBadRequest, "invalid_scope", "scope "+s+" is not available to this client")
+				description := "a scope that was asked for is not available to this client"
+				if scopeToken(s) {
+					description = "scope " + s + " is not available to this client"
+				}
+				writeTokenError(w, http.StatusBadRequest, "invalid_scope", description)
 				return
 			}
+			// RFC 6749 section 3.3: the scope is a set.
+			if !slices.Contains(scopes, s) {
+				scopes = append(scopes, s)
+			}
 		}
-		scopes = requested
 	}
 
 	raw := make([]byte, 32)
@@ -182,10 +185,23 @@ func (is *Issuer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	now := is.now()
 
 	is.mu.Lock()
+	live := 0
+	var oldest string
 	for t, g := range is.tokens {
-		if !now.Before(g.expires) {
+		switch {
+		case !now.Before(g.expires):
 			delete(is.tokens, t)
+		case g.identity.ClientID == client.ID:
+			live++
+			if oldest == "" || g.expires.Before(is.tokens[oldest].expires) {
+				oldest = t
+			}
 		}
+	}
+	if live >= maxTokensPerClient {
+		// A client that keeps asking for tokens does not grow the map
+		// without bound: its oldest token makes room.
+		delete(is.tokens, oldest)
 	}
 	is.tokens[token] = grant{identity: Identity{ClientID: client.ID, Scopes: slices.Clone(scopes)}, expires: now.Add(is.ttl)}
 	is.mu.Unlock()
@@ -198,6 +214,61 @@ func (is *Issuer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ExpiresIn:   int64(is.ttl / time.Second),
 		Scope:       strings.Join(scopes, " "),
 	})
+}
+
+// scopeToken reports whether s is a scope-token of RFC 6749 section 3.3,
+// short enough to repeat. Only such a scope is named in an error: section
+// 5.2 limits error_description to the same characters, and a description
+// that repeats whatever was sent could be made of anything.
+func scopeToken(s string) bool {
+	if s == "" || len(s) > 128 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c < 0x21 || c == '"' || c == '\\' || c > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+// maxTokensPerClient bounds the tokens of one client that are valid at a
+// time; a new one beyond it replaces the oldest.
+const maxTokensPerClient = 1024
+
+// authenticate finds the client a token request is from. Credentials are
+// taken from HTTP Basic authentication or, without it, from the form.
+//
+// RFC 6749 section 2.3.1 has the client form-encode its ID and secret
+// before Basic authentication encodes them, as golang.org/x/oauth2 does.
+// Not every client does: both readings are tried, so that a secret with a
+// '+' or a '%' in it works either way.
+func (is *Issuer) authenticate(r *http.Request) (Client, bool) {
+	id, secret, basic := r.BasicAuth()
+	if !basic {
+		return is.check(r.PostForm.Get("client_id"), r.PostForm.Get("client_secret"))
+	}
+	if client, ok := is.check(id, secret); ok {
+		return client, true
+	}
+	decodedID, errID := url.QueryUnescape(id)
+	decodedSecret, errSecret := url.QueryUnescape(secret)
+	if errID != nil || errSecret != nil || decodedID == id && decodedSecret == secret {
+		return Client{}, false
+	}
+	return is.check(decodedID, decodedSecret)
+}
+
+// check compares the presented secret with the client's. It compares
+// digests, so that the comparison takes the same time whatever the length
+// of the presented secret, and runs for unknown clients too.
+func (is *Issuer) check(id, secret string) (Client, bool) {
+	client, known := is.clients[id]
+	want, got := sha256.Sum256([]byte(client.Secret)), sha256.Sum256([]byte(secret))
+	if subtle.ConstantTimeCompare(want[:], got[:]) != 1 || !known {
+		return Client{}, false
+	}
+	return client, true
 }
 
 func writeTokenError(w http.ResponseWriter, status int, code, description string) {

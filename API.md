@@ -236,7 +236,8 @@ type AttemptMetrics interface { OnAttempt(op string, attempt int, duration time.
 
 - **Nothing is retried by default.** With a policy, the client asks it only about failures another attempt can cure (no answer, 429, 502, 503, 504) and only for requests that are safe to send twice: a read, an update and a delete always; a create only when it certainly did not happen, unless `RetryCreates`. A policy cannot widen that. The table is in [OBSERVABILITY.md](OBSERVABILITY.md#retries).
 - **`Retry-After`** of a 429 or 503 is honoured: the client waits at least that long. It is in `openadr.Error.RetryAfter`.
-- **A call's context bounds all its attempts** and the waits between them.
+- **A call's context bounds all its attempts** and the waits between them; a wait that would outlast its deadline is not begun.
+- **Redirects** are followed within the scheme, host and port of the request only, unless `Config.HTTPClient` has a `CheckRedirect` of its own: the bearer token and the client secret of a token request do not follow a redirect elsewhere. One that is not followed is answered as its 3xx status.
 - **`Metrics`** is told of every call, once when it begins and once when it ends; a call is what a method does, token request and retries included. `op` is method and path with `{id}` for an ID, a small fixed set. A value that is also an `AttemptMetrics` is told of every attempt.
 - **`Logger`** gets one debug line per call, an info line when a token is renewed after a 401, and a warning per retry. Never bodies, tokens or secrets.
 - All of it applies to opening a notification stream as well.
@@ -405,7 +406,7 @@ type SenderConfig struct {
 }
 ```
 
-- **Lifecycle.** `NewSender` starts the workers. `Close` stops accepting, and waits until what is queued is delivered or given up on, or until its context ends; after that `Send` does nothing.
+- **Lifecycle.** `NewSender` starts the workers. `Close` stops accepting, and waits until what is queued is delivered or given up on, or until its context ends; then the requests on their way are cancelled and what is still queued is given up on unsent. After that `Send` does nothing.
 - **`Send` never blocks.** A notification for a full queue is dropped and logged.
 - **Order.** Notifications for one callback URL are delivered one at a time, in the order they were sent, retries included. A webhook that is slow or down delays the callbacks that share its worker, and no others.
 - **Retries.** A network failure, a 5xx, a 408 and a 429 are tried again, `Attempts` times in all. A webhook that sends `Retry-After` with such an answer is waited for that long, up to `MaxBackoff`. Any other answer outside 2xx, redirects included, is final.

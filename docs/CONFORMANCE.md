@@ -194,6 +194,20 @@ not ask gets none.
 `authError` schema describes the RFC 6749 body. `auth.Issuer` returns a body
 with the members of both.
 
+**A body that is not UTF-8 is refused.** RFC 8259 section 8.1 requires
+JSON exchanged between systems to be UTF-8. `encoding/json` would read the
+bytes of a string that is not as U+FFFD, so that two different names would
+look alike and be written back as neither; the codecs of both revisions
+refuse such a body as a `ValidationError` on `body` (the VTN answers 400).
+A problem in an error answer is read as best it can be.
+
+**`/auth/token` reads Basic credentials both ways.** RFC 6749 section
+2.3.1 has a client form-encode its ID and secret before HTTP Basic
+authentication encodes them, as golang.org/x/oauth2 does; many clients
+(curl `-u`, say) do not. `auth.Issuer` compares the credentials as sent and,
+when they do not match, as form-decoded, so that a secret with `+` or `%`
+in it works with either kind of client.
+
 **A subscriber is told of what its own search would show it.** The
 Definition says to process targets for a notification "as described" for
 reads, using the client ID of the subscription. Here: reports, VENs,

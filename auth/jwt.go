@@ -89,6 +89,8 @@ type JWTValidator struct {
 	// fetched are the keys of the key set, by kid.
 	fetched   map[string]any
 	lastFetch time.Time
+	// fetchErr is why the last fetch failed, while no key set was had.
+	fetchErr error
 }
 
 // refetchAfter is the least time between two fetches of the key set, so
@@ -110,8 +112,21 @@ func newJWTValidator(cfg JWTConfig) (*JWTValidator, error) {
 		return nil, errors.New("auth: a JWTValidator needs Keys or a JWKSURL")
 	}
 	for i, k := range cfg.Keys {
+		// A key verify cannot use would panic in crypto, with every token
+		// that names it.
 		switch key := k.Key.(type) {
-		case *rsa.PublicKey, *ecdsa.PublicKey, ed25519.PublicKey:
+		case *rsa.PublicKey:
+			if key == nil || key.N == nil || key.N.Sign() <= 0 || key.E < 2 {
+				return nil, fmt.Errorf("auth: JWTConfig.Keys[%d]: not an RSA public key", i)
+			}
+		case *ecdsa.PublicKey:
+			if key == nil || !validPoint(key) {
+				return nil, fmt.Errorf("auth: JWTConfig.Keys[%d]: not an ECDSA public key", i)
+			}
+		case ed25519.PublicKey:
+			if len(key) != ed25519.PublicKeySize {
+				return nil, fmt.Errorf("auth: JWTConfig.Keys[%d]: an Ed25519 public key has %d bytes, not %d", i, ed25519.PublicKeySize, len(key))
+			}
 		case []byte:
 			// RFC 7518 section 3.2: at least the size of the hash.
 			if len(key) < 32 {
@@ -133,7 +148,23 @@ func newJWTValidator(cfg JWTConfig) (*JWTValidator, error) {
 	return &JWTValidator{cfg: cfg}, nil
 }
 
+// validPoint reports whether key is a point on a curve that verify knows.
+func validPoint(key *ecdsa.PublicKey) (ok bool) {
+	// Bytes panics on a key without coordinates.
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	_, err := key.Bytes()
+	return err == nil
+}
+
 var b64 = base64.RawURLEncoding
+
+// maxRSABits bounds the RSA keys taken from a key set: verifying with a
+// larger key costs much, and no provider publishes one.
+const maxRSABits = 16384
 
 // Validate implements Validator. Every way a token can be wrong is
 // ErrInvalidToken; an error that is not means the key set could not be had.
@@ -143,11 +174,18 @@ func (v *JWTValidator) Validate(ctx context.Context, token string) (Identity, er
 		return Identity{}, ErrInvalidToken
 	}
 	var header struct {
-		Alg string `json:"alg"`
-		Kid string `json:"kid"`
+		Alg  string          `json:"alg"`
+		Kid  string          `json:"kid"`
+		Crit json.RawMessage `json:"crit"`
 	}
 	headerJSON, err := b64.DecodeString(parts[0])
 	if err != nil || json.Unmarshal(headerJSON, &header) != nil {
+		return Identity{}, ErrInvalidToken
+	}
+	if header.Crit != nil {
+		// RFC 7515 section 4.1.11: a token that names extensions the
+		// recipient must understand is refused by one that understands
+		// none.
 		return Identity{}, ErrInvalidToken
 	}
 	signature, err := b64.DecodeString(parts[2])
@@ -178,8 +216,12 @@ func (v *JWTValidator) Validate(ctx context.Context, token string) (Identity, er
 	if !ok || !now.Before(exp.Add(v.cfg.Leeway)) {
 		return Identity{}, ErrInvalidToken
 	}
-	if nbf, ok := numeric(claims["nbf"]); ok && now.Before(nbf.Add(-v.cfg.Leeway)) {
-		return Identity{}, ErrInvalidToken
+	// An nbf that is not a NumericDate (RFC 7519 section 4.1.5) cannot be
+	// honoured, and is not ignored either.
+	if raw, present := claims["nbf"]; present {
+		if nbf, ok := numeric(raw); !ok || now.Before(nbf.Add(-v.cfg.Leeway)) {
+			return Identity{}, ErrInvalidToken
+		}
 	}
 	if v.cfg.Issuer != "" && claims["iss"] != v.cfg.Issuer {
 		return Identity{}, ErrInvalidToken
@@ -322,18 +364,23 @@ func (v *JWTValidator) keysFor(ctx context.Context, kid string) ([]any, error) {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if _, known := v.fetched[kid]; !known && (v.fetched == nil || v.cfg.Now().Sub(v.lastFetch) >= refetchAfter) {
+	// The interval holds while the key set has never been had too:
+	// otherwise every request would wait on a provider that is down.
+	if _, known := v.fetched[kid]; !known && (v.lastFetch.IsZero() || v.cfg.Now().Sub(v.lastFetch) >= refetchAfter) {
 		fetched, err := v.fetch(ctx)
 		if err != nil {
-			if v.fetched == nil && len(keys) == 0 {
-				return nil, fmt.Errorf("auth: fetching the key set: %w", err)
-			}
 			// Keep verifying with what is known; the provider may be back
 			// by the time a new key is really needed.
+			if v.fetched == nil {
+				v.fetchErr = err
+			}
 		} else {
-			v.fetched = fetched
+			v.fetched, v.fetchErr = fetched, nil
 		}
 		v.lastFetch = v.cfg.Now()
+	}
+	if v.fetched == nil && len(keys) == 0 && v.fetchErr != nil {
+		return nil, fmt.Errorf("auth: fetching the key set: %w", v.fetchErr)
 	}
 	if key, ok := v.fetched[kid]; ok {
 		keys = append(keys, key)
@@ -361,6 +408,15 @@ func (v *JWTValidator) fetch(ctx context.Context) (map[string]any, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("the key set answered %d", resp.StatusCode)
 	}
+	return parseKeySet(resp.Body)
+}
+
+// maxKeySet bounds the key set read.
+const maxKeySet = 1 << 20
+
+// parseKeySet reads a JSON Web Key Set (RFC 7517 section 5) and returns
+// the keys to verify signatures with, by kid.
+func parseKeySet(r io.Reader) (map[string]any, error) {
 	var set struct {
 		Keys []struct {
 			Kty string `json:"kty"`
@@ -373,7 +429,7 @@ func (v *JWTValidator) fetch(ctx context.Context) (map[string]any, error) {
 			Y   string `json:"y"`
 		} `json:"keys"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&set); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r, maxKeySet)).Decode(&set); err != nil {
 		return nil, fmt.Errorf("the key set is not JSON: %w", err)
 	}
 	keys := map[string]any{}
@@ -391,7 +447,7 @@ func (v *JWTValidator) fetch(ctx context.Context) (map[string]any, error) {
 		switch k.Kty {
 		case "RSA":
 			n, e := num(k.N), num(k.E)
-			if n == nil || e == nil || !e.IsInt64() || e.Int64() < 3 || e.Int64() > 1<<31-1 || n.BitLen() < 2048 {
+			if n == nil || e == nil || !e.IsInt64() || e.Int64() < 3 || e.Int64() > 1<<31-1 || n.BitLen() < 2048 || n.BitLen() > maxRSABits {
 				continue
 			}
 			keys[k.Kid] = &rsa.PublicKey{N: n, E: int(e.Int64())}

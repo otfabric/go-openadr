@@ -166,13 +166,72 @@ func (d Duration) TimeDuration() (time.Duration, bool) {
 }
 
 // AddTo returns t moved by the duration, applying years, months and days on
-// the calendar in t's location.
+// the calendar in t's location, and hours, minutes and seconds as elapsed
+// time.
+//
+// A duration too long for a time.Duration still moves t by all of it.
+// Components so large that the result would be millions of years away are
+// taken as that far: about two million years (2^20 years, 2^24 months or
+// 2^30 days), well past P9999Y, the longest duration the specification
+// gives a meaning to.
 func (d Duration) AddTo(t time.Time) time.Time {
-	sign := 1
+	sign := int64(1)
 	if d.Negative {
 		sign = -1
 	}
-	t = t.AddDate(sign*int(d.Years), sign*int(d.Months), sign*int(d.Weeks*7+d.Days))
-	clock, _ := Duration{Hours: d.Hours, Minutes: d.Minutes, Seconds: d.Seconds, Negative: d.Negative}.TimeDuration()
-	return t.Add(clock)
+	days := addSat(mulSat(d.Weeks, 7), d.Days)
+	t = t.AddDate(int(sign*clamp(d.Years, maxAddYears)), int(sign*clamp(d.Months, maxAddMonths)), int(sign*clamp(days, maxAddDays)))
+	clock, ok := Duration{Hours: d.Hours, Minutes: d.Minutes, Seconds: d.Seconds, Negative: d.Negative}.TimeDuration()
+	if ok {
+		return t.Add(clock)
+	}
+	// The clock does not fit in a time.Duration: whole days of it are
+	// added on the calendar of UTC, where a day is always 24 hours, and
+	// the rest as elapsed time.
+	h, m, sec := d.Hours, d.Minutes, d.Seconds
+	clockDays := addSat(h/24, m/(24*60))
+	h, m = h%24, m%(24*60)
+	secDays := math.Floor(sec / 86400)
+	if sec -= secDays * 86400; math.IsInf(secDays, 0) {
+		sec = 0
+	}
+	clockDays = addSat(clockDays, int64(math.Max(-maxAddDays, math.Min(secDays, maxAddDays))))
+	rest, _ := Duration{Hours: h, Minutes: m, Seconds: sec, Negative: d.Negative}.TimeDuration()
+	loc := t.Location()
+	return t.UTC().AddDate(0, 0, int(sign*clamp(clockDays, maxAddDays))).In(loc).Add(rest)
+}
+
+// The bounds of the components AddTo applies; they fit in an int of 32 bits.
+const (
+	maxAddYears  = 1 << 20
+	maxAddMonths = 1 << 24
+	maxAddDays   = 1 << 30
+)
+
+func clamp(n, limit int64) int64 {
+	return max(-limit, min(n, limit))
+}
+
+func addSat(a, b int64) int64 {
+	if s := a + b; (s > a) == (b > 0) {
+		return s
+	}
+	if b > 0 {
+		return math.MaxInt64
+	}
+	return math.MinInt64
+}
+
+func mulSat(a, b int64) int64 {
+	if a == 0 || b == 0 {
+		return 0
+	}
+	minusMin := a == -1 && b == math.MinInt64 || b == -1 && a == math.MinInt64
+	if p := a * b; !minusMin && p/b == a {
+		return p
+	}
+	if (a > 0) == (b > 0) {
+		return math.MaxInt64
+	}
+	return math.MinInt64
 }
