@@ -84,8 +84,7 @@ func (f *failures) add(format string, args ...any) {
 
 // status returns the HTTP status an error of the API carries, or 0.
 func status(err error) int {
-	var apiErr *openadr.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openadr.Error](err); ok {
 		return apiErr.StatusCode
 	}
 	return 0
@@ -704,9 +703,7 @@ func newFlakyProxy(t *testing.T, target string, seed uint64) *flakyProxy {
 		t.Fatal(err)
 	}
 	p := &flakyProxy{listener: ln, target: target, rng: rand.New(rand.NewPCG(seed, 7)), conns: map[net.Conn]bool{}}
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		for {
 			conn, err := ln.Accept()
 			if err != nil {
@@ -715,7 +712,7 @@ func newFlakyProxy(t *testing.T, target string, seed uint64) *flakyProxy {
 			p.wg.Add(1)
 			go p.serve(conn)
 		}
-	}()
+	})
 	t.Cleanup(func() {
 		_ = ln.Close()
 		p.on.Store(false)
@@ -783,11 +780,9 @@ func (p *flakyProxy) serve(client net.Conn) {
 			}
 		}
 	}
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	p.wg.Go(func() {
 		pipe(upstream, client)
-	}()
+	})
 	pipe(client, upstream)
 }
 
@@ -861,9 +856,7 @@ func TestChaosNetwork(t *testing.T) {
 		stormOver.Store(true)
 	}()
 	for wkr := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := 0; i < perWriter || !stormOver.Load(); i++ {
 				meant.Add(1)
 				name := fmt.Sprintf("program-%d-%d", wkr, i)
@@ -885,7 +878,7 @@ func TestChaosNetwork(t *testing.T) {
 					}
 				}
 				// Reads fail the same way, and are simply read again.
-				for attempt := 0; attempt < 50; attempt++ {
+				for range 50 {
 					if _, err := ven.Programs(ctx, client.ProgramQuery{Page: client.Page{Limit: 5}}); err == nil {
 						break
 					} else if status(err) != 0 {
@@ -894,7 +887,7 @@ func TestChaosNetwork(t *testing.T) {
 					}
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	<-storm
@@ -1087,9 +1080,7 @@ func TestChaosBroker(t *testing.T) {
 	stop := make(chan struct{})
 	var drops atomic.Int64
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			select {
 			case <-stop:
@@ -1099,7 +1090,7 @@ func TestChaosBroker(t *testing.T) {
 				drops.Add(1)
 			}
 		}
-	}()
+	})
 	// Publishing goes on until the broker has dropped everyone a few
 	// times, however fast the machine is: a fixed number of programs is
 	// made in less than the time to the first drop on a fast one.
@@ -1188,9 +1179,7 @@ func TestChaosTokens(t *testing.T) {
 	// Long enough for the tokens to expire a few times.
 	until := time.Now().Add(time.Duration(rounds(50)) * 100 * time.Millisecond)
 	for wkr := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := 0; time.Now().Before(until); i++ {
 				if _, err := bl.CreateProgram(ctx, openadr.Program{Name: fmt.Sprintf("program-%d-%d", wkr, i)}); err != nil {
 					fail.add("creating a program: %v", err)
@@ -1202,7 +1191,7 @@ func TestChaosTokens(t *testing.T) {
 				}
 				time.Sleep(time.Duration(5+wkr) * time.Millisecond)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	blTokens.mu.Lock()

@@ -464,7 +464,7 @@ const compressFrom = 1024
 // library can write; br and zstd are not among them.
 func contentCoding(accept string) string {
 	weights := map[string]float64{}
-	for _, part := range strings.Split(accept, ",") {
+	for part := range strings.SplitSeq(accept, ",") {
 		coding, params, _ := strings.Cut(part, ";")
 		coding = strings.ToLower(strings.TrimSpace(coding))
 		if coding == "" {
@@ -580,8 +580,7 @@ func readObject[T interface{ Validate() error }](s *Server, w http.ResponseWrite
 	var zero T
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBody))
 	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return zero, 0, err
 		}
 		return zero, 0, &openadr.ValidationError{Field: "body", Reason: "could not be read"}

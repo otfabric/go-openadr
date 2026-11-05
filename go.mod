@@ -1,3 +1,3 @@
 module github.com/otfabric/go-openadr
 
-go 1.23
+go 1.26

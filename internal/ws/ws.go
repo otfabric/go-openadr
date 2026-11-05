@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -108,7 +109,7 @@ func accept(key string) string {
 // hasToken reports whether a comma-separated header names token.
 func hasToken(h http.Header, name, token string) bool {
 	for _, value := range h.Values(name) {
-		for _, part := range strings.Split(value, ",") {
+		for part := range strings.SplitSeq(value, ",") {
 			if strings.EqualFold(strings.TrimSpace(part), token) {
 				return true
 			}
@@ -190,9 +191,7 @@ func Dial(ctx context.Context, hc *http.Client, target string, header http.Heade
 		return nil, err
 	}
 	key := base64.StdEncoding.EncodeToString(raw)
-	for name, values := range header {
-		req.Header[name] = values
-	}
+	maps.Copy(req.Header, header)
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Sec-WebSocket-Version", "13")
@@ -287,8 +286,7 @@ func (c *Conn) ReadMessage() ([]byte, error) {
 		}
 		fin, opcode, payload, err := c.readFrame(limit - int64(len(message)))
 		if err != nil {
-			var failed *protocolError
-			if errors.As(err, &failed) {
+			if failed, ok := errors.AsType[*protocolError](err); ok {
 				_ = c.Close(failed.code, failed.reason)
 			}
 			return nil, err

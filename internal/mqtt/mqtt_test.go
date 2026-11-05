@@ -140,13 +140,11 @@ func TestPublishSubscribe(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for i := range 50 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := pub.Publish(ctx, "events/update", fmt.Appendf(nil, "%d", i)); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	seen := map[string]bool{}

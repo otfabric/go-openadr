@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -317,10 +318,8 @@ func newSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
 	if len(cfg.Topics) == 0 {
 		return nil, errors.New("mqtt: a Subscriber needs Topics")
 	}
-	for _, t := range cfg.Topics {
-		if t == "" {
-			return nil, errors.New("mqtt: an empty topic filter")
-		}
+	if slices.Contains(cfg.Topics, "") {
+		return nil, errors.New("mqtt: an empty topic filter")
 	}
 	if cfg.Notify == nil {
 		return nil, errors.New("mqtt: a Subscriber needs Notify")

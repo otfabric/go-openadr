@@ -95,9 +95,7 @@ func TestChaosRetryPolicy(t *testing.T) {
 		stormOver.Store(true)
 	}()
 	for wkr := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := 0; i < perWriter || !stormOver.Load(); i++ {
 				name := fmt.Sprintf("program-%d-%d", wkr, i)
 				meant.Add(1)
@@ -127,7 +125,7 @@ func TestChaosRetryPolicy(t *testing.T) {
 					meant.Add(-1)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	<-storm
@@ -290,9 +288,7 @@ func TestMetricsAreNotBehind(t *testing.T) {
 		created      atomic.Int64
 	)
 	for c := range clients {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range rounds {
 				stream, err := vtn.VEN1.NotificationStream(ctx)
 				if err != nil {
@@ -315,7 +311,7 @@ func TestMetricsAreNotBehind(t *testing.T) {
 				}
 				_ = stream.Close()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if m.opened.Load() != int64(clients*rounds) {

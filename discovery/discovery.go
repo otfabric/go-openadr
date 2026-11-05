@@ -120,7 +120,7 @@ func vtnFrom(instance name, srv record, text []string, addrs []netip.Addr) VTN {
 		v.Text[key] = value
 	}
 	v.Version, v.BasePath, v.LocalURL, v.OpenAPIURL = v.Text["version"], v.Text["base_path"], v.Text["local_url"], v.Text["openapi_url"]
-	for _, p := range strings.Split(v.Text["program_names"], ",") {
+	for p := range strings.SplitSeq(v.Text["program_names"], ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			v.ProgramNames = append(v.ProgramNames, p)
 		}

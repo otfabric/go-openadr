@@ -41,7 +41,7 @@ func AllStacks() string {
 func ModuleGoroutines(ignore ...string) map[string]string {
 	out := make(map[string]string)
 stacks:
-	for _, g := range strings.Split(AllStacks(), "\n\n") {
+	for g := range strings.SplitSeq(AllStacks(), "\n\n") {
 		if !strings.Contains(g, modulePath) {
 			continue
 		}

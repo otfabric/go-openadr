@@ -98,11 +98,9 @@ func (b *Broker) accept() {
 		if err != nil {
 			return
 		}
-		b.wg.Add(1)
-		go func() {
-			defer b.wg.Done()
+		b.wg.Go(func() {
 			b.serve(conn)
-		}()
+		})
 	}
 }
 

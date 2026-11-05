@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 )
@@ -357,10 +358,8 @@ func (c *Conn) Subscribe(ctx context.Context, filters ...string) error {
 	if len(filters) == 0 {
 		return nil
 	}
-	for _, f := range filters {
-		if f == "" {
-			return errors.New("mqtt: an empty topic filter")
-		}
+	if slices.Contains(filters, "") {
+		return errors.New("mqtt: an empty topic filter")
 	}
 	ack, err := c.request(ctx, func(id uint16) Packet { return Subscribe(id, filters) })
 	if err != nil {

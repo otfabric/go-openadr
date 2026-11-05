@@ -32,8 +32,7 @@ func (t Table) WriteCSV(w io.Writer) error {
 	// A row that cannot be written is the table's fault; anything else is
 	// the writer's.
 	err := t.writeCSV(w)
-	var bad *rowError
-	if errors.As(err, &bad) {
+	if _, ok := errors.AsType[*rowError](err); ok {
 		return fmt.Errorf("%w: %w", openadr.ErrInvalid, err)
 	}
 	return err

@@ -15,8 +15,6 @@ import (
 	"github.com/otfabric/go-openadr/client"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func mustProgram(t *testing.T, bl *client.BL, p openadr.Program) openadr.Program {
 	t.Helper()
 	out, err := bl.CreateProgram(context.Background(), p)
@@ -57,7 +55,7 @@ func TestProgramEventReportWorkflow(t *testing.T) {
 	event := mustEvent(t, vtn.BL, openadr.Event{
 		ProgramID:         program.ID,
 		Name:              "prices",
-		Priority:          ptr(1),
+		Priority:          new(1),
 		ReportDescriptors: []openadr.ReportDescriptor{openadr.NewReportDescriptor("USAGE")},
 		IntervalPeriod:    &openadr.IntervalPeriod{Start: &start, Duration: &openadr.Duration{Hours: 1}},
 		Intervals: []openadr.Interval{

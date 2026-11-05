@@ -115,8 +115,7 @@ func retryable(method string, err error, retryCreates bool) bool {
 	if errors.Is(err, context.Canceled) {
 		return false
 	}
-	var apiErr *openadr.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openadr.Error](err); ok {
 		switch apiErr.StatusCode {
 		case http.StatusTooManyRequests, http.StatusServiceUnavailable:
 			// Refused before anything was done.
@@ -127,8 +126,7 @@ func retryable(method string, err error, retryCreates bool) bool {
 		}
 		return false
 	}
-	var tokenErr *TokenError
-	if errors.As(err, &tokenErr) {
+	if tokenErr, ok := errors.AsType[*TokenError](err); ok {
 		// No request went to the VTN; the token endpoint may recover.
 		return tokenErr.StatusCode == http.StatusTooManyRequests || tokenErr.StatusCode >= 502 && tokenErr.StatusCode <= 504
 	}
@@ -153,8 +151,7 @@ var errNotSent = errors.New("openadr: the request was not sent")
 
 // retryAfter returns the wait a VTN asked for, if it did.
 func retryAfter(err error) time.Duration {
-	var apiErr *openadr.Error
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*openadr.Error](err); ok {
 		return apiErr.RetryAfter
 	}
 	return 0

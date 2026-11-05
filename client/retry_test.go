@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -61,9 +62,7 @@ func newScript(t *testing.T, statuses ...int) *script {
 			}
 			return
 		}
-		for k, v := range s.header {
-			w.Header()[k] = v
-		}
+		maps.Copy(w.Header(), s.header)
 		w.WriteHeader(status)
 		_, _ = fmt.Fprintf(w, `{"title":%q,"status":%d}`, http.StatusText(status), status)
 	}))
@@ -374,7 +373,7 @@ func TestMetricsAndLog(t *testing.T) {
 	}
 	// Operations, not paths: an ID is not for a label, and need not be in
 	// a log line of every call. (An error names its path, as it always did.)
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.Contains(line, "secret-id") && !strings.Contains(line, "error=") {
 			t.Errorf("an ID in a log line that reports no error: %s", line)
 		}
