@@ -201,18 +201,11 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 			}
 		}
 	}
-	errs := make([]error, len(checks))
-	var wg sync.WaitGroup
-	slots := make(chan struct{}, verifyAtOnce)
+	urls := make([]string, len(checks))
 	for i, c := range checks {
-		wg.Go(func() {
-			slots <- struct{}{}
-			defer func() { <-slots }()
-			errs[i] = s.webhooks.Verify(ctx, c.url)
-		})
+		urls[i] = c.url
 	}
-	wg.Wait()
-	for i, err := range errs {
+	for i, err := range verifyAll(ctx, s.webhooks, urls) {
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -221,6 +214,28 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 		}
 	}
 	return nil
+}
+
+// verifyAll verifies the URLs, verifyAtOnce at a time, and returns the
+// error of each.
+func verifyAll(ctx context.Context, hooks WebhookSender, urls []string) []error {
+	errs := make([]error, len(urls))
+	var wg sync.WaitGroup
+	slots := make(chan struct{}, verifyAtOnce)
+	for i := range urls {
+		wg.Add(1)
+		go verifyOne(ctx, hooks, urls, errs, i, slots, &wg)
+	}
+	wg.Wait()
+	return errs
+}
+
+// verifyOne verifies urls[i] into errs[i] when it has a slot.
+func verifyOne(ctx context.Context, hooks WebhookSender, urls []string, errs []error, i int, slots chan struct{}, wg *sync.WaitGroup) {
+	defer wg.Done()
+	slots <- struct{}{}
+	defer func() { <-slots }()
+	errs[i] = hooks.Verify(ctx, urls[i])
 }
 
 // verifyAtOnce is how many callback URLs of one subscription are verified
