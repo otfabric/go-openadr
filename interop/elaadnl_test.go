@@ -210,8 +210,10 @@ func (v *goVTN) run(t *testing.T, args ...string) result {
 
 // The ElaadNL openadr3-client, as VEN and as Business Logic, reading what
 // this module's VTN serves.
-func TestElaadNLReadsGoVTN(t *testing.T) {
-	vtn := startGoVTN(t, "elaadnl", "baseline")
+func TestElaadNLReadsGoVTN(t *testing.T) { testClientReadsGoVTN(t, "elaadnl") }
+
+func testClientReadsGoVTN(t *testing.T, adapter string) {
+	vtn := startGoVTN(t, adapter, "baseline")
 
 	cases := []struct {
 		op string
@@ -301,8 +303,10 @@ func TestElaadNLReadsGoVTN(t *testing.T) {
 
 // The basic workflow with the ElaadNL client on both sides of this module's
 // VTN, checked in the VTN's own store.
-func TestElaadNLWorkflowOnGoVTN(t *testing.T) {
-	vtn := startGoVTN(t, "elaadnl", "baseline")
+func TestElaadNLWorkflowOnGoVTN(t *testing.T) { testClientWorkflowOnGoVTN(t, "elaadnl") }
+
+func testClientWorkflowOnGoVTN(t *testing.T, adapter string) {
+	vtn := startGoVTN(t, adapter, "baseline")
 	ctx := context.Background()
 	must := func(what string, r result, status int) result {
 		t.Helper()

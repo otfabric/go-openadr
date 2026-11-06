@@ -51,6 +51,21 @@ skipped, unless `OPENADR_INTEROP_REQUIRE` is set.
 other images, for example the `:dev` tags that
 `make -C ../openadr-interop images` builds in a checkout of openadr-interop.
 
+## Against an earlier release of go-openadr
+
+`interop/otfabric_test.go` runs this commit against
+`ghcr.io/otfabric/openadr-interop-otfabric`, an earlier go-openadr release that
+openadr-interop publishes behind the same contract (its `own/go-openadr`): this
+module's clients against the VTN of the image, with the OpenLEADR workflow,
+error and target tests, and the clients of the image against this module's VTN,
+with the ElaadNL read and workflow tests. It finds a change on the wire that
+breaks an earlier release, which the e2e tests, with both sides from one
+commit, cannot. The image has no default: the tests skip unless
+`OPENADR_INTEROP_OTFABRIC_IMAGE` names one, `OPENADR_INTEROP_REQUIRE` does not
+change that, and nothing pins it. The **Self-interop** workflow runs them by hand
+against `:latest`, logs the digest, and is never a required check. A pass is not
+independent verification, and has no row in the table above.
+
 ## This module's clients against OpenLEADR
 
 `interop/openleadr_test.go` starts the OpenLEADR reference VTN with the

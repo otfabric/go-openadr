@@ -709,6 +709,12 @@ make storage  # the SQLite and PostgreSQL example stores, a module of their own 
 make interop  # against the OpenLEADR and ElaadNL reference images (needs Docker, see INTEROP.md)
 ```
 
+The manual **Self-interop** workflow runs this commit against the latest
+published image of go-openadr itself (`ghcr.io/otfabric/openadr-interop-otfabric`,
+from openadr-interop), in both roles: it finds a change on the wire that breaks an
+earlier release. It is never required, and a pass is not independent
+verification ([INTEROP.md](INTEROP.md#against-an-earlier-release-of-go-openadr)).
+
 The tests of `e2e` are part of `make check`. Those that inject failures
 are random and follow a seed, which a failing test prints; see
 [CONTRIBUTING.md](CONTRIBUTING.md).
