@@ -35,8 +35,15 @@ type peer struct {
 // and returns clients for the fixture's OAuth2 clients.
 func openleadr(t *testing.T) peer {
 	t.Helper()
-	url := startServer(t, "openleadr", "baseline")
-	fx := readFixture(t, image("openleadr"), "baseline")
+	return vtnPeer(t, "openleadr")
+}
+
+// vtnPeer starts the VTN of an image with the baseline fixture and returns
+// clients for the fixture's OAuth2 clients.
+func vtnPeer(t *testing.T, adapter string) peer {
+	t.Helper()
+	url := startServer(t, adapter, "baseline")
+	fx := readFixture(t, image(adapter), "baseline")
 	cfg := func(name string) client.Config {
 		id, secret := fx.credentials(t, name)
 		return client.Config{BaseURL: url, Credentials: &client.Credentials{ClientID: id, ClientSecret: secret}}
@@ -94,8 +101,9 @@ func (p peer) event(t *testing.T, e openadr.Event) openadr.Event {
 }
 
 // The first end-to-end workflow of the plan, with OpenLEADR as the VTN.
-func TestOpenLEADRWorkflow(t *testing.T) {
-	p := openleadr(t)
+func TestOpenLEADRWorkflow(t *testing.T) { testVTNWorkflow(t, openleadr(t)) }
+
+func testVTNWorkflow(t *testing.T, p peer) {
 	c := ctx(t)
 	start := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	hour := openadr.Duration{Hours: 1}
@@ -198,8 +206,9 @@ func TestOpenLEADRWorkflow(t *testing.T) {
 	}
 }
 
-func TestOpenLEADRErrors(t *testing.T) {
-	p := openleadr(t)
+func TestOpenLEADRErrors(t *testing.T) { testVTNErrors(t, openleadr(t)) }
+
+func testVTNErrors(t *testing.T, p peer) {
 	c := ctx(t)
 	program := p.program(t, openadr.Program{Name: p.name("errors")})
 
@@ -231,7 +240,10 @@ func TestOpenLEADRErrors(t *testing.T) {
 }
 
 func TestOpenLEADRVENsResourcesAndTargets(t *testing.T) {
-	p := openleadr(t)
+	testVTNVENsResourcesAndTargets(t, openleadr(t))
+}
+
+func testVTNVENsResourcesAndTargets(t *testing.T, p peer) {
 	c := ctx(t)
 
 	// The fixture's objects, as each client may see them.

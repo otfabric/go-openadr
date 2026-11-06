@@ -50,6 +50,10 @@ make storage
 
 # Run the interop suite against the OpenLEADR and ElaadNL reference images (needs Docker)
 make interop
+
+# Against a released go-openadr (the Self-interop workflow, never required)
+OPENADR_INTEROP_OTFABRIC_IMAGE=ghcr.io/otfabric/openadr-interop-otfabric:latest \
+    GOWORK=off go test -tags=interop -count=1 -run Otfabric ./interop/
 ```
 
 Run `make` (or `make help`) for the full list of targets.
