@@ -38,14 +38,16 @@ in [INTEROP.md](INTEROP.md), the security consequences in
 - Tested against the images of
   [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop),
   pinned by digest: OpenLEADR v0.2.8 and v0.1.4, the ElaadNL openadr3-client
-  2.4.0, Avahi 0.8, and four MQTT brokers. The matrix, with how and where each
+  2.4.2, cB-Sigma openadr v0.2.0, Avahi 0.8, and four MQTT brokers. The matrix, with how and where each
   row last ran, is in [INTEROP.md](INTEROP.md#matrix). Mosquitto, NanoMQ,
   HiveMQ CE and EMQX were tested with this module's own publisher and
   subscriber. Apple mDNSResponder and the specification-driven conformance suite
   were run by hand.
 - Not verified ([INTEROP.md](INTEROP.md#not-covered)):
-  - a webhook receiver or a WebSocket client of another implementation: neither
-    reference has one, so these are tested between this module's own two sides;
+  - a webhook receiver of another library, or a WebSocket client of another
+    implementation: no reference library has one. cB-Sigma's VTN delivers to
+    this module's handler, and this module's sender to the receiver of
+    openadr-interop's `cbsigma` image, which is that repository's code;
   - subscriptions with the ElaadNL client beyond `DELETE`;
   - MQTT with a login or over TLS with another implementation's client;
   - a client of this module without credentials against another VTN;

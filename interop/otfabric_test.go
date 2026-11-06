@@ -65,3 +65,16 @@ func TestOtfabricClientWorkflowOnGoVTN(t *testing.T) {
 	requireOtfabric(t)
 	testClientWorkflowOnGoVTN(t, otfabric)
 }
+
+// Webhooks: the VTN of the image notifies this module's handler, and this
+// module's VTN the receiver of the image's listen-webhook.
+
+func TestOtfabricVTNWebhook(t *testing.T) {
+	requireOtfabric(t)
+	testVTNWebhook(t, otfabric)
+}
+
+func TestOtfabricListensToGoVTNWebhook(t *testing.T) {
+	requireOtfabric(t)
+	testListenWebhookOnGoVTN(t, otfabric)
+}

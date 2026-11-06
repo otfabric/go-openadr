@@ -10,7 +10,7 @@ specific tests against specific versions.
 |---|---|---|---|
 | go-openadr VEN and BL | go-openadr | Passing, in CI; every feature | `make e2e` |
 | go-openadr VEN and BL | [OpenLEADR](https://github.com/OpenLEADR/openleadr-rs) v0.2.8 (Rust) | Passing, run locally | `make interop` |
-| [ElaadNL openadr3-client](https://github.com/ElaadNL/openadr3-client) 2.4.0 (Python), VEN and BL | go-openadr | Passing, run locally | `make interop` |
+| [ElaadNL openadr3-client](https://github.com/ElaadNL/openadr3-client) 2.4.2 (Python), VEN and BL | go-openadr | Passing, run locally | `make interop` |
 | ElaadNL client over TLS, and its answers compressed | go-openadr | Passing, run locally | `make interop` |
 | ElaadNL client: subscriptions (webhook delivered), MQTT listener, resource groups, no token | go-openadr | Passing, run locally | `make interop` |
 | go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
@@ -18,13 +18,17 @@ specific tests against specific versions.
 | go-openadr WebSocket subscriber | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr BL and VEN, resource groups | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr VEN and BL, **OpenADR 3.0.1** | OpenLEADR v0.1.4 (Rust) | Passing, run locally | `make interop` |
+| go-openadr VEN and BL | [cB-Sigma openadr](https://github.com/cB-Sigma/openadr) v0.2.0 (Go) | Passing, run locally; one known bug of the VTN ([cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1)) | `make interop` |
+| cB-Sigma openadr v0.2.0 client, VEN and BL | go-openadr | Passing, run locally | `make interop` |
+| go-openadr `webhook.Handler`, notified | cB-Sigma openadr v0.2.0 | Passing, run locally | `make interop` |
+| cB-Sigma client's `listen-webhook` receiver, notified by `webhook.Sender` | go-openadr | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | OpenLEADR v0.2.8, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
-| the specification-driven suite of openadr-interop v0.6.3 | go-openadr | 24 of 24 scenarios, run locally | see below |
+| the specification-driven suite of openadr-interop v0.8.0 | go-openadr | 24 of 24 scenarios, in openadr-interop's Own stack workflow | see below |
 
-Last run: 2026-11-05, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.6.3, pinned by
+Last run: 2026-11-07, on a developer machine (linux/arm64 containers on
+macOS), against the published images of openadr-interop v0.8.0, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -36,7 +40,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.6.3, pinned by
+Needs Docker. The images are those of openadr-interop v0.8.0, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -46,8 +50,8 @@ make interop
 `make interop` fails when an image cannot be had. Run directly with
 `go test -tags=interop ./interop/...`, a test whose image is missing is
 skipped, unless `OPENADR_INTEROP_REQUIRE` is set.
-`OPENADR_INTEROP_OPENLEADR_IMAGE`, `OPENADR_INTEROP_ELAADNL_IMAGE` and
-`OPENADR_INTEROP_OPENLEADR301_IMAGE` select
+`OPENADR_INTEROP_OPENLEADR_IMAGE`, `OPENADR_INTEROP_ELAADNL_IMAGE`,
+`OPENADR_INTEROP_OPENLEADR301_IMAGE` and `OPENADR_INTEROP_CBSIGMA_IMAGE` select
 other images, for example the `:dev` tags that
 `make -C ../openadr-interop images` builds in a checkout of openadr-interop.
 
@@ -58,7 +62,9 @@ other images, for example the `:dev` tags that
 openadr-interop publishes behind the same contract (its `own/go-openadr`): this
 module's clients against the VTN of the image, with the OpenLEADR workflow,
 error and target tests, and the clients of the image against this module's VTN,
-with the ElaadNL read and workflow tests. It finds a change on the wire that
+with the ElaadNL read and workflow tests, and webhooks both ways (the image's
+VTN to this module's handler, this module's VTN to the image's
+`listen-webhook`). It finds a change on the wire that
 breaks an earlier release, which the e2e tests, with both sides from one
 commit, cannot. The image has no default: the tests skip unless
 `OPENADR_INTEROP_OTFABRIC_IMAGE` names one, `OPENADR_INTEROP_REQUIRE` does not
@@ -323,6 +329,41 @@ change in either implementation is noticed:
   have none, as the specification says, and the library cannot read them.
 - Its Business Logic client reads subscriptions and cannot make one.
 
+## cB-Sigma openadr: both directions and webhooks
+
+`interop/cbsigma_test.go` and `interop/webhook_test.go` run against the
+`cbsigma` image of openadr-interop v0.8.0: [cB-Sigma
+openadr](https://github.com/cB-Sigma/openadr) v0.2.0, written in Go
+independently of this module, as its VTN (`oadr3/vtn`) and its REST client
+(`oadr3.APIClient`) in both roles.
+
+- **This module's clients against its VTN**: the OpenLEADR workflow, error
+  and target tests, unchanged.
+- **Its clients against this module's VTN**: the ElaadNL read and workflow
+  tests, unchanged.
+- **Webhooks, both ways.** This module's VEN subscribes on the cbsigma VTN,
+  which checks the callback with its echo request and notifies
+  `webhook.Handler`, with the subscription's bearer token, of an event
+  created by Business Logic. The other way, the cbsigma client subscribes on
+  this module's VTN with `listen-webhook`, and `webhook.Sender` notifies its
+  receiver. That receiver is openadr-interop's, as the library has none: it
+  checks the echo request and the bearer token as the specification asks.
+
+Two differences, neither a fault of this module:
+
+- **Targets in a VEN's search do not narrow it** (the image's feature
+  `serverTargetsUnlock`). Naming `group-a`, `ven-1` is shown `group-a-flex`
+  and the untargeted `day-ahead`; this module's VTN and OpenLEADR's show
+  `group-a-flex` only. The OpenAPI document says of the parameter only
+  "Indicates targets". The target test takes either reading from the image.
+- **A VEN cannot read a targeted program by ID** (a bug of the VTN,
+  [cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1)).
+  `GET /programs/{programID}` as `ven-1`, granted `group-a`, of `group-a-flex`
+  answers 404; the VTN wants the target named in a query that this operation
+  does not define. `TestCbsigmaVTNReadsTargetedProgramByID` asserts the 404
+  for v0.2.0, and the program for any other version, so a fixed image fails
+  it until the waiver goes.
+
 ## What it took
 
 Each of these was found by an interoperability run and changed this module.
@@ -371,12 +412,13 @@ go run ./cmd/openadr-interop -url http://127.0.0.1:8080 \
 
 ## Not covered
 
-**A webhook receiver and a WebSocket client of another implementation.**
-Neither reference has one: OpenLEADR does not deliver to webhooks and its
-client library has no receiver, and the ElaadNL client has neither. So this
-VTN's webhooks are received by this module's handler, also when another
-implementation's client made the subscription, and its WebSockets are
-tested between this module's two sides only (`e2e/`). **Subscriptions to
+**A webhook receiver of another library, and a WebSocket client of another
+implementation.** cB-Sigma's VTN delivers to this module's handler, and this
+module's `webhook.Sender` delivers to the receiver of openadr-interop's
+`cbsigma` image; but no reference library has a receiver of its own:
+OpenLEADR does not deliver to webhooks and its client library has no
+receiver, the ElaadNL client has none, and cB-Sigma's library has none.
+WebSockets are tested between this module's two sides only (`e2e/`). **Subscriptions to
 anything but `DELETE` with the ElaadNL client**, for the reason above.
 **MQTT with a login or over TLS with another implementation's client**: the
 ElaadNL MQTT client connects without credentials whatever the VTN says. A

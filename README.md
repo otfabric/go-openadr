@@ -180,7 +180,7 @@ timing rules of the specification (defaults, "now", sub-intervals, events
 that repeat), which the table of the ElaadNL client leaves to its user.
 
 ✅ = available · — = not available or not documented · n/a = does not apply
-to a client library. For openleadr-rs v0.2.7 and openadr3-client 2.4.0, the
+to a client library. For openleadr-rs v0.2.7 and openadr3-client 2.4.2 (whose library is that of 2.4.0), the
 versions go-openadr is tested against, from their public sources and
 documentation as of October 2026. If you spot an inaccuracy, please
 [open an issue](https://github.com/otfabric/go-openadr/issues) and we will
@@ -194,7 +194,7 @@ SQLite and on PostgreSQL. It is a module of its own, so that the database
 drivers are not dependencies of go-openadr, and it is an example: read it,
 copy it, hold your own to the same test suite (`storagetest.Run`).
 
-⁸ openadr3-client 2.4.0 names the operations of a subscription `GET`,
+⁸ openadr3-client 2.4.2 names the operations of a subscription `GET`,
 `POST`, `PUT` and `DELETE`, the names OpenADR 3.0.1 gives the operation of
 a notification; the subscriptions of 3.0.1 and of 3.1.0 both name them
 `READ`, `CREATE`, `UPDATE` and `DELETE`. Against a 3.1.0 VTN, this one or
