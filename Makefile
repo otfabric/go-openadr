@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage coverage-pkg-check cover fuzz check clean interop test-interop e2e chaos nodeps storage coverage-check cross bench
+.PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage coverage-pkg-check cover fuzz check clean interop test-interop e2e chaos nodeps storage coverage-check cross bench docs-check
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -16,6 +16,9 @@ export GOWORK := off
 # `fmt-check` also requires the local gofmt to agree.
 GO_MOD_VERSION := $(shell sed -nE 's/^go ([0-9]+\.[0-9]+).*/\1/p' go.mod | head -n1)
 GOFMT_CI = $(shell GOTOOLCHAIN=go$(GO_MOD_VERSION).0 go env GOROOT)/bin/gofmt
+
+# docsync release of docs-check (DOC-008).
+DOCSYNC_VERSION := v0.2.0
 
 # Output directory for generated binaries
 BIN_DIR := bin
@@ -176,7 +179,11 @@ cross: ## Cross-compile without cgo for the supported platforms
 bench: ## Benchmarks
 	@go test -count=1 -run='^$$' -bench=. -benchmem $(TEST_PKGS)
 
-check: fmt fmt-check nodeps lint lint-ci vet vuln test coverage coverage-pkg-check examples ## Run format + lint + vet + vuln + test
+check: fmt fmt-check nodeps lint lint-ci vet vuln test coverage coverage-pkg-check examples docs-check ## Run format + lint + vet + vuln + test
+
+# The documents against the code (DOC-008): docsync, as docs-check.yml runs it.
+docs-check: ## Check that the documents agree with the code (docsync)
+	@go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"
