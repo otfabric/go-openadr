@@ -1,5 +1,0 @@
-{
-  "ignore": [
-    {"rule": "DS-CODE", "subject": "README.md:51[56]", "reason": "the MQTT subscriber example uses notification/mqtt (NewSubscriber, SubscriberConfig, Broker exist there); docsync v0.2.0 resolves the unimported name mqtt to the shorter path internal/mqtt instead"}
-  ]
-}
