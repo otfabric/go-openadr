@@ -390,7 +390,7 @@ The webhook binding of notifications, for both sides.
 
 ```go
 func NewSender(SenderConfig) *Sender
-func (*Sender) Verify(ctx, callbackURL string) error
+func (*Sender) Verify(ctx context.Context, callbackURL string) error
 func (*Sender) Send(callbackURL, bearerToken string, body []byte)
 func (*Sender) Close(ctx) error
 

@@ -293,6 +293,17 @@ return an error only for a configuration that cannot work, such as a URL
 that is not `mqtt://` or `mqtts://`. A broker that refuses the login is
 logged and tried again, not returned.
 
+A caller that wants to know what became of a webhook notification uses
+`webhook.Sender.SendConfirmed`: its `done` is called with nil when the
+webhook confirmed it, with a `*webhook.RefusedError` when another attempt
+cannot deliver it (the webhook answered that it will not take it, or its
+URL is one the Sender does not send to), and otherwise with the reason it
+was given up on for now: its attempts are used up, the queue was full, or
+the Sender was closed (matches `openadr.ErrClosed`). `RefusedError` wraps
+the cause and has a method `Permanent() bool` that returns true; a VTN
+with `Config.Outbox` keeps a notification for another try unless its error
+says so.
+
 A notification can also be lost before it is sent: to decide whom to tell,
 the VTN reads its subscriptions, and the targets of its VENs, from the
 store. When that read fails, the failure is logged and nobody is told; the
