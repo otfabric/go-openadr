@@ -9,7 +9,9 @@ run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ 
 on:
   push:
     branches: ["**"]
+    paths-ignore: ["**/*.md"]
   pull_request:
+    paths-ignore: ["**/*.md"]
     branches: ["**"]
   schedule:
     - cron: "11 3 * * *"
