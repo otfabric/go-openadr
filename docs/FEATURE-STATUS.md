@@ -4,11 +4,11 @@ Levels: **implemented**, **tested** (in this repository, `make test` and `make e
 
 | Feature | VEN and BL clients | VTN server | Evidence |
 |---|---|---|---|
-| OpenADR 3.1.0 operations | independently verified | independently verified | OpenLEADR v0.2.8 VTN; ElaadNL openadr3-client 2.4.0; openadr-interop conformance suite, run by hand |
+| OpenADR 3.1.0 operations | independently verified | independently verified | OpenLEADR v0.2.8 VTN; ElaadNL openadr3-client 2.4.2; cB-Sigma openadr v0.2.0 VTN and client; openadr-interop conformance suite |
 | OpenADR 3.0.1 | independently verified | not implemented | OpenLEADR v0.1.4; the VTN serves 3.1.0 only |
 | OpenADR 2.x, 3.0.0 | not implemented | not implemented | [LIMITATIONS.md](../LIMITATIONS.md#scope-not-implemented) |
 | Resource groups | independently verified | independently verified | OpenLEADR v0.2.8; ElaadNL client |
-| Subscriptions, webhook delivery | tested | independently verified, ElaadNL beyond `DELETE` not | No other webhook receiver in the references |
+| Subscriptions, webhook delivery | independently verified: `webhook.Handler` notified by cB-Sigma's VTN | independently verified: subscriptions of the ElaadNL (`DELETE` only) and cB-Sigma clients; `webhook.Sender` to the receiver of openadr-interop's `cbsigma` image | No reference library has a webhook receiver of its own |
 | MQTT notifications | independently verified, no login or TLS with others | independently verified, same | Mosquitto, NanoMQ, HiveMQ CE, EMQX, with this module's publisher and subscriber; OpenLEADR over Mosquitto; ElaadNL listener |
 | WebSocket notifications | independently verified | tested | OpenLEADR v0.2.8 for the subscriber; no other WebSocket client in the references |
 | TLS | tested | independently verified | ElaadNL client; the OpenLEADR reference serves plain HTTP on loopback |

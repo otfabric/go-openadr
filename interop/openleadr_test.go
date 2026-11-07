@@ -29,6 +29,10 @@ type peer struct {
 	wrongSecret                client.Config
 	// nonce makes the names a test creates distinct from the fixture's.
 	nonce string
+	// unlock is the VTN's feature serverTargetsUnlock (openadr-interop
+	// contract 1.5): the targets a VEN names unlock what it was granted and
+	// narrow nothing, so its search also returns the untargeted objects.
+	unlock bool
 }
 
 // openleadr starts the OpenLEADR reference VTN with the baseline fixture
@@ -40,15 +44,15 @@ func openleadr(t *testing.T) peer {
 
 // vtnPeer starts the VTN of an image with the baseline fixture and returns
 // clients for the fixture's OAuth2 clients.
-func vtnPeer(t *testing.T, adapter string) peer {
+func vtnPeer(t *testing.T, adapter string, extra ...string) peer {
 	t.Helper()
-	url := startServer(t, adapter, "baseline")
+	url := startServer(t, adapter, "baseline", extra...)
 	fx := readFixture(t, image(adapter), "baseline")
 	cfg := func(name string) client.Config {
 		id, secret := fx.credentials(t, name)
 		return client.Config{BaseURL: url, Credentials: &client.Credentials{ClientID: id, ClientSecret: secret}}
 	}
-	p := peer{url: url, nonce: fmt.Sprintf("%x", time.Now().UnixNano())}
+	p := peer{url: url, nonce: fmt.Sprintf("%x", time.Now().UnixNano()), unlock: has(t, image(adapter), "serverTargetsUnlock")}
 	p.venID, _ = fx.credentials(t, "ven-1")
 	p.unregisteredID, _ = fx.credentials(t, "ven-3")
 	p.wrongSecret = client.Config{BaseURL: url, Credentials: &client.Credentials{ClientID: p.venID, ClientSecret: "not-the-secret"}}
@@ -254,8 +258,14 @@ func testVTNVENsResourcesAndTargets(t *testing.T, p peer) {
 		!slices.Equal(list[0].Targets, []string{"group-a"}) {
 		t.Errorf("ven-1 VENs = %+v, %v; want its own ven site-1 with the target group-a", list, err)
 	}
-	if list, err := p.ven.Programs(c, client.ProgramQuery{Targets: []string{"group-a"}}); err != nil || len(list) != 1 || list[0].Name != "group-a-flex" {
-		t.Errorf("ven-1 programs for group-a = %+v, %v", list, err)
+	// Naming group-a gives the program of group-a; a VTN that reads
+	// targets as unlocking gives the untargeted day-ahead too.
+	want := []string{"group-a-flex"}
+	if p.unlock {
+		want = []string{"day-ahead", "group-a-flex"}
+	}
+	if list, err := p.ven.Programs(c, client.ProgramQuery{Targets: []string{"group-a"}}); err != nil || !sameNames(list, want) {
+		t.Errorf("ven-1 programs for group-a = %+v, %v; want %v", list, err, want)
 	}
 	if list, err := p.ven2.Events(c, client.EventQuery{}); err != nil || len(list) != 1 || list[0].Name != "day-ahead-prices" {
 		t.Errorf("ven-2 events = %+v, %v; want only the untargeted event", list, err)
@@ -303,4 +313,17 @@ func testVTNVENsResourcesAndTargets(t *testing.T, p peer) {
 	if list, err := p.ven2.Programs(c, client.ProgramQuery{Targets: []string{target}}); err != nil || has(list) {
 		t.Errorf("a VEN without the grant sees the targeted program (err %v)", err)
 	}
+}
+
+// sameNames reports whether the programs are those of the names, in any
+// order.
+func sameNames(list []openadr.Program, names []string) bool {
+	got := make([]string, 0, len(list))
+	for _, p := range list {
+		got = append(got, p.Name)
+	}
+	slices.Sort(got)
+	want := slices.Clone(names)
+	slices.Sort(want)
+	return slices.Equal(got, want)
 }
