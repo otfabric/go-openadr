@@ -18,7 +18,7 @@ jobs:
     uses: otfabric/.github/.github/workflows/go-ci.yml@v3.3.1
     with:
       codecov-name: go-openadr
-      policy-version: v1.4.1
+      policy-version: v1.4.2
       go-versions: '["1.26", "1.27"]'
       run-govulncheck: true
       # Measured 91.5 % with the coverpkg below (go-ci method).
