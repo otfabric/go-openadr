@@ -103,6 +103,17 @@ the document lists for creates. The conflict is with what the client already
 keeps, and deleting some resolves it. Too many callback URLs is a fault of the
 request, and is answered 400 on the field.
 
+**A request body must be JSON, or say nothing.** Every requestBody of the
+document is `application/json`. A body declared otherwise (`text/plain`, a
+form) is answered 415 Unsupported Media Type, as OpenLEADR does. A body
+without `Content-Type` is read as JSON, which RFC 9110 section 8.3 allows;
+OpenLEADR answers it 415 and cB-Sigma 400 (testdata/transcripts).
+
+**The token endpoint's 401 has a challenge.** `auth.Issuer` answers
+credentials it does not accept with 401 `invalid_client` and
+`WWW-Authenticate: Basic realm="openadr"`, whether they came in the form or
+by HTTP Basic: RFC 9110 section 15.5.2 requires a challenge with every 401.
+
 **Targets match on any common target.** An object with targets `[a, b]`
 matches a request or a grant that has `a`. The Definition says "target
 matching" without defining it.

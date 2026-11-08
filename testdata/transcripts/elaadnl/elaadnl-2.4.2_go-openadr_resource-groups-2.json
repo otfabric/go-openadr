@@ -1,0 +1,861 @@
+{
+  "schema": "openadr-transcript/1",
+  "name": "elaadnl-2.4.2_go-openadr_resource-groups-2",
+  "source": "elaadnl",
+  "level": "D",
+  "protocolVersion": "3.1.0",
+  "peer": "elaadnl 2.4.2 (ghcr.io/otfabric/openadr-interop-elaadnl@sha256:48b02fd2cbef75282093804837330a681934c4473c6e6907862ea8f0b34a3a65)",
+  "peerRole": "VEN+BL",
+  "recorded": "2026-11-08",
+  "recorder": "go-openadr interop suite, TestElaadNLResourceGroups",
+  "fixture": "baseline",
+  "setup": {
+    "anonymous": "false",
+    "mqtt": "false",
+    "resourceGroups": "false",
+    "tls": "false",
+    "webhooks": "false",
+    "websocket": "false"
+  },
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "secretPlaceholder": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "secretPlaceholder": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "secretPlaceholder": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "secretPlaceholder": "redacted-secret-ven-3"
+    }
+  ],
+  "redactions": [
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-1",
+      "count": 8
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-2",
+      "count": 2
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-bl",
+      "count": 2
+    },
+    {
+      "kind": "endpoint",
+      "placeholder": "http://vtn.invalid",
+      "count": 2
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 83,
+        "bodySHA256": "b38b8d67c411142b9ce3235ffaecca66ca9d916d70bdd1bbde80189a04221c41"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 3600,
+          "scope": "read_all write_programs write_events write_subscriptions write_vens"
+        },
+        "bodyLength": 154,
+        "bodySHA256": "b4dc98214bf5d9409f291dc2e928ce719e7a940768d6f1716d3cea454f1e24ab"
+      }
+    },
+    {
+      "n": 2,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/vens",
+        "path": "/vens",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "clientID": "interop-ven-1",
+          "objectType": "BL_VEN_REQUEST",
+          "targets": [
+            "group-a"
+          ],
+          "venName": "site-1"
+        },
+        "bodyLength": 99,
+        "bodySHA256": "714471a1635ac02a9bde34dcadc22cedcf3bd555a955d1cdb304aec90826d958"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "86fd61b38fd0b065702d5668e6856dc5",
+          "createdDateTime": "2026-11-08T15:56:11.627778Z",
+          "modificationDateTime": "2026-11-08T15:56:11.627778Z",
+          "objectType": "VEN",
+          "clientID": "interop-ven-1",
+          "venName": "site-1",
+          "targets": [
+            "group-a"
+          ]
+        },
+        "bodyLength": 229,
+        "bodySHA256": "46f4531a67f61c9f73d9119ed2343b4e5b5e998eb47854ccd07d12c869d6e5ac"
+      },
+      "state": {
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5"
+        ]
+      }
+    },
+    {
+      "n": 3,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/vens",
+        "path": "/vens",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "clientID": "interop-ven-2",
+          "objectType": "BL_VEN_REQUEST",
+          "targets": null,
+          "venName": "site-2"
+        },
+        "bodyLength": 92,
+        "bodySHA256": "4691100fad8c0b81c8640aaf0495f1d86134a9b9b5a27a7a540c2ab4de4c8e5e"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "dfb48433255c401d4f76039e13c4ce26",
+          "createdDateTime": "2026-11-08T15:56:11.627952Z",
+          "modificationDateTime": "2026-11-08T15:56:11.627952Z",
+          "objectType": "VEN",
+          "clientID": "interop-ven-2",
+          "venName": "site-2"
+        },
+        "bodyLength": 207,
+        "bodySHA256": "fa187d77f4810517048c8e05c9686a9760f35401748edf60065e562a716749df"
+      },
+      "state": {
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 4,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/resources",
+        "path": "/resources",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "clientID": "interop-ven-1",
+          "objectType": "BL_RESOURCE_REQUEST",
+          "resourceName": "battery",
+          "venID": "86fd61b38fd0b065702d5668e6856dc5"
+        },
+        "bodyLength": 131,
+        "bodySHA256": "c0536eb817392a7120bfb4379f1abcfd8b2645db5670edf822471fa14c076e0d"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "db72adb97d12b3191f40df645d6b8b95",
+          "createdDateTime": "2026-11-08T15:56:11.628101Z",
+          "modificationDateTime": "2026-11-08T15:56:11.628101Z",
+          "objectType": "RESOURCE",
+          "clientID": "interop-ven-1",
+          "resourceName": "battery",
+          "venID": "86fd61b38fd0b065702d5668e6856dc5"
+        },
+        "bodyLength": 261,
+        "bodySHA256": "efd62225dc08984ea461e99dac474893ff40a538d529d760f2fecd781bee3520"
+      },
+      "state": {
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 5,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "payloadDescriptors": [
+            {
+              "currency": "EUR",
+              "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+              "payloadType": "PRICE",
+              "units": "KWH"
+            }
+          ],
+          "programName": "day-ahead"
+        },
+        "bodyLength": 145,
+        "bodySHA256": "803b975aa713140018eec31370351d9db246f6fa39c0e4a920b2bad11a404c20"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "e743917bad98c7f76c446e9524d0e571",
+          "createdDateTime": "2026-11-08T15:56:11.628256Z",
+          "modificationDateTime": "2026-11-08T15:56:11.628256Z",
+          "objectType": "PROGRAM",
+          "programName": "day-ahead",
+          "payloadDescriptors": [
+            {
+              "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+              "payloadType": "PRICE",
+              "units": "KWH",
+              "currency": "EUR"
+            }
+          ]
+        },
+        "bodyLength": 309,
+        "bodySHA256": "9bc572bffd4ed320219f2de230070573b1b247b1a16367a19906ed3b16ed6e2c"
+      },
+      "state": {
+        "programs": [
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 6,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "group-a-flex",
+          "targets": [
+            "group-a"
+          ]
+        },
+        "bodyLength": 52,
+        "bodySHA256": "2ccbfa08ac99aca5b3c43dd678a7a5176d523684acce84a9462c70a832a64f73"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "2c7374a39782d7744383e68224b9050d",
+          "createdDateTime": "2026-11-08T15:56:11.628403Z",
+          "modificationDateTime": "2026-11-08T15:56:11.628403Z",
+          "objectType": "PROGRAM",
+          "programName": "group-a-flex",
+          "targets": [
+            "group-a"
+          ]
+        },
+        "bodyLength": 216,
+        "bodySHA256": "7a91193eefe61eb6a85383ebf2b6fc74872dc40ffef987955885f915247658b0"
+      },
+      "state": {
+        "programs": [
+          "2c7374a39782d7744383e68224b9050d",
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 7,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/events",
+        "path": "/events",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "eventName": "day-ahead-prices",
+          "intervalPeriod": {
+            "duration": "PT1H",
+            "start": "2030-01-01T00:00:00Z"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.17
+                  ]
+                }
+              ]
+            },
+            {
+              "id": 1,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.21
+                  ]
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.09
+                  ]
+                }
+              ]
+            }
+          ],
+          "priority": 1,
+          "programID": "e743917bad98c7f76c446e9524d0e571",
+          "reportDescriptors": [
+            {
+              "payloadType": "USAGE"
+            }
+          ]
+        },
+        "bodyLength": 385,
+        "bodySHA256": "152d3572c9c667e6e5d7c6c835ee923e278e625ff9a372d78bdaf7357b341e77"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "b5fa5743963938037cb1212d23ffef3d",
+          "createdDateTime": "2026-11-08T15:56:11.628563Z",
+          "modificationDateTime": "2026-11-08T15:56:11.628563Z",
+          "objectType": "EVENT",
+          "programID": "e743917bad98c7f76c446e9524d0e571",
+          "eventName": "day-ahead-prices",
+          "priority": 1,
+          "reportDescriptors": [
+            {
+              "payloadType": "USAGE",
+              "aggregate": false,
+              "startInterval": -1,
+              "numIntervals": -1,
+              "historical": true,
+              "frequency": -1,
+              "repeat": 1,
+              "reportIntervals": "INTERVALS"
+            }
+          ],
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00Z",
+            "duration": "PT1H"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.17
+                  ]
+                }
+              ]
+            },
+            {
+              "id": 1,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.21
+                  ]
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.09
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 676,
+        "bodySHA256": "c38f3266b6b757f03cfa21a5b55e81f4c650ad4414173c82c4ae0ddc918d0dee"
+      },
+      "state": {
+        "events": [
+          "b5fa5743963938037cb1212d23ffef3d"
+        ],
+        "programs": [
+          "2c7374a39782d7744383e68224b9050d",
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 8,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/events",
+        "path": "/events",
+        "headers": {
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "eventName": "group-a-limit",
+          "intervalPeriod": {
+            "duration": "PT2H",
+            "start": "2030-01-01T17:00:00Z"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "IMPORT_CAPACITY_LIMIT",
+                  "values": [
+                    11.5
+                  ]
+                }
+              ]
+            }
+          ],
+          "programID": "2c7374a39782d7744383e68224b9050d",
+          "targets": [
+            "group-a"
+          ]
+        },
+        "bodyLength": 251,
+        "bodySHA256": "02b62cb29757e5915555e147b7a2a38679c494d0cfc178aa4cf45971cf7540e7"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "e542f3b129058f0ebf63d323e2f4fe72",
+          "createdDateTime": "2026-11-08T15:56:11.628766Z",
+          "modificationDateTime": "2026-11-08T15:56:11.628766Z",
+          "objectType": "EVENT",
+          "programID": "2c7374a39782d7744383e68224b9050d",
+          "eventName": "group-a-limit",
+          "targets": [
+            "group-a"
+          ],
+          "intervalPeriod": {
+            "start": "2030-01-01T17:00:00Z",
+            "duration": "PT2H"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "IMPORT_CAPACITY_LIMIT",
+                  "values": [
+                    11.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 413,
+        "bodySHA256": "7799c9c9e0830168e0a114117725381ff863235cf44715178fa6214fc1eadcd2"
+      },
+      "state": {
+        "events": [
+          "b5fa5743963938037cb1212d23ffef3d",
+          "e542f3b129058f0ebf63d323e2f4fe72"
+        ],
+        "programs": [
+          "2c7374a39782d7744383e68224b9050d",
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 9,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "peer",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "*/*",
+          "Accept-Encoding": "gzip, deflate, zstd",
+          "User-Agent": "python-requests/2.34.2"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04"
+      },
+      "state": {
+        "events": [
+          "b5fa5743963938037cb1212d23ffef3d",
+          "e542f3b129058f0ebf63d323e2f4fe72"
+        ],
+        "programs": [
+          "2c7374a39782d7744383e68224b9050d",
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 10,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "peer",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "*/*",
+          "Accept-Encoding": "gzip, deflate, zstd",
+          "User-Agent": "python-requests/2.34.2"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04"
+      },
+      "state": {
+        "events": [
+          "b5fa5743963938037cb1212d23ffef3d",
+          "e542f3b129058f0ebf63d323e2f4fe72"
+        ],
+        "programs": [
+          "2c7374a39782d7744383e68224b9050d",
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 11,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "peer",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip, deflate, zstd",
+          "Authorization": "Basic aW50ZXJvcC1ibDpyZWRhY3RlZC1zZWNyZXQtYmw=",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "python-requests/2.34.2"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 29,
+        "bodySHA256": "c349b29ae2fc682adb26699a6ecd69cad661a27f2542e713b89314b6e2abfaec"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-2",
+          "token_type": "Bearer",
+          "expires_in": 3600,
+          "scope": "read_all write_programs write_events write_subscriptions write_vens"
+        },
+        "bodyLength": 154,
+        "bodySHA256": "4f9bd60ebd4fa23b434489a6ad29db2204fb604c5bbc3f1cf5b04f85758ea542"
+      },
+      "state": {
+        "events": [
+          "b5fa5743963938037cb1212d23ffef3d",
+          "e542f3b129058f0ebf63d323e2f4fe72"
+        ],
+        "programs": [
+          "2c7374a39782d7744383e68224b9050d",
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    },
+    {
+      "n": 12,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "peer",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "headers": {
+          "Accept": "*/*",
+          "Accept-Encoding": "gzip, deflate, zstd",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "python-requests/2.34.2"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "title": "Not Found",
+          "status": 404,
+          "detail": "unrecognized URL"
+        },
+        "bodyLength": 62,
+        "bodySHA256": "8fa693a23d1b5c6316067e1b98126f712bce238de3405b4319ebb8e3e654f52b"
+      },
+      "state": {
+        "events": [
+          "b5fa5743963938037cb1212d23ffef3d",
+          "e542f3b129058f0ebf63d323e2f4fe72"
+        ],
+        "programs": [
+          "2c7374a39782d7744383e68224b9050d",
+          "e743917bad98c7f76c446e9524d0e571"
+        ],
+        "resources": [
+          "db72adb97d12b3191f40df645d6b8b95"
+        ],
+        "vens": [
+          "86fd61b38fd0b065702d5668e6856dc5",
+          "dfb48433255c401d4f76039e13c4ce26"
+        ]
+      }
+    }
+  ]
+}

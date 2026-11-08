@@ -12,6 +12,7 @@ How to run each tier. No external VTN is needed: tests run the clients against t
 | Fuzz | `make fuzz` (`FUZZTIME`, default 30s) | none | yes, 10s per target |
 | Benchmarks | `make bench` | none | no |
 | Example stores | `make storage` | Docker for PostgreSQL | yes, `storage` job |
+| Recorded transcripts | `make transcripts-verify` | none | yes, `transcripts` job; the replays also run in `make test` |
 | Interop | `make interop` | Docker | Interop workflow |
 | Cross-compile | `make cross` | none | no |
 | No dependencies | `make nodeps` | none | yes |
@@ -26,6 +27,28 @@ How to run each tier. No external VTN is needed: tests run the clients against t
 | `OPENADR_STORAGE_REQUIRE`, `OPENADR_POSTGRES_DSN`, `OPENADR_POSTGRES_IMAGE` | The PostgreSQL store test |
 | `OPENADR_TEST_MDNS` | Enables the multicast DNS test |
 
+## Recorded transcripts
+
+[testdata/transcripts](testdata/transcripts/README.md) holds exchanges
+recorded against OpenLEADR v0.2.8 and v0.1.4, cB-Sigma v0.2.0 and the
+ElaadNL client 2.4.2 (level D, software testbed), and cases built from the
+OpenAPI documents of 3.1.0 and 3.0.1 (level E). The tests over them:
+
+| Test | Package | What it does |
+|---|---|---|
+| `TestCorpusDecode` | `internal/transcript` | Decodes every JSON body (1263, 706 of them sent by another implementation) with the codec of its revision, encodes it again and compares |
+| `TestSpecCases` | `internal/transcript` | The same for the specification cases (37 of 3.1.0, 13 of 3.0.1) and its example values |
+| `TestTranscriptClientReplay` | `client` | Replays 515 recorded VTN answers through the VEN and BL clients: the request must be the recorded one, the result or error the recorded answer |
+| `TestTranscriptServerReplay` | `server` | Replays 643 requests (498 of another implementation's client) to a new VTN set up as the recorded one; every answer must match |
+| `TestTranscriptDifferential` | `server` | Sends the 312 requests of the scenarios recorded against OpenLEADR and cB-Sigma to this module's VTN; every different answer is classified |
+| `TestTranscriptWebhooks` | `notification/webhook` | Replays cB-Sigma's webhook requests to `webhook.Handler` |
+| `TestCorpusManifest`, `TestKnownTableUsed` | `internal/transcript` | The manifest and SHA256SUMS agree with the files; no entry of a table of known differences is stale |
+
+`make transcripts-record` records them again (Docker), `make transcripts-spec`
+rebuilds the cases (yq, python3), `make transcripts-manifest` the manifest.
+`internal/transcript` is test infrastructure and is not in `COVER_PKGS`, as
+`internal/mqtttest` and `internal/leakcheck` are not.
+
 ## Coverage
 
 `make coverage` measures `COVER_PKGS`: the library packages, whichever package's tests exercise them. Excluded: the examples, `e2e`, the interop suite and the test helper `internal/mqtttest` (see the `COVER_PKGS` line of the [Makefile](Makefile)). `make coverage-check` fails below `COVER_MIN` (91), the same minimum as `coverage-min` in `.github/workflows/ci.yml`.
@@ -38,4 +61,6 @@ The packages that start goroutines, and `e2e`, run through `internal/leakcheck` 
 
 ## Fuzz regressions
 
-`make fuzz` lists its six targets by name. A failing input is written to `testdata/fuzz/<target>/` of the package. Commit it with the fix: `go test` replays it from then on.
+`make fuzz` lists its six targets by name. A failing input is written to `testdata/fuzz/<target>/` of the package. Commit it with the fix: `go test` replays it from then on. The seeds
+`transcript-*` of `FuzzCodec` are the recorded bodies
+(`scripts/transcripts-fuzz-seeds.py`).

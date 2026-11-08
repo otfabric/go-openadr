@@ -1,0 +1,555 @@
+{
+  "schema": "openadr-transcript/1",
+  "name": "go-openadr_openleadr-0.1.4_vens-and-resources",
+  "source": "openleadr301",
+  "level": "D",
+  "protocolVersion": "3.0.1",
+  "peer": "openleadr 0.1.4 (ghcr.io/otfabric/openadr-interop-openleadr301@sha256:ce3c87d9a633ef90816a3bba5daf972a19013b501cc728a64445767e93de0256)",
+  "peerRole": "VTN",
+  "recorded": "2026-11-08",
+  "recorder": "go-openadr interop suite, TestOpenLEADR301VENsAndResources",
+  "fixture": "baseline-301",
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "secretPlaceholder": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "secretPlaceholder": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "secretPlaceholder": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "secretPlaceholder": "redacted-secret-ven-3"
+    }
+  ],
+  "redactions": [
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-1",
+      "count": 10
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-bl",
+      "count": 1
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 83,
+        "bodySHA256": "b38b8d67c411142b9ce3235ffaecca66ca9d916d70bdd1bbde80189a04221c41"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf"
+      }
+    },
+    {
+      "n": 2,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/vens",
+        "path": "/vens",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "venName": "ven-18e61d0a820908f0",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "group-18e61d0a820908f0"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 99,
+        "bodySHA256": "f73caa38a72c12a64c48967eaaf7668af2e46583051c9008483c9cbe8aa68693"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+          "createdDateTime": "2026-11-08T15:57:12.526791+00:00",
+          "modificationDateTime": "2026-11-08T15:57:12.526791+00:00",
+          "objectType": "VEN",
+          "venName": "ven-18e61d0a820908f0",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "group-18e61d0a820908f0"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 273,
+        "bodySHA256": "fa9587078aa9425652c92a26f59567d866440a6cacaa243743fcd36935e6bbc1"
+      },
+      "state": {
+        "vens": [
+          "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        ]
+      }
+    },
+    {
+      "n": 3,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/vens/{venID}/resources",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86/resources",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "resourceName": "meter",
+          "venID": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        },
+        "bodyLength": 71,
+        "bodySHA256": "4b189a7dd0b6e80a443cab58b42883166cbf9fbf52af782c2472b164262eea61"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+          "createdDateTime": "2026-11-08T15:57:12.527876+00:00",
+          "modificationDateTime": "2026-11-08T15:57:12.527876+00:00",
+          "venID": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+          "objectType": "RESOURCE",
+          "resourceName": "meter"
+        },
+        "bodyLength": 250,
+        "bodySHA256": "b409a363d40c4c1876962abe8b8fd137d510bccd348f0ca9780e2e2f3cde3bf6"
+      },
+      "state": {
+        "vens": [
+          "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        ],
+        "vens/resources": [
+          "aaa9741e-5771-4fc5-b88b-13b1c8dc3991"
+        ]
+      }
+    },
+    {
+      "n": 4,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens/{venID}/resources/{resourceID}",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86/resources/aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+          "createdDateTime": "2026-11-08T15:57:12.527876+00:00",
+          "modificationDateTime": "2026-11-08T15:57:12.527876+00:00",
+          "venID": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+          "objectType": "RESOURCE",
+          "resourceName": "meter"
+        },
+        "bodyLength": 250,
+        "bodySHA256": "b409a363d40c4c1876962abe8b8fd137d510bccd348f0ca9780e2e2f3cde3bf6"
+      },
+      "state": {
+        "vens": [
+          "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        ],
+        "vens/resources": [
+          "aaa9741e-5771-4fc5-b88b-13b1c8dc3991"
+        ]
+      }
+    },
+    {
+      "n": 5,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/vens/{venID}/resources/{resourceID}",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86/resources/aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "resourceName": "meter-2",
+          "venID": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        },
+        "bodyLength": 73,
+        "bodySHA256": "fe59d03e7da907f1c81cb37ae309720e947763ba620d24836003bab0bcc3be66"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+          "createdDateTime": "2026-11-08T15:57:12.527876+00:00",
+          "modificationDateTime": "2026-11-08T15:57:12.530317+00:00",
+          "venID": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+          "objectType": "RESOURCE",
+          "resourceName": "meter-2"
+        },
+        "bodyLength": 252,
+        "bodySHA256": "c356fcb5ad61b0add36c6fed30a18ca6da9903e17fc73cd7837563910a804cfa"
+      },
+      "state": {
+        "vens": [
+          "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        ],
+        "vens/resources": [
+          "aaa9741e-5771-4fc5-b88b-13b1c8dc3991"
+        ]
+      }
+    },
+    {
+      "n": 6,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens/{venID}/resources",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86/resources",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+            "createdDateTime": "2026-11-08T15:57:12.527876+00:00",
+            "modificationDateTime": "2026-11-08T15:57:12.530317+00:00",
+            "venID": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+            "objectType": "RESOURCE",
+            "resourceName": "meter-2"
+          }
+        ],
+        "bodyLength": 254,
+        "bodySHA256": "99b2bbfdf19c934d169214012d017a8eea66a95af1c76690b6aa9b98b5d1e70d"
+      },
+      "state": {
+        "vens": [
+          "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        ],
+        "vens/resources": [
+          "aaa9741e-5771-4fc5-b88b-13b1c8dc3991"
+        ]
+      }
+    },
+    {
+      "n": 7,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/vens/{venID}/resources/{resourceID}",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86/resources/aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "aaa9741e-5771-4fc5-b88b-13b1c8dc3991",
+          "createdDateTime": "2026-11-08T15:57:12.527876+00:00",
+          "modificationDateTime": "2026-11-08T15:57:12.530317+00:00",
+          "venID": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+          "objectType": "RESOURCE",
+          "resourceName": "meter-2"
+        },
+        "bodyLength": 252,
+        "bodySHA256": "c356fcb5ad61b0add36c6fed30a18ca6da9903e17fc73cd7837563910a804cfa"
+      },
+      "state": {
+        "vens": [
+          "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        ]
+      }
+    },
+    {
+      "n": 8,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/vens/{venID}",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "venName": "ven-18e61d0a820908f0",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "group-18e61d0a820908f0"
+              ]
+            },
+            {
+              "type": "VEN_NAME",
+              "values": [
+                "site-1"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 139,
+        "bodySHA256": "43d5827b0a12e23ed7470a8cda11a65156eadd7efd5e078ed813e9149948731e"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+          "createdDateTime": "2026-11-08T15:57:12.526791+00:00",
+          "modificationDateTime": "2026-11-08T15:57:12.535242+00:00",
+          "objectType": "VEN",
+          "venName": "ven-18e61d0a820908f0",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "group-18e61d0a820908f0"
+              ]
+            },
+            {
+              "type": "VEN_NAME",
+              "values": [
+                "site-1"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 313,
+        "bodySHA256": "10b3f1ac88a2f931cbe377f697ea9b1e075c3042e0591b60cc72789ea2e5fe8e"
+      },
+      "state": {
+        "vens": [
+          "c6724c26-c78e-4f2e-a5c9-7db7329d2b86"
+        ]
+      }
+    },
+    {
+      "n": 9,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/vens/{venID}",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+          "createdDateTime": "2026-11-08T15:57:12.526791+00:00",
+          "modificationDateTime": "2026-11-08T15:57:12.535242+00:00",
+          "objectType": "VEN",
+          "venName": "ven-18e61d0a820908f0",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "group-18e61d0a820908f0"
+              ]
+            },
+            {
+              "type": "VEN_NAME",
+              "values": [
+                "site-1"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 313,
+        "bodySHA256": "10b3f1ac88a2f931cbe377f697ea9b1e075c3042e0591b60cc72789ea2e5fe8e"
+      }
+    },
+    {
+      "n": 10,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/vens/{venID}",
+        "path": "/vens/c6724c26-c78e-4f2e-a5c9-7db7329d2b86",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "0536dd6a-e4f4-43d2-b19f-fc0710d0edfe"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "46d9580ca1d703f13513bbcd8173680f94bd443c02ebb06372e9d6cd3abd9957"
+      }
+    }
+  ]
+}

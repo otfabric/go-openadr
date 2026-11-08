@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(3)
+[]byte("{\"id\":\"1796e48c-3d8f-41db-b5c2-86cecb47a008\",\"createdDateTime\":\"2026-11-08T15:57:26.967433+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:26.967433+00:00\",\"clientID\":\"transcript-client-518786\",\"targets\":[\"transcript-group\"],\"venName\":\"transcript-ven-518786\",\"attributes\":[{\"type\":\"LOCATION\",\"values\":[\"NL\"]}]}")

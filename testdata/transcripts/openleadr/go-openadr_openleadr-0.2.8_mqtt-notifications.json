@@ -1,0 +1,1094 @@
+{
+  "schema": "openadr-transcript/1",
+  "name": "go-openadr_openleadr-0.2.8_mqtt-notifications",
+  "source": "openleadr",
+  "level": "D",
+  "protocolVersion": "3.1.0",
+  "peer": "openleadr 0.2.8 (ghcr.io/otfabric/openadr-interop-openleadr@sha256:8f5c8e55a31a50888d2eca6da6431734c32b589b5151c68e86ddb68076da171e)",
+  "peerRole": "VTN",
+  "recorded": "2026-11-08",
+  "recorder": "go-openadr interop suite, TestOpenLEADRMQTTNotifications",
+  "fixture": "baseline",
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "secretPlaceholder": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "secretPlaceholder": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "secretPlaceholder": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "secretPlaceholder": "redacted-secret-ven-3"
+    }
+  ],
+  "redactions": [
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-1",
+      "count": 4
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-2",
+      "count": 9
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-bl",
+      "count": 1
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-ven-1",
+      "count": 1
+    },
+    {
+      "kind": "endpoint",
+      "placeholder": "http://vtn.invalid",
+      "count": 2
+    },
+    {
+      "kind": "endpoint",
+      "placeholder": "mqtt://broker.invalid",
+      "count": 2
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 2,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "8f91da093514086c0d7012b0c092a19eb9ee46737ae786dfa4cc0fbe01226285"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 3,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/notifiers",
+        "path": "/notifiers",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "WEBSOCKET": true,
+          "MQTT": {
+            "URIS": [
+              "mqtt://broker.invalid"
+            ],
+            "serialization": "JSON",
+            "authentication": {
+              "method": "OAUTH2BEARERTOKEN",
+              "username": "{clientID}"
+            }
+          },
+          "PUSH-MQTT": {
+            "URIS": [
+              "mqtt://broker.invalid"
+            ],
+            "serialization": "JSON",
+            "authentication": {
+              "method": "OAUTH2BEARERTOKEN",
+              "username": "{clientID}"
+            }
+          }
+        },
+        "bodyLength": 297,
+        "bodySHA256": "e9e30d1f14f8c4570fdfc3670f011ff37f73e0287da142ecc23001e4d811fbaf",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 4,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens",
+        "path": "/vens",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "5183cee1-026f-4615-b12e-64b3555bf325",
+            "createdDateTime": "2026-11-08T15:57:03.638678+00:00",
+            "modificationDateTime": "2026-11-08T15:57:03.638678+00:00",
+            "clientID": "interop-ven-1",
+            "targets": [
+              "group-a"
+            ],
+            "venName": "site-1"
+          }
+        ],
+        "bodyLength": 226,
+        "bodySHA256": "6dec1aec9d787ac2bbc5617032d72709d314d9e053ac944260c0c9723811adec",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 5,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/notifiers/mqtt/topics/vens/{venID}/events",
+        "path": "/notifiers/mqtt/topics/vens/5183cee1-026f-4615-b12e-64b3555bf325/events",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "topics": {
+            "CREATE": "events/vens/5183cee1-026f-4615-b12e-64b3555bf325/create",
+            "UPDATE": "events/vens/5183cee1-026f-4615-b12e-64b3555bf325/update",
+            "DELETE": "events/vens/5183cee1-026f-4615-b12e-64b3555bf325/delete",
+            "ALL": "events/vens/5183cee1-026f-4615-b12e-64b3555bf325/+"
+          }
+        },
+        "bodyLength": 272,
+        "bodySHA256": "fca573562bfa91c35ba699b0bbc21893711d73c7e6f7cf405027008ef926a991",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 6,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 7,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 83,
+        "bodySHA256": "b38b8d67c411142b9ce3235ffaecca66ca9d916d70bdd1bbde80189a04221c41"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-2",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "54a780dc1dcf9045e671b519707c7cebf891baace1dac14fa6f6d5369e546eb0",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 8,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/notifiers/mqtt/topics/events",
+        "path": "/notifiers/mqtt/topics/events",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "topics": {
+            "CREATE": "events/create",
+            "UPDATE": "events/update",
+            "DELETE": "events/delete",
+            "ALL": "events/+"
+          }
+        },
+        "bodyLength": 104,
+        "bodySHA256": "5a636e2c6a3b02640a56d7e52c042baf5065ec0fb72248ecc2ed1fddb1684675",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 9,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "d576b4f4-1882-401d-b71e-5f562dfb2547",
+            "createdDateTime": "2026-11-08T15:57:03.651591+00:00",
+            "modificationDateTime": "2026-11-08T15:57:03.651591+00:00",
+            "objectType": "PROGRAM",
+            "programName": "group-a-flex",
+            "targets": [
+              "group-a"
+            ]
+          },
+          {
+            "id": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "createdDateTime": "2026-11-08T15:57:03.643228+00:00",
+            "modificationDateTime": "2026-11-08T15:57:03.643228+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ],
+            "targets": []
+          }
+        ],
+        "bodyLength": 569,
+        "bodySHA256": "e2377d160929a54d1bbd370f711ddb533c41f65be927a951f76e33596ca83001",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 10,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/notifiers/mqtt/topics/programs/{programID}",
+        "path": "/notifiers/mqtt/topics/programs/3d91ff14-4866-4cab-a102-d0999e82b9b6",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "topics": {
+            "UPDATE": "programs/3d91ff14-4866-4cab-a102-d0999e82b9b6/update",
+            "DELETE": "programs/3d91ff14-4866-4cab-a102-d0999e82b9b6/delete",
+            "ALL": "programs/3d91ff14-4866-4cab-a102-d0999e82b9b6/+"
+          }
+        },
+        "bodyLength": 196,
+        "bodySHA256": "c8ca68cc09f8c5ab4fd58038e6ab48e856d5296286fc66e5b8403f97394e8bc1",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 11,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "d576b4f4-1882-401d-b71e-5f562dfb2547",
+            "createdDateTime": "2026-11-08T15:57:03.651591+00:00",
+            "modificationDateTime": "2026-11-08T15:57:03.651591+00:00",
+            "objectType": "PROGRAM",
+            "programName": "group-a-flex",
+            "targets": [
+              "group-a"
+            ]
+          },
+          {
+            "id": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "createdDateTime": "2026-11-08T15:57:03.643228+00:00",
+            "modificationDateTime": "2026-11-08T15:57:03.643228+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ],
+            "targets": []
+          }
+        ],
+        "bodyLength": 569,
+        "bodySHA256": "e2377d160929a54d1bbd370f711ddb533c41f65be927a951f76e33596ca83001",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 12,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/events",
+        "path": "/events",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+          "eventName": "mqtt-18e61d08839158f0",
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00Z",
+            "duration": "PT1H"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.42
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 225,
+        "bodySHA256": "cca353e435f6ec6c6376062e612428ca5ecdadd65a557fb8e15b21a8529ae85d"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+          "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+          "modificationDateTime": "2026-11-08T15:57:04.423860+00:00",
+          "objectType": "EVENT",
+          "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+          "eventName": "mqtt-18e61d08839158f0",
+          "priority": null,
+          "targets": [],
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00+00:00",
+            "duration": "P0Y0M0DT1H0M0S"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.42
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 445,
+        "bodySHA256": "2e3ff846b637dc8d3584d812ece934de8cc09fdf8d3ea8db4add3aca324fd406",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "events": [
+          "906c7297-b0c9-4789-8a9d-32f8ceb65fc2"
+        ]
+      }
+    },
+    {
+      "n": 13,
+      "transport": "mqtt",
+      "actor": "VTN",
+      "origin": "peer",
+      "message": {
+        "topic": "vens/5183cee1-026f-4615-b12e-64b3555bf325/events/create",
+        "bodyFormat": "json",
+        "body": {
+          "id": "01a1bbe0-a628-7624-8b4f-34af98796bc1",
+          "operation": "CREATE",
+          "objectType": "EVENT",
+          "object": {
+            "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+            "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "modificationDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "objectType": "EVENT",
+            "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "eventName": "mqtt-18e61d08839158f0",
+            "priority": null,
+            "targets": [],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.42
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "bodyLength": 542,
+        "bodySHA256": "5900b147cb77c3881988db1b44a38a097ea805bdd46a72aedd92f9255c839a25"
+      }
+    },
+    {
+      "n": 14,
+      "transport": "mqtt",
+      "actor": "VTN",
+      "origin": "peer",
+      "message": {
+        "topic": "events/create",
+        "bodyFormat": "json",
+        "body": {
+          "id": "01a1bbe0-a628-7624-8b4f-34af98796bc1",
+          "operation": "CREATE",
+          "objectType": "EVENT",
+          "object": {
+            "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+            "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "modificationDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "objectType": "EVENT",
+            "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "eventName": "mqtt-18e61d08839158f0",
+            "priority": null,
+            "targets": [],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.42
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "bodyLength": 542,
+        "bodySHA256": "5900b147cb77c3881988db1b44a38a097ea805bdd46a72aedd92f9255c839a25"
+      }
+    },
+    {
+      "n": 15,
+      "transport": "mqtt",
+      "actor": "VTN",
+      "origin": "peer",
+      "message": {
+        "topic": "events/update",
+        "bodyFormat": "json",
+        "body": {
+          "id": "01a1bbe0-a652-7357-a768-a81e1d53b675",
+          "operation": "UPDATE",
+          "objectType": "EVENT",
+          "object": {
+            "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+            "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "modificationDateTime": "2026-11-08T15:57:04.466461+00:00",
+            "objectType": "EVENT",
+            "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "eventName": "mqtt-18e61d08839158f0-revised",
+            "priority": null,
+            "targets": [],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.42
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "bodyLength": 550,
+        "bodySHA256": "54636dd19e958c306e399002199d02357a967a94016d5c1ac6f7ebcc3d59c9ac"
+      }
+    },
+    {
+      "n": 16,
+      "transport": "mqtt",
+      "actor": "VTN",
+      "origin": "peer",
+      "message": {
+        "topic": "vens/5183cee1-026f-4615-b12e-64b3555bf325/events/update",
+        "bodyFormat": "json",
+        "body": {
+          "id": "01a1bbe0-a652-7357-a768-a81e1d53b675",
+          "operation": "UPDATE",
+          "objectType": "EVENT",
+          "object": {
+            "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+            "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "modificationDateTime": "2026-11-08T15:57:04.466461+00:00",
+            "objectType": "EVENT",
+            "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "eventName": "mqtt-18e61d08839158f0-revised",
+            "priority": null,
+            "targets": [],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.42
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "bodyLength": 550,
+        "bodySHA256": "54636dd19e958c306e399002199d02357a967a94016d5c1ac6f7ebcc3d59c9ac"
+      }
+    },
+    {
+      "n": 17,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/events/{eventID}",
+        "path": "/events/906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+          "eventName": "mqtt-18e61d08839158f0-revised",
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00Z",
+            "duration": "PT1H"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.42
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 233,
+        "bodySHA256": "a8186e79f2f22a281e2b2f233a8bd00226bf443be29eb42842a88bad4fdbc43f"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+          "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+          "modificationDateTime": "2026-11-08T15:57:04.466461+00:00",
+          "objectType": "EVENT",
+          "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+          "eventName": "mqtt-18e61d08839158f0-revised",
+          "priority": null,
+          "targets": [],
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00+00:00",
+            "duration": "P0Y0M0DT1H0M0S"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.42
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 453,
+        "bodySHA256": "117d040f0059b5b01f3f7807d437f2eb7c7e2fe8dd6c999891b904cd4554ddb0",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "events": [
+          "906c7297-b0c9-4789-8a9d-32f8ceb65fc2"
+        ]
+      }
+    },
+    {
+      "n": 18,
+      "transport": "mqtt",
+      "actor": "VTN",
+      "origin": "peer",
+      "message": {
+        "topic": "events/delete",
+        "bodyFormat": "json",
+        "body": {
+          "id": "01a1bbe0-a659-7197-b213-7f86353b0d47",
+          "operation": "DELETE",
+          "objectType": "EVENT",
+          "object": {
+            "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+            "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "modificationDateTime": "2026-11-08T15:57:04.466461+00:00",
+            "objectType": "EVENT",
+            "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "eventName": "mqtt-18e61d08839158f0-revised",
+            "priority": null,
+            "targets": [],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.42
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "bodyLength": 550,
+        "bodySHA256": "5448585dcabe2fe43dbb4362d54410d74679438290995fc255c8b33ad54912f4"
+      }
+    },
+    {
+      "n": 19,
+      "transport": "mqtt",
+      "actor": "VTN",
+      "origin": "peer",
+      "message": {
+        "topic": "vens/5183cee1-026f-4615-b12e-64b3555bf325/events/delete",
+        "bodyFormat": "json",
+        "body": {
+          "id": "01a1bbe0-a659-7197-b213-7f86353b0d47",
+          "operation": "DELETE",
+          "objectType": "EVENT",
+          "object": {
+            "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+            "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+            "modificationDateTime": "2026-11-08T15:57:04.466461+00:00",
+            "objectType": "EVENT",
+            "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+            "eventName": "mqtt-18e61d08839158f0-revised",
+            "priority": null,
+            "targets": [],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.42
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "bodyLength": 550,
+        "bodySHA256": "5448585dcabe2fe43dbb4362d54410d74679438290995fc255c8b33ad54912f4"
+      }
+    },
+    {
+      "n": 20,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/events/{eventID}",
+        "path": "/events/906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+          "createdDateTime": "2026-11-08T15:57:04.423860+00:00",
+          "modificationDateTime": "2026-11-08T15:57:04.466461+00:00",
+          "objectType": "EVENT",
+          "programID": "3d91ff14-4866-4cab-a102-d0999e82b9b6",
+          "eventName": "mqtt-18e61d08839158f0-revised",
+          "priority": null,
+          "targets": [],
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00+00:00",
+            "duration": "P0Y0M0DT1H0M0S"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.42
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 453,
+        "bodySHA256": "117d040f0059b5b01f3f7807d437f2eb7c7e2fe8dd6c999891b904cd4554ddb0",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 21,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/events/{eventID}",
+        "path": "/events/906c7297-b0c9-4789-8a9d-32f8ceb65fc2",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "b6c72a08-2c82-41d6-8cd6-be842c0a580d"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "0e703c34170941b1cdbf1a7e6bd3ae6178c5892ddbd30ca21269f03961395eab",
+        "bodyEncoding": "gzip"
+      }
+    }
+  ]
+}

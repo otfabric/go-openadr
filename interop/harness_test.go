@@ -179,6 +179,17 @@ func startServer(t *testing.T, adapter, fixtureName string, extra ...string) str
 	img := needImage(t, adapter)
 	port := freePort(t)
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
+	direct := url
+	// Recording a transcript, the VTN is reached through a proxy that it
+	// also announces as its public URL.
+	var proxyListener net.Listener
+	if rec := recording(t, adapter, fixtureName, true, true); rec != nil {
+		var err error
+		if proxyListener, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
+			t.Fatal(err)
+		}
+		url = "http://" + proxyListener.Addr().String()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -206,6 +217,9 @@ func startServer(t *testing.T, adapter, fixtureName string, extra ...string) str
 	// Readiness is the ready file, not the open port.
 	for ctx.Err() == nil {
 		if _, exit, _ := docker(ctx, "exec", id, "test", "-f", "/run/openadr-interop/ready"); exit == 0 {
+			if proxyListener != nil {
+				recordingProxy(t, currentRecording(t), proxyListener, direct)
+			}
 			return url
 		}
 		if state, _, _ := docker(ctx, "inspect", "-f", "{{.State.Running}}", id); strings.TrimSpace(string(state)) != "true" {

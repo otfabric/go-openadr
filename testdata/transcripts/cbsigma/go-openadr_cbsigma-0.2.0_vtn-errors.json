@@ -1,0 +1,586 @@
+{
+  "schema": "openadr-transcript/1",
+  "name": "go-openadr_cbsigma-0.2.0_vtn-errors",
+  "source": "cbsigma",
+  "level": "D",
+  "protocolVersion": "3.1.0",
+  "peer": "cbsigma 0.2.0 (ghcr.io/otfabric/openadr-interop-cbsigma@sha256:626f3742826ba30d4b62775cd343653c7ed0633422af4676a61aa3975b9be4ab)",
+  "peerRole": "VTN",
+  "recorded": "2026-11-08",
+  "recorder": "go-openadr interop suite, TestCbsigmaVTNErrors",
+  "fixture": "baseline",
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "secretPlaceholder": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "secretPlaceholder": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "secretPlaceholder": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "secretPlaceholder": "redacted-secret-ven-3"
+    }
+  ],
+  "redactions": [
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-1",
+      "count": 6
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-2",
+      "count": 2
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-1",
+      "count": 1
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-bl",
+      "count": 1
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-ven-1",
+      "count": 1
+    },
+    {
+      "kind": "endpoint",
+      "placeholder": "http://vtn.invalid",
+      "count": 3
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04"
+      }
+    },
+    {
+      "n": 2,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 83,
+        "bodySHA256": "b38b8d67c411142b9ce3235ffaecca66ca9d916d70bdd1bbde80189a04221c41"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "expires_in": 3600,
+          "scope": "read_all read_targets read_ven_objects read_bl write_programs write_events write_subscriptions write_vens",
+          "token_type": "Bearer"
+        },
+        "bodyLength": 191,
+        "bodySHA256": "5f1340dbdf51d456140a1722eaf775fcd12453a172616e19019950a7412f2fc2"
+      }
+    },
+    {
+      "n": 3,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "errors-18e61cee8cf3f9f8"
+        },
+        "bodyLength": 41,
+        "bodySHA256": "ecb8b2c35031a73a24ba0dfb494f26bc8d8a0d5af021dc94e25b182e6856a295"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "createdDateTime": "2026-11-08T15:55:12.643Z",
+          "id": "18e61cee98b3055dad3e858d",
+          "modificationDateTime": "2026-11-08T15:55:12.643Z",
+          "objectType": "PROGRAM",
+          "programName": "errors-18e61cee8cf3f9f8"
+        },
+        "bodyLength": 191,
+        "bodySHA256": "5d6b622b8b132f11d4edefb1a9fd90c2fdf3e4ca5c1481c4877d705cfe420255"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 4,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs/{programID}",
+        "path": "/programs/no-such-program-18e61cee8cf3f9f8",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "detail": "program no-such-program-18e61cee8cf3f9f8 not found",
+          "instance": "/programs/no-such-program-18e61cee8cf3f9f8",
+          "status": 404,
+          "title": "Not Found",
+          "type": "about:blank"
+        },
+        "bodyLength": 173,
+        "bodySHA256": "f524397e11c29cb322e8ffd15b604955eec08e5f1153159af15a6e08c9e3d3b3"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 5,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "errors-18e61cee8cf3f9f8"
+        },
+        "bodyLength": 41,
+        "bodySHA256": "ecb8b2c35031a73a24ba0dfb494f26bc8d8a0d5af021dc94e25b182e6856a295"
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "detail": "a program named errors-18e61cee8cf3f9f8 exists",
+          "instance": "/programs",
+          "status": 409,
+          "title": "Conflict",
+          "type": "about:blank"
+        },
+        "bodyLength": 135,
+        "bodySHA256": "3f4b96e5986902e99c8b17f7c839855fb24e29402ad22207754dca9a05fb8f56"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 6,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 7,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "8f91da093514086c0d7012b0c092a19eb9ee46737ae786dfa4cc0fbe01226285"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-2",
+          "expires_in": 3600,
+          "scope": "read_targets read_ven_objects write_reports write_subscriptions write_vens",
+          "token_type": "Bearer"
+        },
+        "bodyLength": 160,
+        "bodySHA256": "927a350251a0c4c00648d38684ecda78193d7d65cece4e3976cad69eb500c3b0"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 8,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "by-ven-18e61cee8cf3f9f8"
+        },
+        "bodyLength": 41,
+        "bodySHA256": "599d3037150e5bc3001d5f7ced4ca93a97df1ac04c4f2bae861a81bf666f15dd"
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "detail": "the operation needs scope write_programs",
+          "instance": "/programs",
+          "status": 403,
+          "title": "Forbidden",
+          "type": "about:blank"
+        },
+        "bodyLength": 130,
+        "bodySHA256": "bbd8b7fb473351ed02ddaf5af00942d3c0f470b247de20de59917c5c2dda42b9"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 9,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/programs/{programID}",
+        "path": "/programs/18e61cee98b3055dad3e858d",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "errors-renamed-18e61cee8cf3f9f8"
+        },
+        "bodyLength": 49,
+        "bodySHA256": "4237986a33c499559efcc75e4206cea5dafe72e1efed4f98f526739308967766"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "createdDateTime": "2026-11-08T15:55:12.643Z",
+          "id": "18e61cee98b3055dad3e858d",
+          "modificationDateTime": "2026-11-08T15:55:12.647Z",
+          "objectType": "PROGRAM",
+          "programName": "errors-renamed-18e61cee8cf3f9f8"
+        },
+        "bodyLength": 199,
+        "bodySHA256": "2864c39d05ccab562e5c749e9f6eea01e5979ed483ccbac569970c0c5a072cc8"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 10,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 11,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 85,
+        "bodySHA256": "0e4fb8a040d5ef0c3050c5b60206a3dc038213e036f88206d0591eb4a4117bd4"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Cache-Control": "no-store",
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Basic realm=\"openadr3\""
+        },
+        "bodyFormat": "json",
+        "body": {
+          "error": "invalid_client",
+          "error_description": "unknown client or wrong secret"
+        },
+        "bodyLength": 80,
+        "bodySHA256": "17fc0501e5761f4d3e12da97ca3978087ddabbaf4157f72bd7ad8fd3047314da"
+      },
+      "state": {
+        "programs": [
+          "18e61cee98b3055dad3e858d"
+        ]
+      }
+    },
+    {
+      "n": 12,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/programs/{programID}",
+        "path": "/programs/18e61cee98b3055dad3e858d",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "createdDateTime": "2026-11-08T15:55:12.643Z",
+          "id": "18e61cee98b3055dad3e858d",
+          "modificationDateTime": "2026-11-08T15:55:12.647Z",
+          "objectType": "PROGRAM",
+          "programName": "errors-renamed-18e61cee8cf3f9f8"
+        },
+        "bodyLength": 199,
+        "bodySHA256": "2864c39d05ccab562e5c749e9f6eea01e5979ed483ccbac569970c0c5a072cc8"
+      }
+    }
+  ]
+}

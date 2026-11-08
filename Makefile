@@ -4,6 +4,8 @@
 
 .DEFAULT_GOAL := help
 
+# The recorded exchanges of testdata/transcripts (README.md there).
+.PHONY: transcripts-verify captures-verify transcripts-record transcripts-spec transcripts-manifest
 .PHONY: help all build examples fmt fmt-check lint lint-ci vet vuln test coverage coverage-pkg-check cover fuzz check clean interop test-interop e2e chaos nodeps storage coverage-check cross bench docs-check
 help: ## This help
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z0-9_-]+:.*?## / {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -26,7 +28,7 @@ BIN_DIR := bin
 TEST_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/interop$$' | grep -v '/interop/')
 # Coverage is measured over the library packages, whichever package's tests exercise them:
 # the end-to-end tests in the module root drive the client and the server.
-COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/internal/leakcheck' | grep -v '/interop$$' | grep -v '/interop/' | paste -sd, -)
+COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/internal/leakcheck' | grep -v '/internal/transcript' | grep -v '/interop$$' | grep -v '/interop/' | paste -sd, -)
 
 all: build ## Default target: build the examples
 
@@ -184,6 +186,36 @@ check: fmt fmt-check nodeps lint lint-ci vet vuln test coverage coverage-pkg-che
 # The documents against the code (DOC-008): docsync, as docs-check.yml runs it.
 docs-check: ## Check that the documents agree with the code (docsync)
 	@go run github.com/otfabric/docsync@$(DOCSYNC_VERSION) check .
+
+# Recorded OpenADR exchanges (testdata/transcripts/README.md): every file is
+# committed and small, so there is no extended set; `make test` replays them.
+TRANSCRIPTS := testdata/transcripts
+
+transcripts-verify: ## Check the SHA256 of every transcript and the manifest, and replay the corpus
+	@echo "Verifying $(TRANSCRIPTS)"
+	@cd $(TRANSCRIPTS) && shasum -a 256 -c --quiet SHA256SUMS
+	@go test -count=1 -run '^(TestCorpus|TestSpecCases)' ./internal/transcript/
+	@go test -count=1 -run '^TestTranscript' ./client/ ./server/ ./notification/webhook/
+
+captures-verify: transcripts-verify ## The name the other OT Fabric libraries use for transcripts-verify
+
+transcripts-record: ## Record the transcripts again against the pinned openadr-interop images (Docker), then rebuild the manifest
+	@OPENADR_TRANSCRIPT_RECORD="$(CURDIR)/$(TRANSCRIPTS)" OPENADR_INTEROP_REQUIRE=1 \
+		OPENADR_INTEROP_OPENLEADR_IMAGE="$(OPENADR_INTEROP_OPENLEADR_IMAGE)" \
+		OPENADR_INTEROP_ELAADNL_IMAGE="$(OPENADR_INTEROP_ELAADNL_IMAGE)" \
+		OPENADR_INTEROP_OPENLEADR301_IMAGE="$(OPENADR_INTEROP_OPENLEADR301_IMAGE)" \
+		OPENADR_INTEROP_CBSIGMA_IMAGE="$(OPENADR_INTEROP_CBSIGMA_IMAGE)" \
+		go test -tags=interop -count=1 -timeout=40m -run 'OpenLEADR|Cbsigma|ElaadNL|TranscriptScenario' ./interop/
+	@$(MAKE) transcripts-manifest
+
+transcripts-spec: ## Rebuild the specification cases from the committed OpenAPI documents (needs yq and python3)
+	@for v in 3.1.0 3.0.1; do \
+		yq -o=json $(TRANSCRIPTS)/spec/$$v/openadr3.yaml | python3 -I scripts/transcripts-spec-cases.py $$v > $(TRANSCRIPTS)/spec/$$v/cases.json || exit 1; \
+	done
+	@$(MAKE) transcripts-manifest
+
+transcripts-manifest: ## Rebuild testdata/transcripts/manifest.json and SHA256SUMS from the files
+	@OPENADR_TRANSCRIPT_GENERATE=1 go test -count=1 -run '^TestGenerateManifest$$' ./internal/transcript/
 
 clean: ## Remove generated binaries and coverage artifacts
 	@echo "Cleaning up"

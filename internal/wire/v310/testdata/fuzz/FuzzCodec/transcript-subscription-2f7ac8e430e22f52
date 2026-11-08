@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(5)
+[]byte("{\"id\":\"719c0026-d9c9-4c45-bc1b-bf5f49445aa5\",\"createdDateTime\":\"2026-11-08T15:57:27.013460+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:27.018324+00:00\",\"clientId\":\"interop-ven-1\",\"clientName\":\"site-1\",\"programID\":\"929477ab-7b90-4499-8a65-005b871d5f97\",\"objectOperations\":[{\"objects\":[\"EVENT\"],\"operations\":[\"CREATE\"],\"mechanism\":\"WEBHOOK\",\"callbackUrl\":\"http://callback.invalid/notifications\"}]}")

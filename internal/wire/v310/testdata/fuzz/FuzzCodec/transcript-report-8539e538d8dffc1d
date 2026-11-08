@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(2)
+[]byte("{\"id\":\"1dd5ded2-d7a4-448a-868d-b3fa2bae8fd0\",\"createdDateTime\":\"2026-11-08T15:57:26.998098+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:26.998098+00:00\",\"objectType\":\"REPORT\",\"eventID\":\"dba075c0-c264-4eab-8ebf-64bba163329e\",\"clientName\":\"site-1\",\"reportName\":\"transcript-report-518786\",\"payloadDescriptors\":[{\"payloadType\":\"USAGE\",\"units\":\"KWH\",\"accuracy\":0.5,\"confidence\":90}],\"resources\":[{\"resourceName\":\"battery\",\"intervalPeriod\":{\"start\":\"2030-01-01T00:00:00+00:00\",\"duration\":\"P0Y0M0DT1H0M0S\"},\"intervals\":[{\"id\":0,\"payloads\":[{\"type\":\"USAGE\",\"values\":[1.25]}]}]}],\"clientID\":\"interop-ven-1\"}")

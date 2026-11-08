@@ -1,0 +1,133 @@
+{
+  "schema": "openadr-transcript/1",
+  "name": "go-openadr_openleadr-0.1.4_limits",
+  "source": "openleadr301",
+  "level": "D",
+  "protocolVersion": "3.0.1",
+  "peer": "openleadr 0.1.4 (ghcr.io/otfabric/openadr-interop-openleadr301@sha256:ce3c87d9a633ef90816a3bba5daf972a19013b501cc728a64445767e93de0256)",
+  "peerRole": "VTN",
+  "recorded": "2026-11-08",
+  "recorder": "go-openadr interop suite, TestOpenLEADR301Limits",
+  "fixture": "baseline-301",
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "secretPlaceholder": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "secretPlaceholder": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "secretPlaceholder": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "secretPlaceholder": "redacted-secret-ven-3"
+    }
+  ],
+  "redactions": [
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-1",
+      "count": 2
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-ven-1",
+      "count": 1
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "8f91da093514086c0d7012b0c092a19eb9ee46737ae786dfa4cc0fbe01226285"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf"
+      }
+    },
+    {
+      "n": 2,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/subscriptions",
+        "path": "/subscriptions",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "fd9290a5-a310-4677-b3d8-7957a147a782"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "e4624d205a07ad9ef61f304f647b0d8433a8019f01c4171abca38ab499f24567"
+      }
+    }
+  ]
+}

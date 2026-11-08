@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(1)
+[]byte("{\"id\":\"906c7297-b0c9-4789-8a9d-32f8ceb65fc2\",\"createdDateTime\":\"2026-11-08T15:57:04.423860+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:04.423860+00:00\",\"objectType\":\"EVENT\",\"programID\":\"3d91ff14-4866-4cab-a102-d0999e82b9b6\",\"eventName\":\"mqtt-18e61d08839158f0\",\"priority\":null,\"targets\":[],\"intervalPeriod\":{\"start\":\"2030-01-01T00:00:00+00:00\",\"duration\":\"P0Y0M0DT1H0M0S\"},\"intervals\":[{\"id\":0,\"payloads\":[{\"type\":\"PRICE\",\"values\":[0.42]}]}]}")

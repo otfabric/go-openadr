@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "1.0",
+  "name": "baseline-301",
+  "description": "The baseline in OpenADR 3.0.1: one Business Logic client and three VEN clients, two of them registered as VENs, an open tariff program with day-ahead prices, and a program and event targeted at one VEN. Targets are valuesMap objects, as 3.0.1 has them.",
+  "openadrVersion": "3.0.1",
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "clientSecret": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "clientSecret": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "clientSecret": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "clientSecret": "redacted-secret-ven-3"
+    }
+  ],
+  "vens": [
+    {
+      "venName": "site-1",
+      "client": "ven-1",
+      "targets": [
+        {
+          "type": "GROUP",
+          "values": [
+            "group-a"
+          ]
+        }
+      ]
+    },
+    {
+      "venName": "site-2",
+      "client": "ven-2"
+    }
+  ],
+  "resources": [
+    {
+      "resourceName": "battery",
+      "ven": "site-1"
+    }
+  ],
+  "programs": [
+    {
+      "programName": "day-ahead",
+      "payloadDescriptors": [
+        {
+          "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+          "payloadType": "PRICE",
+          "units": "KWH",
+          "currency": "EUR"
+        }
+      ]
+    },
+    {
+      "programName": "group-a-flex",
+      "targets": [
+        {
+          "type": "VEN_NAME",
+          "values": [
+            "site-1"
+          ]
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "eventName": "day-ahead-prices",
+      "program": "day-ahead",
+      "priority": 1,
+      "intervalPeriod": {
+        "start": "2030-01-01T00:00:00Z",
+        "duration": "PT1H"
+      },
+      "reportDescriptors": [
+        {
+          "payloadType": "USAGE"
+        }
+      ],
+      "intervals": [
+        {
+          "id": 0,
+          "payloads": [
+            {
+              "type": "PRICE",
+              "values": [
+                0.17
+              ]
+            }
+          ]
+        },
+        {
+          "id": 1,
+          "payloads": [
+            {
+              "type": "PRICE",
+              "values": [
+                0.21
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "payloads": [
+            {
+              "type": "PRICE",
+              "values": [
+                0.09
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "eventName": "group-a-limit",
+      "program": "group-a-flex",
+      "targets": [
+        {
+          "type": "VEN_NAME",
+          "values": [
+            "site-1"
+          ]
+        }
+      ],
+      "intervalPeriod": {
+        "start": "2030-01-01T17:00:00Z",
+        "duration": "PT2H"
+      },
+      "intervals": [
+        {
+          "id": 0,
+          "payloads": [
+            {
+              "type": "IMPORT_CAPACITY_LIMIT",
+              "values": [
+                11.5
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

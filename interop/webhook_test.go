@@ -16,6 +16,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/client"
+	"github.com/otfabric/go-openadr/internal/transcript"
 	"github.com/otfabric/go-openadr/notification/webhook"
 	"github.com/otfabric/go-openadr/server"
 )
@@ -67,11 +68,22 @@ func testVTNWebhook(t *testing.T, adapter string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: &webhook.Handler{BearerToken: "interop-callback-token",
-		Notify: func(_ context.Context, n openadr.Notification) error { received <- n; return nil }}}
+	var handler http.Handler = &webhook.Handler{BearerToken: "interop-callback-token",
+		Notify: func(_ context.Context, n openadr.Notification) error { received <- n; return nil }}
+	callback := fmt.Sprintf("http://%s:%d/notifications", callbackHost, ln.Addr().(*net.TCPAddr).Port)
+	if rec := currentRecording(t); rec != nil {
+		// What arrives at the receiver is the reference VTN's.
+		peerHandler := rec.rec.Handler(handler)
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Header.Set(transcript.OriginHeader, transcript.OriginPeer)
+			peerHandler.ServeHTTP(w, r)
+			rec.rec.Webhook("/notifications")
+		})
+		rec.red.Endpoint(fmt.Sprintf("http://%s:%d", callbackHost, ln.Addr().(*net.TCPAddr).Port), "http://callback.invalid")
+	}
+	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: handler}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
-	callback := fmt.Sprintf("http://%s:%d/notifications", callbackHost, ln.Addr().(*net.TCPAddr).Port)
 
 	program := dayAhead(t, p.bl)
 	sub, err := p.ven.CreateSubscription(c, openadr.Subscription{ClientName: p.name("webhook"), ProgramID: program,

@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(6)
+[]byte("{\"objectType\":\"RESOURCE_GROUP\",\"id\":\"deac4e45-e9a3-49b6-ad26-fcda15bfbf28\",\"createdDateTime\":\"2026-11-08T15:56:48.763582+00:00\",\"modificationDateTime\":\"2026-11-08T15:56:48.763582+00:00\",\"targets\":[],\"resourceGroupName\":\"district-18e61d04ec1266e8\",\"children\":[{\"type\":\"resource_group\",\"id\":\"afe23866-fbed-497e-8577-2fcbe179f439\"}]}")

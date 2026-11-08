@@ -26,6 +26,7 @@ func listen(t *testing.T, broker mqtt.Broker, topics ...string) chan openadr.Not
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sub.Close() })
+	recordMQTT(t, broker.ClientID, broker.Username, broker.Password, broker.URL, topics...)
 	c, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if err := sub.Ready(c); err != nil {

@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(9)
+[]byte("{\"topics\":{\"CREATE\":\"events/create\",\"UPDATE\":\"events/update\",\"DELETE\":\"events/delete\",\"ALL\":\"events/+\"}}")

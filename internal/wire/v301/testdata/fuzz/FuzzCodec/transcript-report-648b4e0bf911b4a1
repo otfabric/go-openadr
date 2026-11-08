@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(2)
+[]byte("{\"id\":\"7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758\",\"createdDateTime\":\"2026-11-08T15:57:30.344187+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:30.344187+00:00\",\"objectType\":\"REPORT\",\"programID\":\"a3103728-e8c2-468a-a459-42a5e84aba5f\",\"eventID\":\"dfacdc8e-eb2e-4795-9c90-7815f23ab0b4\",\"clientName\":\"site-1\",\"reportName\":\"transcript-report-e53981\",\"resources\":[{\"resourceName\":\"battery\",\"intervals\":[{\"id\":0,\"payloads\":[{\"type\":\"USAGE\",\"values\":[1.25]}]}]}]}")

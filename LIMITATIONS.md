@@ -58,4 +58,12 @@ in [INTEROP.md](INTEROP.md), the security consequences in
     them.
 - 3.0.1 is tested against OpenLEADR v0.1.4 only, which does not serve
   subscriptions.
+- Recorded traffic: the transcripts of
+  [testdata/transcripts](testdata/transcripts/README.md) are of a software
+  testbed (the reference images on loopback) and of the specification's
+  examples. No production VTN or VEN transcript was found; no transcript
+  shows a physical device. Implementations not pinned by openadr-interop
+  (such as clj-oa3-vtn, toadr3) are not recorded.
+- A request body without a `Content-Type` is read as JSON; OpenLEADR and
+  cB-Sigma refuse it.
 - Certification: none. OpenADR Alliance certification has not been attempted.

@@ -1,5 +1,69 @@
 # go-openadr Releases
 
+## v0.7.0
+
+**Date:** 2026-11-08
+**Previous release:** v0.6.0
+
+## Summary
+
+Validation against recorded exchanges. The interop suite now records what
+passes between this module and OpenLEADR v0.2.8 and v0.1.4, cB-Sigma v0.2.0
+and the ElaadNL client 2.4.2, and the tests replay those transcripts, and
+the examples of the OpenADR 3.1.0 and 3.0.1 OpenAPI documents, through the
+codecs, the clients, the VTN and the webhook handler. Sending the same
+requests to this module's VTN and to the others found two defects of the
+VTN, fixed here. The exported API does not change. The evidence is a
+software testbed and the specification: no hardware, and no production
+traffic, of which none was found.
+
+**Upgrade notes**
+
+- The VTN answers a request body whose `Content-Type` is not
+  `application/json` (or `application/*+json`) with 415 Unsupported Media
+  Type. Before, it read any body as JSON. A body without `Content-Type` is
+  still read as JSON.
+- `auth.Issuer` adds `WWW-Authenticate: Basic realm="openadr"` to every 401
+  of the token endpoint, also for credentials sent in the form.
+
+## Changes
+
+### Fixed
+
+- **The VTN accepted a body declared `text/plain`, or as a form, as JSON**
+  and created the object. OpenLEADR answers 415 and cB-Sigma 400
+  (testdata/transcripts, "create program, as text/plain"); a `text/plain`
+  POST is also one a browser sends cross-origin without asking first.
+  Regression test `TestNonJSONBodyRefused`.
+- **The token endpoint answered 401 without a challenge** when the client
+  sent its credentials in the form. RFC 9110 requires `WWW-Authenticate`
+  with a 401; OpenLEADR and cB-Sigma send one (transcripts, "token: wrong
+  secret"). Regression test `TestIssuerUnauthorizedHasChallenge`.
+
+### Added
+
+- `testdata/transcripts`: 31 transcripts (1281 exchanges, level D) recorded
+  against the pinned openadr-interop v0.8.0 images, the OpenAPI documents
+  of the specification at a pinned revision with cases built from them
+  (level E), the fixtures, `manifest.json` and `SHA256SUMS`. Credentials
+  and endpoints are redacted deterministically (README there).
+- Replays in `make test`: every body decoded and encoded again
+  (`internal/transcript`), the clients against recorded VTN answers, the
+  VTN against recorded client requests, the VTN against the requests sent
+  to OpenLEADR and cB-Sigma with every difference classified, and the
+  webhook handler against cB-Sigma's notifications.
+- `make transcripts-verify` (also `captures-verify`, in CI as the
+  `transcripts` job), `transcripts-record`, `transcripts-spec`,
+  `transcripts-manifest`.
+- Fuzz seeds of `FuzzCodec` from the recorded bodies.
+
+### Changed
+
+- INTEROP.md lists what the transcripts show of the other implementations;
+  docs/CONFORMANCE.md records the two readings above.
+
+---
+
 ## v0.6.0
 
 **Date:** 2026-11-05

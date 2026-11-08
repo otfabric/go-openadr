@@ -1,0 +1,4590 @@
+{
+  "schema": "openadr-transcript/1",
+  "name": "go-openadr_openleadr-0.1.4_scenario",
+  "source": "openleadr301",
+  "level": "D",
+  "protocolVersion": "3.0.1",
+  "peer": "openleadr 0.1.4 (ghcr.io/otfabric/openadr-interop-openleadr301@sha256:ce3c87d9a633ef90816a3bba5daf972a19013b501cc728a64445767e93de0256)",
+  "peerRole": "VTN",
+  "recorded": "2026-11-08",
+  "recorder": "go-openadr interop suite, TestTranscriptScenarioOpenLEADR301",
+  "fixture": "baseline-301",
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "secretPlaceholder": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "secretPlaceholder": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "secretPlaceholder": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "secretPlaceholder": "redacted-secret-ven-3"
+    }
+  ],
+  "redactions": [
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-1",
+      "count": 52
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-2",
+      "count": 15
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-3",
+      "count": 1
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-4",
+      "count": 1
+    },
+    {
+      "kind": "callback-token",
+      "placeholder": "redacted-callback-token-1",
+      "count": 1
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-1",
+      "count": 2
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-bl",
+      "count": 6
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-ven-1",
+      "count": 1
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-ven-2",
+      "count": 1
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "540e85d8-8789-4b71-95df-107e01a8c46e"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "bbadf3a4ab66460cc68d5e22b0e20f5d2fe005a4214af22f97a27d26baeddd71"
+      },
+      "note": "server info (not in 3.0.1)"
+    },
+    {
+      "n": 2,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 83,
+        "bodySHA256": "b38b8d67c411142b9ce3235ffaecca66ca9d916d70bdd1bbde80189a04221c41"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf"
+      },
+      "note": "token for bl"
+    },
+    {
+      "n": 3,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "8f91da093514086c0d7012b0c092a19eb9ee46737ae786dfa4cc0fbe01226285"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-2",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "54a780dc1dcf9045e671b519707c7cebf891baace1dac14fa6f6d5369e546eb0"
+      },
+      "note": "token for ven-1"
+    },
+    {
+      "n": 4,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-2",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-2"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-2"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "d8af9c39c896f12aa1a675a7b80986802992e129b27d0560168ed920697fea05"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-3",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "0d7e2b6412c1a6c900bbd00747ce182341d2772319bfe8ad9be81b2e22072140"
+      },
+      "note": "token for ven-2"
+    },
+    {
+      "n": 5,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 85,
+        "bodySHA256": "0e4fb8a040d5ef0c3050c5b60206a3dc038213e036f88206d0591eb4a4117bd4"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Basic realm=\"VTN\""
+        },
+        "bodyFormat": "json",
+        "body": {
+          "error": "invalid_client",
+          "error_description": "Invalid client_id or client_secret"
+        },
+        "bodyLength": 83,
+        "bodySHA256": "32b196dfe0fbff86f0d31d7c57a9b588b4b4d91a91408f293cf61d2c23b15a62"
+      },
+      "note": "token: wrong secret"
+    },
+    {
+      "n": 6,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "no-such-client"
+          ],
+          "client_secret": [
+            "redacted-secret-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 86,
+        "bodySHA256": "b20e4d029de3e5f509229a59c98409c9c231376326cce270a3fdddc302aa6eec"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Basic realm=\"VTN\""
+        },
+        "bodyFormat": "json",
+        "body": {
+          "error": "invalid_client",
+          "error_description": "Invalid client_id or client_secret"
+        },
+        "bodyLength": 83,
+        "bodySHA256": "32b196dfe0fbff86f0d31d7c57a9b588b4b4d91a91408f293cf61d2c23b15a62"
+      },
+      "note": "token: unknown client"
+    },
+    {
+      "n": 7,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "password"
+          ]
+        },
+        "bodyLength": 73,
+        "bodySHA256": "2974f5107578ec467dd361ba1a9c4719dca4acaa0831a0eeea535aa2ec274e36"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "error": "unsupported_grant_type",
+          "error_description": "Only client_credentials grant type is supported"
+        },
+        "bodyLength": 104,
+        "bodySHA256": "63f10a3c99fdee93350bbf459024003ac25c8718e5fb61a96469fb1f9fb7d02c"
+      },
+      "note": "token: unsupported grant type"
+    },
+    {
+      "n": 8,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ]
+        },
+        "bodyLength": 53,
+        "bodySHA256": "8dfc5ed259533ccf01ee844352515c6ddcea67b9a9fa581b4a96428fc70041fc"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to deserialize form body: missing field `grant_type`",
+          "instance": "9ff4acc0-f9c7-4e2a-9497-318fdd5444b8"
+        },
+        "bodyLength": 182,
+        "bodySHA256": "342ed43356bd212d5e3bd8979a72c047d79da904715f47ca486ca38f47820c57"
+      },
+      "note": "token: no grant type"
+    },
+    {
+      "n": 9,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 29,
+        "bodySHA256": "c349b29ae2fc682adb26699a6ecd69cad661a27f2542e713b89314b6e2abfaec"
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json",
+          "WWW-Authenticate": "Basic realm=\"VTN\""
+        },
+        "bodyFormat": "json",
+        "body": {
+          "error": "invalid_client",
+          "error_description": "No valid authentication data provided, client_id and client_secret required"
+        },
+        "bodyLength": 124,
+        "bodySHA256": "da33c56c549cd667575796980eaf1d5be065481fa17fa2ad912b50393443e865"
+      },
+      "note": "token: no client_id"
+    },
+    {
+      "n": 10,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Basic aW50ZXJvcC1ibDpyZWRhY3RlZC1zZWNyZXQtYmw=",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 29,
+        "bodySHA256": "c349b29ae2fc682adb26699a6ecd69cad661a27f2542e713b89314b6e2abfaec"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf"
+      },
+      "note": "token: HTTP Basic credentials"
+    },
+    {
+      "n": 11,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "grant_type": "client_credentials",
+          "client_id": "interop-bl",
+          "client_secret": "redacted-secret-bl"
+        },
+        "bodyLength": 97,
+        "bodySHA256": "52b2eaf8d09e209716a7f57570b3ba865bf5e046f18ab4a9e3c38236877b7815"
+      },
+      "response": {
+        "status": 415,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "415 Unsupported Media Type",
+          "status": 415,
+          "detail": "Form requests must have `Content-Type: application/x-www-form-urlencoded`",
+          "instance": "2b638b56-958b-4d36-9792-55ecd5db6719"
+        },
+        "bodyLength": 207,
+        "bodySHA256": "525ceed918df6dc18675217208c6fef8f6691c1402cfbb5eae12b570d8a5bf64"
+      },
+      "note": "token: a JSON body"
+    },
+    {
+      "n": 12,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 405,
+        "headers": {
+          "Allow": "POST",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "405 Method Not Allowed",
+          "status": 405,
+          "detail": "See allow headers for allowed methods",
+          "instance": "bf15e58d-77bb-4087-bc69-cad7e5927c50"
+        },
+        "bodyLength": 167,
+        "bodySHA256": "14519f8d54f6fa7cecdd6bd15e0b822948efd15cf827fc3ea5307a104f338610"
+      },
+      "note": "token: GET"
+    },
+    {
+      "n": 13,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ],
+          "scope": [
+            "read_all"
+          ]
+        },
+        "bodyLength": 98,
+        "bodySHA256": "57bd8024eb2e4c5957b667495bbc7c31e624ea7ee7d74d8be77b0b58fbf33b1c"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf"
+      },
+      "note": "token: with a scope"
+    },
+    {
+      "n": 14,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 401,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "401 Unauthorized",
+          "status": 401,
+          "detail": "Authorization via Bearer token in Authorization header required",
+          "instance": "cf9e4c14-b446-43f4-8ff6-8f5c1bfb6ded"
+        },
+        "bodyLength": 187,
+        "bodySHA256": "94a1ba0cd7a6a9fd579998a5a4bacd619afc38ceb5c735ff3574d2636aae7564"
+      },
+      "note": "programs without a token"
+    },
+    {
+      "n": 15,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-4",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "403 Forbidden",
+          "status": 403,
+          "detail": "Invalid authentication token provided",
+          "instance": "3c44eea9-5fc8-4a0b-8706-0a0817b4ff2b"
+        },
+        "bodyLength": 158,
+        "bodySHA256": "02629ad8a719c59a2c69af2d5e9c2ea179a912e74f727d2f263058309c191ed3"
+      },
+      "note": "programs with a token the VTN never issued"
+    },
+    {
+      "n": 16,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3",
+            "createdDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "objectType": "PROGRAM",
+            "programName": "group-a-flex",
+            "targets": [
+              {
+                "type": "VEN_NAME",
+                "values": [
+                  "site-1"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "createdDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 586,
+        "bodySHA256": "d6b131ee06948ce4b931adf1f8747155ed43550e5a6136df60786d9a363694b3"
+      },
+      "note": "programs as BL"
+    },
+    {
+      "n": 17,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3",
+            "createdDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "objectType": "PROGRAM",
+            "programName": "group-a-flex"
+          },
+          {
+            "id": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "createdDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 534,
+        "bodySHA256": "66da8f346aa38201bd6cf702e9cec0562f0d8a4d68bc828211445f9d2ea6cab1"
+      },
+      "note": "programs as ven-1"
+    },
+    {
+      "n": 18,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "targetType=GROUP&targetValues=group-a",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [],
+        "bodyLength": 2,
+        "bodySHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "note": "programs as ven-1, its target"
+    },
+    {
+      "n": 19,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "targets=group-a",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3",
+            "createdDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "objectType": "PROGRAM",
+            "programName": "group-a-flex"
+          },
+          {
+            "id": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "createdDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 534,
+        "bodySHA256": "66da8f346aa38201bd6cf702e9cec0562f0d8a4d68bc828211445f9d2ea6cab1"
+      },
+      "note": "programs, 3.1.0 targets query"
+    },
+    {
+      "n": 20,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "limit=1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3",
+            "createdDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "objectType": "PROGRAM",
+            "programName": "group-a-flex",
+            "targets": [
+              {
+                "type": "VEN_NAME",
+                "values": [
+                  "site-1"
+                ]
+              }
+            ]
+          }
+        ],
+        "bodyLength": 262,
+        "bodySHA256": "cff975c63a414c88e7555a671daad225a8a735a3eb733e8d2b9a1b1785f3a0a0"
+      },
+      "note": "paging limit=1"
+    },
+    {
+      "n": 21,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "skip=1&limit=1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "createdDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 325,
+        "bodySHA256": "7e2d64d41e7359ec38a3dfe4a3df29cf6bcbfc50810773e8562982b722ca2778"
+      },
+      "note": "paging skip=1&limit=1"
+    },
+    {
+      "n": 22,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "skip=1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "createdDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 325,
+        "bodySHA256": "7e2d64d41e7359ec38a3dfe4a3df29cf6bcbfc50810773e8562982b722ca2778"
+      },
+      "note": "paging skip=1"
+    },
+    {
+      "n": 23,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "skip=1000",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [],
+        "bodyLength": 2,
+        "bodySHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "note": "paging skip=1000"
+    },
+    {
+      "n": 24,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "limit=0",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "limit: Validation error: range [{\"value\": Number(0), \"min\": Number(1), \"max\": Number(50)}]",
+          "instance": "be6197ad-6461-439b-810e-3cb2d499b8f8"
+        },
+        "bodyLength": 219,
+        "bodySHA256": "1f25f11c07a8c4c9e6914b064ab3b4dd6b0095d4e4dc8a88b9a3ab21a126d9d8"
+      },
+      "note": "paging limit=0"
+    },
+    {
+      "n": 25,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "limit=50",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3",
+            "createdDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.768640+00:00",
+            "objectType": "PROGRAM",
+            "programName": "group-a-flex",
+            "targets": [
+              {
+                "type": "VEN_NAME",
+                "values": [
+                  "site-1"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "createdDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.767081+00:00",
+            "objectType": "PROGRAM",
+            "programName": "day-ahead",
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "PRICE",
+                "units": "KWH",
+                "currency": "EUR"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 586,
+        "bodySHA256": "d6b131ee06948ce4b931adf1f8747155ed43550e5a6136df60786d9a363694b3"
+      },
+      "note": "paging limit=50"
+    },
+    {
+      "n": 26,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "limit=51",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "limit: Validation error: range [{\"max\": Number(50), \"value\": Number(51), \"min\": Number(1)}]",
+          "instance": "2a72e8d7-b44c-4e25-9977-0a273dd1c142"
+        },
+        "bodyLength": 220,
+        "bodySHA256": "6d8f5d0c728187cd5291d620fb002e83364aa4557cab7928a40e459bb0f59a3d"
+      },
+      "note": "paging limit=51"
+    },
+    {
+      "n": 27,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "limit=-1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "limit: Validation error: range [{\"value\": Number(-1), \"max\": Number(50), \"min\": Number(1)}]",
+          "instance": "03c3f7ee-f90b-4bd9-bcca-d5feefda87af"
+        },
+        "bodyLength": 220,
+        "bodySHA256": "25fd7710931e23207ed2b4b030d815c4adddf7f5a305970943915152085062d4"
+      },
+      "note": "paging limit=-1"
+    },
+    {
+      "n": 28,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "skip=-1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "skip: Validation error: range [{\"value\": Number(-1), \"min\": Number(0)}]",
+          "instance": "3e7349d1-b25a-4005-a5c4-f3c178488b09"
+        },
+        "bodyLength": 198,
+        "bodySHA256": "3010a43089c696221de4532411649ddea49a91a11cf3eac686c118224df42282"
+      },
+      "note": "paging skip=-1"
+    },
+    {
+      "n": 29,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "limit=abc",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to deserialize query string: limit: invalid digit found in string",
+          "instance": "a48e61f7-2112-4a5b-ab39-bd55dab18e60"
+        },
+        "bodyLength": 195,
+        "bodySHA256": "194de98313b22bb54d0226e52dba80ee6bf4413c122d762e286de8ab55b9304d"
+      },
+      "note": "paging limit=abc"
+    },
+    {
+      "n": 30,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs",
+        "path": "/programs",
+        "query": "skip=abc",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to deserialize query string: skip: invalid digit found in string",
+          "instance": "c33f9a77-58f0-4757-a59d-56144cfea6d5"
+        },
+        "bodyLength": 194,
+        "bodySHA256": "0999602c73c091c5ca42d94ee12deec7c07f895ee19fe7e2b0a534428b27ade4"
+      },
+      "note": "paging skip=abc"
+    },
+    {
+      "n": 31,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "transcript-e53981",
+          "programLongName": "Transcript program",
+          "retailerName": "retailer",
+          "retailerLongName": "Retailer",
+          "programType": "PRICING_TARIFF",
+          "country": "NL",
+          "principalSubdivision": "UT",
+          "timeZoneOffset": "PT1H",
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00Z",
+            "duration": "P1D"
+          },
+          "programDescriptions": [
+            {
+              "URL": "https://example.com/program"
+            }
+          ],
+          "bindingEvents": false,
+          "localPrice": true,
+          "payloadDescriptors": [
+            {
+              "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+              "payloadType": "PRICE",
+              "units": "KWH",
+              "currency": "EUR"
+            }
+          ],
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 574,
+        "bodySHA256": "ce81182cb2c8815d086f2f0ead543a44c503328c14d408f2387fe3194dc68cdb"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "createdDateTime": "2026-11-08T15:57:30.306238+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.306238+00:00",
+          "objectType": "PROGRAM",
+          "programName": "transcript-e53981",
+          "programLongName": "Transcript program",
+          "retailerName": "retailer",
+          "retailerLongName": "Retailer",
+          "programType": "PRICING_TARIFF",
+          "country": "NL",
+          "principalSubdivision": "UT",
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00+00:00",
+            "duration": "P0Y0M1DT0H0M0S"
+          },
+          "programDescriptions": [
+            {
+              "URL": "https://example.com/program"
+            }
+          ],
+          "bindingEvents": false,
+          "localPrice": true,
+          "payloadDescriptors": [
+            {
+              "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+              "payloadType": "PRICE",
+              "units": "KWH",
+              "currency": "EUR"
+            }
+          ],
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 744,
+        "bodySHA256": "060176b761019495bd0eafccc633d8175ea96ffdf96ad78c74d64944a1431935"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "create program"
+    },
+    {
+      "n": 32,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs/{programID}",
+        "path": "/programs/a3103728-e8c2-468a-a459-42a5e84aba5f",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "createdDateTime": "2026-11-08T15:57:30.306238+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.306238+00:00",
+          "objectType": "PROGRAM",
+          "programName": "transcript-e53981",
+          "programLongName": "Transcript program",
+          "retailerName": "retailer",
+          "retailerLongName": "Retailer",
+          "programType": "PRICING_TARIFF",
+          "country": "NL",
+          "principalSubdivision": "UT",
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00+00:00",
+            "duration": "P0Y0M1DT0H0M0S"
+          },
+          "programDescriptions": [
+            {
+              "URL": "https://example.com/program"
+            }
+          ],
+          "bindingEvents": false,
+          "localPrice": true,
+          "payloadDescriptors": [
+            {
+              "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+              "payloadType": "PRICE",
+              "units": "KWH",
+              "currency": "EUR"
+            }
+          ],
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 744,
+        "bodySHA256": "060176b761019495bd0eafccc633d8175ea96ffdf96ad78c74d64944a1431935"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "read program"
+    },
+    {
+      "n": 33,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/programs/{programID}",
+        "path": "/programs/a3103728-e8c2-468a-a459-42a5e84aba5f",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "transcript-e53981",
+          "programLongName": "Changed",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 122,
+        "bodySHA256": "2c9c24c60fd9fdbc6d4c16b45fba03456b968cbbfe9855f1da1c4ae6e9d1b002"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "createdDateTime": "2026-11-08T15:57:30.306238+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.309306+00:00",
+          "objectType": "PROGRAM",
+          "programName": "transcript-e53981",
+          "programLongName": "Changed",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 300,
+        "bodySHA256": "a1dd8efa27f1d8df7836850a02cd073053b5b55bd09900c099e891dcacfc4224"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "update program"
+    },
+    {
+      "n": 34,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "transcript-310-e53981",
+          "targets": [
+            "transcript-group"
+          ]
+        },
+        "bodyLength": 70,
+        "bodySHA256": "ae03ece06ceb5b4abf333198b5a2d7b8941830980e2c038206cfeb536b894c1c"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to deserialize the JSON body into the target type: targets[0]: invalid type: string \"transcript-group\", expected struct TargetEntry at line 1 column 68",
+          "instance": "e1aa3dcc-3175-4a0b-972f-51a34d1a95c6"
+        },
+        "bodyLength": 283,
+        "bodySHA256": "890d51e9d8ecb46fd35de3766bb69201931874dbda7c114b5d23bb32e397dcf4"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "create program, 3.1.0 targets"
+    },
+    {
+      "n": 35,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "transcript-e53981"
+        },
+        "bodyLength": 35,
+        "bodySHA256": "c84f6b27bb0ac2db283ed01f49a8f496d22d94b5aadf824fa66140ae97288f37"
+      },
+      "response": {
+        "status": 409,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "409 Conflict",
+          "status": 409,
+          "detail": "Conflict",
+          "instance": "2e4448e7-61cf-4455-842b-03cf8c5a4197"
+        },
+        "bodyLength": 128,
+        "bodySHA256": "ccbb7f1865bc11801a1a9dbc31ec13a9a3c8307f40a18c4a9319bf3c5743107c"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "create program, name taken"
+    },
+    {
+      "n": 36,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programName": "transcript-ven-e53981"
+        },
+        "bodyLength": 39,
+        "bodySHA256": "eed825cada6bd271a4b67efa83495b898fb4908e5ea7dcd51dd2fd5da6c49696"
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "403 Forbidden",
+          "status": 403,
+          "detail": "User does not have the required role",
+          "instance": "84860359-2e62-4e92-9ec0-b1378b8120b7"
+        },
+        "bodyLength": 157,
+        "bodySHA256": "0c8b18ec228209ac2d4793e9b6c68fb90c165089917597088db184283ab1c50f"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "create program as a VEN"
+    },
+    {
+      "n": 37,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "text",
+        "bodyText": "{\"programName\":",
+        "bodyLength": 15,
+        "bodySHA256": "cbf04a880a29eadb28b099c2d35ee7c35f10d18f23632561e037bea91620e943"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to parse the request body as JSON: programName: EOF while parsing a value at line 1 column 15",
+          "instance": "a9767266-017c-4aa7-bbaf-8fd040f50b19"
+        },
+        "bodyLength": 223,
+        "bodySHA256": "3d6bd34ded16cd4f849128fc08ec01e405fec5ef481866a85d9e4be119d4e96d"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "create program, malformed JSON"
+    },
+    {
+      "n": 38,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/programs",
+        "path": "/programs",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {},
+        "bodyLength": 2,
+        "bodySHA256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to deserialize the JSON body into the target type: missing field `programName` at line 1 column 2",
+          "instance": "5f08c456-66c8-4161-b031-8dfb8cc52430"
+        },
+        "bodyLength": 227,
+        "bodySHA256": "9317705d17b7c918d4e278553e5c783b19673b4722c03a3a35cc66b867ce70c2"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "create program, no programName"
+    },
+    {
+      "n": 39,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs/{programID}",
+        "path": "/programs/no-such-program",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "b3ef2b38-e4b2-47d9-a27e-bc6e91d515fd"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "0cba3199ed213cdd80c03fe9b2c52ae255d5fb239fd9ec639becd5d19a78d253"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "read unknown program"
+    },
+    {
+      "n": 40,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/events",
+        "path": "/events",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventName": "transcript-event-e53981",
+          "priority": 2,
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ],
+          "reportDescriptors": [
+            {
+              "payloadType": "USAGE",
+              "readingType": "DIRECT_READ",
+              "units": "KWH",
+              "targets": [
+                {
+                  "type": "RESOURCE_NAME",
+                  "values": [
+                    "battery"
+                  ]
+                }
+              ],
+              "aggregate": false,
+              "startInterval": -1,
+              "numIntervals": -1,
+              "historical": true,
+              "frequency": -1,
+              "repeat": 1
+            }
+          ],
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00Z",
+            "duration": "PT1H"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.17
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 544,
+        "bodySHA256": "d5ad57b5d59058ba44843f85b5344a08b0f3f606e7244b2017779570087aff88"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.315410+00:00",
+          "objectType": "EVENT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventName": "transcript-event-e53981",
+          "priority": 2,
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ],
+          "reportDescriptors": [
+            {
+              "payloadType": "USAGE",
+              "readingType": "DIRECT_READ",
+              "units": "KWH",
+              "targets": [
+                {
+                  "type": "RESOURCE_NAME",
+                  "values": [
+                    "battery"
+                  ]
+                }
+              ],
+              "aggregate": false,
+              "startInterval": -1,
+              "numIntervals": -1,
+              "historical": true,
+              "frequency": -1,
+              "repeat": 1
+            }
+          ],
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00+00:00",
+            "duration": "P0Y0M0DT1H0M0S"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.17
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 735,
+        "bodySHA256": "a56195e7e1a8f05d7b4aeb1a12467cf7e3d6ed7d5cfd959c353830c758840ad7"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "create event"
+    },
+    {
+      "n": 41,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "programID=a3103728-e8c2-468a-a459-42a5e84aba5f",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+            "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+            "modificationDateTime": "2026-11-08T15:57:30.315410+00:00",
+            "objectType": "EVENT",
+            "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+            "eventName": "transcript-event-e53981",
+            "priority": 2,
+            "targets": [
+              {
+                "type": "GROUP",
+                "values": [
+                  "transcript-group"
+                ]
+              }
+            ],
+            "reportDescriptors": [
+              {
+                "payloadType": "USAGE",
+                "readingType": "DIRECT_READ",
+                "units": "KWH",
+                "targets": [
+                  {
+                    "type": "RESOURCE_NAME",
+                    "values": [
+                      "battery"
+                    ]
+                  }
+                ],
+                "aggregate": false,
+                "startInterval": -1,
+                "numIntervals": -1,
+                "historical": true,
+                "frequency": -1,
+                "repeat": 1
+              }
+            ],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.17
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "bodyLength": 737,
+        "bodySHA256": "99a887a76f24700e7f934d9043bc2ac2248b6a02af182d1c3d7dc6eb33b6c47e"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "events of the program"
+    },
+    {
+      "n": 42,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events/{eventID}",
+        "path": "/events/dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.315410+00:00",
+          "objectType": "EVENT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventName": "transcript-event-e53981",
+          "priority": 2,
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ],
+          "reportDescriptors": [
+            {
+              "payloadType": "USAGE",
+              "readingType": "DIRECT_READ",
+              "units": "KWH",
+              "targets": [
+                {
+                  "type": "RESOURCE_NAME",
+                  "values": [
+                    "battery"
+                  ]
+                }
+              ],
+              "aggregate": false,
+              "startInterval": -1,
+              "numIntervals": -1,
+              "historical": true,
+              "frequency": -1,
+              "repeat": 1
+            }
+          ],
+          "intervalPeriod": {
+            "start": "2030-01-01T00:00:00+00:00",
+            "duration": "P0Y0M0DT1H0M0S"
+          },
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.17
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 735,
+        "bodySHA256": "a56195e7e1a8f05d7b4aeb1a12467cf7e3d6ed7d5cfd959c353830c758840ad7"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "read event"
+    },
+    {
+      "n": 43,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/events/{eventID}",
+        "path": "/events/dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventName": "transcript-event-e53981",
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 158,
+        "bodySHA256": "33d195cecaef31abd21f2386727568a65dd151a2d0138387549dc5a4c84a89d6"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.319769+00:00",
+          "objectType": "EVENT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventName": "transcript-event-e53981",
+          "priority": null,
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 350,
+        "bodySHA256": "5def0ecf1b2acda341dc186d9dc7a9c73fdb78dc04c7ef1cd326f4fa3d6ed7cf"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "update event"
+    },
+    {
+      "n": 44,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "limit=1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "97beead5-1dd0-4562-bf3d-45391801522f",
+            "createdDateTime": "2026-11-08T15:57:29.770607+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.770607+00:00",
+            "objectType": "EVENT",
+            "programID": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "eventName": "day-ahead-prices",
+            "priority": 1,
+            "reportDescriptors": [
+              {
+                "payloadType": "USAGE",
+                "readingType": "DIRECT_READ",
+                "aggregate": false,
+                "startInterval": -1,
+                "numIntervals": -1,
+                "historical": true,
+                "frequency": -1,
+                "repeat": 1
+              }
+            ],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.17
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 1,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.21
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.09
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "bodyLength": 709,
+        "bodySHA256": "8e94be66a257408a9765af5efc295e1fc3c054eaa5118bc30ca1bedf9875e974"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging limit=1"
+    },
+    {
+      "n": 45,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "skip=1&limit=1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+            "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+            "modificationDateTime": "2026-11-08T15:57:30.319769+00:00",
+            "objectType": "EVENT",
+            "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+            "eventName": "transcript-event-e53981",
+            "priority": null,
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.5
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "bodyLength": 352,
+        "bodySHA256": "8f5429da910584156b57d8179793d6ce3473f7fdf9f8ac0db93c6b99327ca24e"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging skip=1&limit=1"
+    },
+    {
+      "n": 46,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "skip=1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+            "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+            "modificationDateTime": "2026-11-08T15:57:30.319769+00:00",
+            "objectType": "EVENT",
+            "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+            "eventName": "transcript-event-e53981",
+            "priority": null,
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.5
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "4f225c25-62ce-4ab2-9ea9-82f7ae0262f2",
+            "createdDateTime": "2026-11-08T15:57:29.771721+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.771721+00:00",
+            "objectType": "EVENT",
+            "programID": "6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3",
+            "eventName": "group-a-limit",
+            "priority": null,
+            "targets": [
+              {
+                "type": "VEN_NAME",
+                "values": [
+                  "site-1"
+                ]
+              }
+            ],
+            "intervalPeriod": {
+              "start": "2030-01-01T17:00:00+00:00",
+              "duration": "P0Y0M0DT2H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "IMPORT_CAPACITY_LIMIT",
+                    "values": [
+                      11.5
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "bodyLength": 845,
+        "bodySHA256": "91f9b657a0ae39d8aa5f2e8faa09056c341c08735588576464cb28402881f3bf"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging skip=1"
+    },
+    {
+      "n": 47,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "skip=1000",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [],
+        "bodyLength": 2,
+        "bodySHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging skip=1000"
+    },
+    {
+      "n": 48,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "limit=0",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "limit: Validation error: range [{\"min\": Number(1), \"max\": Number(50), \"value\": Number(0)}]",
+          "instance": "5f35ea29-7b15-409b-ad8a-306e0c5e80ff"
+        },
+        "bodyLength": 219,
+        "bodySHA256": "ef6983b7ba78f26a944aa6622d7240f1d7362d33d458d8a8f4971011e2262767"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging limit=0"
+    },
+    {
+      "n": 49,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "limit=50",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "97beead5-1dd0-4562-bf3d-45391801522f",
+            "createdDateTime": "2026-11-08T15:57:29.770607+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.770607+00:00",
+            "objectType": "EVENT",
+            "programID": "38c28783-dcce-4eef-a40d-b0cc4b1f1371",
+            "eventName": "day-ahead-prices",
+            "priority": 1,
+            "reportDescriptors": [
+              {
+                "payloadType": "USAGE",
+                "readingType": "DIRECT_READ",
+                "aggregate": false,
+                "startInterval": -1,
+                "numIntervals": -1,
+                "historical": true,
+                "frequency": -1,
+                "repeat": 1
+              }
+            ],
+            "intervalPeriod": {
+              "start": "2030-01-01T00:00:00+00:00",
+              "duration": "P0Y0M0DT1H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.17
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 1,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.21
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 2,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.09
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+            "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+            "modificationDateTime": "2026-11-08T15:57:30.319769+00:00",
+            "objectType": "EVENT",
+            "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+            "eventName": "transcript-event-e53981",
+            "priority": null,
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.5
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "4f225c25-62ce-4ab2-9ea9-82f7ae0262f2",
+            "createdDateTime": "2026-11-08T15:57:29.771721+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.771721+00:00",
+            "objectType": "EVENT",
+            "programID": "6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3",
+            "eventName": "group-a-limit",
+            "priority": null,
+            "targets": [
+              {
+                "type": "VEN_NAME",
+                "values": [
+                  "site-1"
+                ]
+              }
+            ],
+            "intervalPeriod": {
+              "start": "2030-01-01T17:00:00+00:00",
+              "duration": "P0Y0M0DT2H0M0S"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "IMPORT_CAPACITY_LIMIT",
+                    "values": [
+                      11.5
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "bodyLength": 1553,
+        "bodySHA256": "1c21b693ec605df02967d513311e62fe32e5d0dc1eb65ece451818950598cb40"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging limit=50"
+    },
+    {
+      "n": 50,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "limit=51",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "limit: Validation error: range [{\"min\": Number(1), \"value\": Number(51), \"max\": Number(50)}]",
+          "instance": "d6a67221-5f17-4fb1-8901-83002bf1b15b"
+        },
+        "bodyLength": 220,
+        "bodySHA256": "eab9d71941f9900827922ef8c79ba477651d457b6903dc24980bf9da264ec81f"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging limit=51"
+    },
+    {
+      "n": 51,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "limit=-1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "limit: Validation error: range [{\"max\": Number(50), \"min\": Number(1), \"value\": Number(-1)}]",
+          "instance": "1cb96b39-60ab-4ddd-8e90-e4021ec419e8"
+        },
+        "bodyLength": 220,
+        "bodySHA256": "3d593b5260ae9b1e40cf85956d1a2f5c97767d84d4e96fb8594d2d17a9177aad"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging limit=-1"
+    },
+    {
+      "n": 52,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "skip=-1",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "skip: Validation error: range [{\"min\": Number(0), \"value\": Number(-1)}]",
+          "instance": "5c1282d7-5727-4ab4-971b-dbe822c42da0"
+        },
+        "bodyLength": 198,
+        "bodySHA256": "0f36c359173b71b569e7d90f808d40c7d736e04c756521665b390cd8f09285d2"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging skip=-1"
+    },
+    {
+      "n": 53,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "limit=abc",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to deserialize query string: limit: invalid digit found in string",
+          "instance": "7458c798-fce0-4e3e-93f9-8fda2b0d136c"
+        },
+        "bodyLength": 195,
+        "bodySHA256": "a1bcd708be56050c0d0d0b8328313e312f07c4033454ca0c1b2d9f637e343ba1"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging limit=abc"
+    },
+    {
+      "n": 54,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/events",
+        "path": "/events",
+        "query": "skip=abc",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "400 Bad Request",
+          "status": 400,
+          "detail": "Failed to deserialize query string: skip: invalid digit found in string",
+          "instance": "0984f171-af6c-4dfe-af6d-9f04686865f7"
+        },
+        "bodyLength": 194,
+        "bodySHA256": "45b763b48c2729d49d56e205a95102b560dc759882be3c4bb114dffe2d1cd1d1"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "paging skip=abc"
+    },
+    {
+      "n": 55,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens",
+        "path": "/vens",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "02db1694-42a6-4536-8809-6881bad5cd77",
+            "createdDateTime": "2026-11-08T15:57:29.761816+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.761816+00:00",
+            "objectType": "VEN",
+            "venName": "site-2"
+          },
+          {
+            "id": "e7c74239-0c22-4ca5-a01b-1f2f8cea754e",
+            "createdDateTime": "2026-11-08T15:57:29.757282+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.757282+00:00",
+            "objectType": "VEN",
+            "venName": "site-1",
+            "targets": [
+              {
+                "type": "GROUP",
+                "values": [
+                  "group-a"
+                ]
+              }
+            ],
+            "resources": [
+              {
+                "id": "c1518f1d-e37d-48eb-b8f1-8533e651fb6d",
+                "createdDateTime": "2026-11-08T15:57:29.766211+00:00",
+                "modificationDateTime": "2026-11-08T15:57:29.766211+00:00",
+                "venID": "e7c74239-0c22-4ca5-a01b-1f2f8cea754e",
+                "objectType": "RESOURCE",
+                "resourceName": "battery"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 708,
+        "bodySHA256": "2f9055ca98e7f6cf78c66a4317a38efe0c68843d55bd8598e850203d007ce926"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "vens as BL"
+    },
+    {
+      "n": 56,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens",
+        "path": "/vens",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "e7c74239-0c22-4ca5-a01b-1f2f8cea754e",
+            "createdDateTime": "2026-11-08T15:57:29.757282+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.757282+00:00",
+            "objectType": "VEN",
+            "venName": "site-1",
+            "targets": [
+              {
+                "type": "GROUP",
+                "values": [
+                  "group-a"
+                ]
+              }
+            ],
+            "resources": [
+              {
+                "id": "c1518f1d-e37d-48eb-b8f1-8533e651fb6d",
+                "createdDateTime": "2026-11-08T15:57:29.766211+00:00",
+                "modificationDateTime": "2026-11-08T15:57:29.766211+00:00",
+                "venID": "e7c74239-0c22-4ca5-a01b-1f2f8cea754e",
+                "objectType": "RESOURCE",
+                "resourceName": "battery"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 513,
+        "bodySHA256": "6b9607ac5665db864413165bd0604b6c3e819cd7f707039ed00eb7ce583035a9"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "vens as ven-1"
+    },
+    {
+      "n": 57,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/vens",
+        "path": "/vens",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "VEN",
+          "venName": "transcript-ven-e53981",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                "NL"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 164,
+        "bodySHA256": "c1e4c0268a3127a964dc15419d416d0e8e872f0fde423bb7c3a36ccbcf757fe0"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "createdDateTime": "2026-11-08T15:57:30.334080+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.334080+00:00",
+          "objectType": "VEN",
+          "venName": "transcript-ven-e53981",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                "NL"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 319,
+        "bodySHA256": "f8c53f01f9214c4396e71264715bbbcf7e4b2e67f5736b1257fa80b3670d3936"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ]
+      },
+      "note": "create ven"
+    },
+    {
+      "n": 58,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens/{venID}",
+        "path": "/vens/f5ef6398-616d-491b-bfd5-92146108f508",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "createdDateTime": "2026-11-08T15:57:30.334080+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.334080+00:00",
+          "objectType": "VEN",
+          "venName": "transcript-ven-e53981",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                "NL"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 319,
+        "bodySHA256": "f8c53f01f9214c4396e71264715bbbcf7e4b2e67f5736b1257fa80b3670d3936"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ]
+      },
+      "note": "read ven"
+    },
+    {
+      "n": 59,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/vens/{venID}",
+        "path": "/vens/f5ef6398-616d-491b-bfd5-92146108f508",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "VEN",
+          "venName": "transcript-ven-e53981"
+        },
+        "bodyLength": 54,
+        "bodySHA256": "177f6875a088d21c80d4936d1f195690d76ee20b24e511131cb55bc319db2879"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "createdDateTime": "2026-11-08T15:57:30.334080+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.336720+00:00",
+          "objectType": "VEN",
+          "venName": "transcript-ven-e53981"
+        },
+        "bodyLength": 209,
+        "bodySHA256": "867e3552fcb038c30231f7b1bddd286b000c0842a1f65f0a55969006ea5b71a4"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ]
+      },
+      "note": "update ven"
+    },
+    {
+      "n": 60,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens/{venID}/resources",
+        "path": "/vens/e7c74239-0c22-4ca5-a01b-1f2f8cea754e/resources",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "c1518f1d-e37d-48eb-b8f1-8533e651fb6d",
+            "createdDateTime": "2026-11-08T15:57:29.766211+00:00",
+            "modificationDateTime": "2026-11-08T15:57:29.766211+00:00",
+            "venID": "e7c74239-0c22-4ca5-a01b-1f2f8cea754e",
+            "objectType": "RESOURCE",
+            "resourceName": "battery"
+          }
+        ],
+        "bodyLength": 254,
+        "bodySHA256": "d2c570025299d896f477f92f75a3e4673a4c3551e5a9a1f3135575bdbfada5ca"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ]
+      },
+      "note": "resources of site-1"
+    },
+    {
+      "n": 61,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/vens/{venID}/resources",
+        "path": "/vens/f5ef6398-616d-491b-bfd5-92146108f508/resources",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE",
+          "resourceName": "transcript-res-e53981",
+          "venID": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "attributes": [
+            {
+              "type": "MAX_POWER_CONSUMPTION",
+              "values": [
+                11
+              ]
+            }
+          ]
+        },
+        "bodyLength": 173,
+        "bodySHA256": "840e96736fb7ee2d5f09cf176ac5cac8b1ab3b70cde6e5a71e0597a074e1c1a3"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "c80edf29-890f-44ee-9a2c-388b6d4e2612",
+          "createdDateTime": "2026-11-08T15:57:30.339263+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.339263+00:00",
+          "venID": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "objectType": "RESOURCE",
+          "resourceName": "transcript-res-e53981",
+          "attributes": [
+            {
+              "type": "MAX_POWER_CONSUMPTION",
+              "values": [
+                11
+              ]
+            }
+          ]
+        },
+        "bodyLength": 328,
+        "bodySHA256": "1d7f8febb0555b38b3c0ddb2ab5ef9eb2a177d6649b51b625a9e9137b1612c09"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "create resource"
+    },
+    {
+      "n": 62,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/vens/{venID}/resources/{resourceID}",
+        "path": "/vens/f5ef6398-616d-491b-bfd5-92146108f508/resources/c80edf29-890f-44ee-9a2c-388b6d4e2612",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "c80edf29-890f-44ee-9a2c-388b6d4e2612",
+          "createdDateTime": "2026-11-08T15:57:30.339263+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.339263+00:00",
+          "venID": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "objectType": "RESOURCE",
+          "resourceName": "transcript-res-e53981",
+          "attributes": [
+            {
+              "type": "MAX_POWER_CONSUMPTION",
+              "values": [
+                11
+              ]
+            }
+          ]
+        },
+        "bodyLength": 328,
+        "bodySHA256": "1d7f8febb0555b38b3c0ddb2ab5ef9eb2a177d6649b51b625a9e9137b1612c09"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "read resource"
+    },
+    {
+      "n": 63,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/vens/{venID}/resources/{resourceID}",
+        "path": "/vens/f5ef6398-616d-491b-bfd5-92146108f508/resources/c80edf29-890f-44ee-9a2c-388b6d4e2612",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE",
+          "resourceName": "transcript-res-e53981",
+          "venID": "f5ef6398-616d-491b-bfd5-92146108f508"
+        },
+        "bodyLength": 111,
+        "bodySHA256": "35e7015e235d5a3f02806a1fe7c93f560b04e61e8d3c38dd42ac3d0574b57e47"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "c80edf29-890f-44ee-9a2c-388b6d4e2612",
+          "createdDateTime": "2026-11-08T15:57:30.339263+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.341514+00:00",
+          "venID": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "objectType": "RESOURCE",
+          "resourceName": "transcript-res-e53981"
+        },
+        "bodyLength": 266,
+        "bodySHA256": "14b5ffc52b3a31e687cbb856fe007bbb96136274cc4f3ecbe210c7526db06d30"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "update resource"
+    },
+    {
+      "n": 64,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resources",
+        "path": "/resources",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "434827ce-44d7-41ea-818e-216805dce02e"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "b8e025b834a388e986068f61acf929a95d57707f84c7edc336ec45a6d85f578c"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "3.1.0 resources path"
+    },
+    {
+      "n": 65,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/reports",
+        "path": "/reports",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventID": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "clientName": "site-1",
+          "reportName": "transcript-report-e53981",
+          "resources": [
+            {
+              "resourceName": "battery",
+              "intervals": [
+                {
+                  "id": 0,
+                  "payloads": [
+                    {
+                      "type": "USAGE",
+                      "values": [
+                        1.25
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 273,
+        "bodySHA256": "d29cf37e28ca2d49327a6e36af7b84414e297ba9f5ebf7de4b7c350b75a333bb"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+          "createdDateTime": "2026-11-08T15:57:30.344187+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.344187+00:00",
+          "objectType": "REPORT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventID": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "clientName": "site-1",
+          "reportName": "transcript-report-e53981",
+          "resources": [
+            {
+              "resourceName": "battery",
+              "intervals": [
+                {
+                  "id": 0,
+                  "payloads": [
+                    {
+                      "type": "USAGE",
+                      "values": [
+                        1.25
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 450,
+        "bodySHA256": "648b4e0bf911b4a19ed31c5d4b30a87067cdc0c5f86472e390fa90fc86e34531"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "reports": [
+          "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "ven-1 creates a report"
+    },
+    {
+      "n": 66,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/reports",
+        "path": "/reports",
+        "query": "programID=a3103728-e8c2-468a-a459-42a5e84aba5f",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "id": "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+            "createdDateTime": "2026-11-08T15:57:30.344187+00:00",
+            "modificationDateTime": "2026-11-08T15:57:30.344187+00:00",
+            "objectType": "REPORT",
+            "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+            "eventID": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+            "clientName": "site-1",
+            "reportName": "transcript-report-e53981",
+            "resources": [
+              {
+                "resourceName": "battery",
+                "intervals": [
+                  {
+                    "id": 0,
+                    "payloads": [
+                      {
+                        "type": "USAGE",
+                        "values": [
+                          1.25
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "bodyLength": 452,
+        "bodySHA256": "26281b194e3bfdbb5aabb3079579c4450a4c111fea33d864cdcca14d7ce5101f"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "reports": [
+          "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "reports of the program"
+    },
+    {
+      "n": 67,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/reports/{reportID}",
+        "path": "/reports/7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+          "createdDateTime": "2026-11-08T15:57:30.344187+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.344187+00:00",
+          "objectType": "REPORT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventID": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "clientName": "site-1",
+          "reportName": "transcript-report-e53981",
+          "resources": [
+            {
+              "resourceName": "battery",
+              "intervals": [
+                {
+                  "id": 0,
+                  "payloads": [
+                    {
+                      "type": "USAGE",
+                      "values": [
+                        1.25
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 450,
+        "bodySHA256": "648b4e0bf911b4a19ed31c5d4b30a87067cdc0c5f86472e390fa90fc86e34531"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "reports": [
+          "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "read report"
+    },
+    {
+      "n": 68,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/reports/{reportID}",
+        "path": "/reports/7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventID": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "clientName": "site-1",
+          "resources": [
+            {
+              "resourceName": "battery",
+              "intervals": [
+                {
+                  "id": 0,
+                  "payloads": [
+                    {
+                      "type": "USAGE",
+                      "values": [
+                        2.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 232,
+        "bodySHA256": "25717da44fee7fd5290bcfc28bc540e96cac25461b8af963b0e8bca4566de631"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+          "createdDateTime": "2026-11-08T15:57:30.344187+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.348315+00:00",
+          "objectType": "REPORT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventID": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "clientName": "site-1",
+          "resources": [
+            {
+              "resourceName": "battery",
+              "intervals": [
+                {
+                  "id": 0,
+                  "payloads": [
+                    {
+                      "type": "USAGE",
+                      "values": [
+                        2.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 409,
+        "bodySHA256": "97e381060f5611e597186c2219af28e7940d627dd66d9d73d4af5f77b76a7371"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "reports": [
+          "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "update report"
+    },
+    {
+      "n": 69,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/reports/{reportID}",
+        "path": "/reports/7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "403 Forbidden",
+          "status": 403,
+          "detail": "User does not have the required role",
+          "instance": "e6c70b6c-0d50-455f-afee-05345df44473"
+        },
+        "bodyLength": 157,
+        "bodySHA256": "ab991f86c1a4e967425c4999899bdf5fb64e54674d99860402c67b6d96121310"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "reports": [
+          "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "delete report as the VEN"
+    },
+    {
+      "n": 70,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/reports/{reportID}",
+        "path": "/reports/7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "7e21b4b0-cc5c-43f6-a85b-e3f3ebd8e758",
+          "createdDateTime": "2026-11-08T15:57:30.344187+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.348315+00:00",
+          "objectType": "REPORT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventID": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "clientName": "site-1",
+          "resources": [
+            {
+              "resourceName": "battery",
+              "intervals": [
+                {
+                  "id": 0,
+                  "payloads": [
+                    {
+                      "type": "USAGE",
+                      "values": [
+                        2.5
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 409,
+        "bodySHA256": "97e381060f5611e597186c2219af28e7940d627dd66d9d73d4af5f77b76a7371"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "delete report as BL"
+    },
+    {
+      "n": 71,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/subscriptions",
+        "path": "/subscriptions",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "cbb19509-2c0a-4aa0-ac87-cf0c7c0366e5"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "e92e8d3d56c55229f31057fce6c2a75972de1fecd10c64e4191f21dd10907170"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "subscriptions"
+    },
+    {
+      "n": 72,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/subscriptions",
+        "path": "/subscriptions",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "clientName": "site-1",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "objectOperations": [
+            {
+              "objects": [
+                "EVENT"
+              ],
+              "operations": [
+                "POST"
+              ],
+              "callbackUrl": "http://callback.invalid/notifications",
+              "bearerToken": "redacted-callback-token-1"
+            }
+          ]
+        },
+        "bodyLength": 235,
+        "bodySHA256": "eb596681bc7f08f8636540ddffd5e76dae2d4829e85f25b103d2494df0d1d9aa"
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "bb93d40c-e74f-4e2d-9110-503daabbb24c"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "0483a509ae776de7b1ebf881bc978b485f41958806b8fee87b77120e2ee2ef4a"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "create subscription"
+    },
+    {
+      "n": 73,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/notifiers",
+        "path": "/notifiers",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "2e799bb6-050d-431d-a268-1dc87c024371"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "1b0b5eca1fa63cd975a8a2415c92a1d62eec04e352f1e2d6e997a8b30d98e30d"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ],
+        "vens/resources": [
+          "c80edf29-890f-44ee-9a2c-388b6d4e2612"
+        ]
+      },
+      "note": "notifiers (not in 3.0.1)"
+    },
+    {
+      "n": 74,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/vens/{venID}/resources/{resourceID}",
+        "path": "/vens/f5ef6398-616d-491b-bfd5-92146108f508/resources/c80edf29-890f-44ee-9a2c-388b6d4e2612",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "c80edf29-890f-44ee-9a2c-388b6d4e2612",
+          "createdDateTime": "2026-11-08T15:57:30.339263+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.341514+00:00",
+          "venID": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "objectType": "RESOURCE",
+          "resourceName": "transcript-res-e53981"
+        },
+        "bodyLength": 266,
+        "bodySHA256": "14b5ffc52b3a31e687cbb856fe007bbb96136274cc4f3ecbe210c7526db06d30"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ],
+        "vens": [
+          "f5ef6398-616d-491b-bfd5-92146108f508"
+        ]
+      },
+      "note": "delete resource"
+    },
+    {
+      "n": 75,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/vens/{venID}",
+        "path": "/vens/f5ef6398-616d-491b-bfd5-92146108f508",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "f5ef6398-616d-491b-bfd5-92146108f508",
+          "createdDateTime": "2026-11-08T15:57:30.334080+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.336720+00:00",
+          "objectType": "VEN",
+          "venName": "transcript-ven-e53981"
+        },
+        "bodyLength": 209,
+        "bodySHA256": "867e3552fcb038c30231f7b1bddd286b000c0842a1f65f0a55969006ea5b71a4"
+      },
+      "state": {
+        "events": [
+          "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4"
+        ],
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "delete ven"
+    },
+    {
+      "n": 76,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/events/{eventID}",
+        "path": "/events/dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "dfacdc8e-eb2e-4795-9c90-7815f23ab0b4",
+          "createdDateTime": "2026-11-08T15:57:30.315410+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.319769+00:00",
+          "objectType": "EVENT",
+          "programID": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "eventName": "transcript-event-e53981",
+          "priority": null,
+          "intervals": [
+            {
+              "id": 0,
+              "payloads": [
+                {
+                  "type": "PRICE",
+                  "values": [
+                    0.5
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "bodyLength": 350,
+        "bodySHA256": "5def0ecf1b2acda341dc186d9dc7a9c73fdb78dc04c7ef1cd326f4fa3d6ed7cf"
+      },
+      "state": {
+        "programs": [
+          "a3103728-e8c2-468a-a459-42a5e84aba5f"
+        ]
+      },
+      "note": "delete event"
+    },
+    {
+      "n": 77,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/programs/{programID}",
+        "path": "/programs/a3103728-e8c2-468a-a459-42a5e84aba5f",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "id": "a3103728-e8c2-468a-a459-42a5e84aba5f",
+          "createdDateTime": "2026-11-08T15:57:30.306238+00:00",
+          "modificationDateTime": "2026-11-08T15:57:30.309306+00:00",
+          "objectType": "PROGRAM",
+          "programName": "transcript-e53981",
+          "programLongName": "Changed",
+          "targets": [
+            {
+              "type": "GROUP",
+              "values": [
+                "transcript-group"
+              ]
+            }
+          ]
+        },
+        "bodyLength": 300,
+        "bodySHA256": "a1dd8efa27f1d8df7836850a02cd073053b5b55bd09900c099e891dcacfc4224"
+      },
+      "note": "delete program"
+    },
+    {
+      "n": 78,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/programs/{programID}",
+        "path": "/programs/a3103728-e8c2-468a-a459-42a5e84aba5f",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "dda11802-fa0f-4ef1-b64b-b5a5a1f6060c"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "5ec012a25f69e73eaf50c18c092ea2060af6e1f4a8bebfed986b00ba4170b2bb"
+      },
+      "note": "read deleted program"
+    }
+  ]
+}
