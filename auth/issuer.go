@@ -149,10 +149,11 @@ func (is *Issuer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	client, ok := is.authenticate(r)
 	if !ok {
-		_, _, basic := r.BasicAuth()
-		if basic {
-			w.Header().Set("WWW-Authenticate", `Basic realm="openadr"`)
-		}
+		// A 401 carries a challenge (RFC 9110 section 15.5.2), also when
+		// the credentials came in the form: RFC 6749 section 5.2 requires
+		// one for HTTP Basic, and HTTP for every 401. Basic is the scheme
+		// a client authenticates with here.
+		w.Header().Set("WWW-Authenticate", `Basic realm="openadr"`)
 		writeTokenError(w, http.StatusUnauthorized, "invalid_client", "unknown client or wrong secret")
 		return
 	}

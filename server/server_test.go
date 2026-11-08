@@ -237,3 +237,36 @@ func TestNotifierEndpoints(t *testing.T) {
 		t.Errorf("POST /subscriptions = %d %s; the client ID is the token's", created.status, created.body)
 	}
 }
+
+// A request body declared as anything but JSON is refused with 415, as the
+// VTN of OpenLEADR does (testdata/transcripts, "create program, as
+// text/plain"); before, it was read as JSON and the program created. A body
+// without a Content-Type is still read as JSON.
+func TestNonJSONBodyRefused(t *testing.T) {
+	h := newServer(t, server.Config{})
+	for ct, want := range map[string]int{
+		"text/plain":                        http.StatusUnsupportedMediaType,
+		"application/x-www-form-urlencoded": http.StatusUnsupportedMediaType,
+		"multipart/form-data; boundary=x":   http.StatusUnsupportedMediaType,
+		"not a media type":                  http.StatusUnsupportedMediaType,
+		"application/json":                  http.StatusCreated,
+		"application/json; charset=utf-8":   http.StatusCreated,
+		"Application/JSON":                  http.StatusCreated,
+		"application/merge-patch+json":      http.StatusCreated,
+		"":                                  http.StatusCreated,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/programs", strings.NewReader(`{"programName":"p-`+strings.NewReplacer("/", "-", " ", "-", ";", "", "=", "").Replace(ct)+`"}`))
+		req.Header.Set("Authorization", "Bearer bl")
+		if ct != "" {
+			req.Header.Set("Content-Type", ct)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("Content-Type %q: %d %s, want %d", ct, rec.Code, rec.Body, want)
+		}
+		if want == http.StatusUnsupportedMediaType && !strings.Contains(rec.Body.String(), "application/json") {
+			t.Errorf("Content-Type %q: %s", ct, rec.Body)
+		}
+	}
+}
