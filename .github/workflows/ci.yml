@@ -57,6 +57,18 @@ jobs:
         env:
           OPENADR_STORAGE_REQUIRE: "1"
 
+  # The recorded exchanges: their SHA256, the manifest, and the replays.
+  transcripts:
+    name: Transcripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make transcripts-verify
+
   # The per-package floor (COVER_PKG_MIN in the Makefile) on top of the
   # aggregate gate of the shared workflow.
   coverage-floor:

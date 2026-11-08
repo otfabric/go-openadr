@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(10)
+[]byte("{\"detail\":\"objectOperations[0].operations: POST is not READ, CREATE, UPDATE or DELETE\",\"instance\":\"/subscriptions\",\"status\":400,\"title\":\"Bad Request\",\"type\":\"about:blank\"}")

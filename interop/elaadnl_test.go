@@ -108,6 +108,20 @@ func startGoVTNWith(t *testing.T, clientAdapter, fixtureName string, o vtnOption
 	if o.wrap != nil {
 		handler = o.wrap(handler)
 	}
+	if rec := recording(t, clientAdapter, fixtureName, false, true); rec != nil {
+		handler = rec.rec.Handler(handler)
+		setup := map[string]string{"anonymous": fmt.Sprint(cfg.AllowAnonymous), "resourceGroups": fmt.Sprint(cfg.ResourceGroups),
+			"webhooks": fmt.Sprint(cfg.Webhooks != nil), "mqtt": fmt.Sprint(cfg.MQTT != nil), "websocket": fmt.Sprint(cfg.WebSocket != nil), "tls": fmt.Sprint(ca != nil)}
+		if cfg.MQTT != nil {
+			setup["mqttTopicPrefix"] = cfg.MQTT.TopicPrefix
+			setup["mqttAuthentication"] = cfg.MQTT.Authentication.Method
+			setup["mqttUsername"] = cfg.MQTT.Authentication.Username
+		}
+		rec.rec.Setup(setup)
+		hc = selfClient(hc)
+		rec.red.Endpoint(public, scheme+"://vtn.invalid")
+		rec.red.Endpoint(local, scheme+"://vtn.invalid")
+	}
 	srv := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	if ca != nil {
 		srv.TLSConfig = ca.serverConfig(t, host)

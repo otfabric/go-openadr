@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -548,8 +549,11 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		constraint *storage.ConstraintError
 		tooLarge   *http.MaxBytesError
 		refused    forbidden
+		media      unsupportedMediaType
 	)
 	switch {
+	case errors.As(err, &media):
+		s.problem(w, r, http.StatusUnsupportedMediaType, string(media))
 	case errors.As(err, &invalid):
 		s.problem(w, r, http.StatusBadRequest, invalid.Field+" "+invalid.Reason)
 	case errors.As(err, &refused):
@@ -584,9 +588,34 @@ func invalidParam(name, reason string) error {
 	return &openadr.ValidationError{Field: "query parameter " + name, Reason: reason}
 }
 
+// unsupportedMediaType is a request body declared as something other than
+// JSON.
+type unsupportedMediaType string
+
+func (u unsupportedMediaType) Error() string { return string(u) }
+
+// jsonBody refuses a request body that its Content-Type says is not JSON.
+// The operations take application/json only (openadr3.yaml, every
+// requestBody). A body without a Content-Type is read as JSON, as RFC 9110
+// section 8.3 lets a recipient do.
+func jsonBody(r *http.Request) error {
+	ct := r.Header.Get("Content-Type")
+	if ct == "" {
+		return nil
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	if err == nil && (mt == "application/json" || (strings.HasPrefix(mt, "application/") && strings.HasSuffix(mt, "+json"))) {
+		return nil
+	}
+	return unsupportedMediaType("the request body must be application/json, not " + strconv.Quote(ct))
+}
+
 // readObject decodes and validates the request body.
 func readObject[T interface{ Validate() error }](s *Server, w http.ResponseWriter, r *http.Request, c wire.ObjectCodec[T]) (T, wire.Form, error) {
 	var zero T
+	if err := jsonBody(r); err != nil {
+		return zero, 0, err
+	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.maxBody))
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {

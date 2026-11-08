@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(9)
+[]byte("{\"topics\":{\"UPDATE\":\"vens/13f0b7fb-f837-45df-8b9f-9140f7c5419d/update\",\"DELETE\":\"vens/13f0b7fb-f837-45df-8b9f-9140f7c5419d/delete\",\"ALL\":\"vens/13f0b7fb-f837-45df-8b9f-9140f7c5419d/+\"}}")

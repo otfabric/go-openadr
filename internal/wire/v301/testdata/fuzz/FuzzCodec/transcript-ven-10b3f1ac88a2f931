@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(3)
+[]byte("{\"id\":\"c6724c26-c78e-4f2e-a5c9-7db7329d2b86\",\"createdDateTime\":\"2026-11-08T15:57:12.526791+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:12.535242+00:00\",\"objectType\":\"VEN\",\"venName\":\"ven-18e61d0a820908f0\",\"targets\":[{\"type\":\"GROUP\",\"values\":[\"group-18e61d0a820908f0\"]},{\"type\":\"VEN_NAME\",\"values\":[\"site-1\"]}]}")

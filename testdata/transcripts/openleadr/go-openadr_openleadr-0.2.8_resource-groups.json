@@ -1,0 +1,1296 @@
+{
+  "schema": "openadr-transcript/1",
+  "name": "go-openadr_openleadr-0.2.8_resource-groups",
+  "source": "openleadr",
+  "level": "D",
+  "protocolVersion": "3.1.0",
+  "peer": "openleadr 0.2.8 (ghcr.io/otfabric/openadr-interop-openleadr@sha256:8f5c8e55a31a50888d2eca6da6431734c32b589b5151c68e86ddb68076da171e)",
+  "peerRole": "VTN",
+  "recorded": "2026-11-08",
+  "recorder": "go-openadr interop suite, TestOpenLEADRResourceGroups",
+  "fixture": "baseline",
+  "clients": [
+    {
+      "name": "bl",
+      "role": "bl",
+      "clientId": "interop-bl",
+      "secretPlaceholder": "redacted-secret-bl"
+    },
+    {
+      "name": "ven-1",
+      "role": "ven",
+      "clientId": "interop-ven-1",
+      "secretPlaceholder": "redacted-secret-ven-1"
+    },
+    {
+      "name": "ven-2",
+      "role": "ven",
+      "clientId": "interop-ven-2",
+      "secretPlaceholder": "redacted-secret-ven-2"
+    },
+    {
+      "name": "ven-3",
+      "role": "ven",
+      "clientId": "interop-ven-3",
+      "secretPlaceholder": "redacted-secret-ven-3"
+    }
+  ],
+  "redactions": [
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-1",
+      "count": 7
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-2",
+      "count": 10
+    },
+    {
+      "kind": "access-token",
+      "placeholder": "redacted-token-3",
+      "count": 3
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-bl",
+      "count": 1
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-ven-1",
+      "count": 2
+    },
+    {
+      "kind": "client-secret",
+      "placeholder": "redacted-secret-ven-2",
+      "count": 1
+    },
+    {
+      "kind": "endpoint",
+      "placeholder": "http://vtn.invalid",
+      "count": 4
+    }
+  ],
+  "steps": [
+    {
+      "n": 1,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 2,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "8f91da093514086c0d7012b0c092a19eb9ee46737ae786dfa4cc0fbe01226285"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 3,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resources",
+        "path": "/resources",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "objectType": "RESOURCE",
+            "id": "c2227f3d-8c7c-4adf-b661-fc61a4d6f03c",
+            "createdDateTime": "2026-11-08T15:56:48.076691+00:00",
+            "modificationDateTime": "2026-11-08T15:56:48.076691+00:00",
+            "clientID": "interop-ven-1",
+            "targets": [],
+            "resourceName": "battery",
+            "venID": "345f5418-e8a4-43fa-a6ee-8981d7e4948a"
+          }
+        ],
+        "bodyLength": 294,
+        "bodySHA256": "31376f33ce4044088a39fec720c4fe72181717ba8f00e50f445afbb2de0351c0",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 4,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 5,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-bl"
+          ],
+          "client_secret": [
+            "redacted-secret-bl"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 83,
+        "bodySHA256": "b38b8d67c411142b9ce3235ffaecca66ca9d916d70bdd1bbde80189a04221c41"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-2",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "54a780dc1dcf9045e671b519707c7cebf891baace1dac14fa6f6d5369e546eb0",
+        "bodyEncoding": "gzip"
+      }
+    },
+    {
+      "n": 6,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "resourceGroupName": "street-18e61d04ec1266e8",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                {
+                  "x": 52.1,
+                  "y": 4.3
+                }
+              ]
+            }
+          ],
+          "targets": [
+            "feeder-18e61d04ec1266e8"
+          ],
+          "children": [
+            {
+              "type": "ven_resource",
+              "id": "c2227f3d-8c7c-4adf-b661-fc61a4d6f03c"
+            }
+          ]
+        },
+        "bodyLength": 231,
+        "bodySHA256": "28d8b8f44a4f857b7f2980e340f48408b769a8fb51eeb9916e339c9db647ad11"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE_GROUP",
+          "id": "afe23866-fbed-497e-8577-2fcbe179f439",
+          "createdDateTime": "2026-11-08T15:56:48.757881+00:00",
+          "modificationDateTime": "2026-11-08T15:56:48.757881+00:00",
+          "targets": [
+            "feeder-18e61d04ec1266e8"
+          ],
+          "resourceGroupName": "street-18e61d04ec1266e8",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                {
+                  "x": 52.1,
+                  "y": 4.3
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "type": "ven_resource",
+              "id": "c2227f3d-8c7c-4adf-b661-fc61a4d6f03c"
+            }
+          ]
+        },
+        "bodyLength": 416,
+        "bodySHA256": "b0498ccb14207f7cc45431b714c3a15aec5f3e2abc89b4b7a594b7441ec8bac9",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439"
+        ]
+      }
+    },
+    {
+      "n": 7,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "resourceGroupName": "district-18e61d04ec1266e8",
+          "targets": [],
+          "children": [
+            {
+              "type": "resource_group",
+              "id": "afe23866-fbed-497e-8577-2fcbe179f439"
+            }
+          ]
+        },
+        "bodyLength": 145,
+        "bodySHA256": "61738ae8bb643e789071c1534412792de61b255086f843a5930cb316fabd6549"
+      },
+      "response": {
+        "status": 201,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE_GROUP",
+          "id": "deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+          "createdDateTime": "2026-11-08T15:56:48.763582+00:00",
+          "modificationDateTime": "2026-11-08T15:56:48.763582+00:00",
+          "targets": [],
+          "resourceGroupName": "district-18e61d04ec1266e8",
+          "children": [
+            {
+              "type": "resource_group",
+              "id": "afe23866-fbed-497e-8577-2fcbe179f439"
+            }
+          ]
+        },
+        "bodyLength": 330,
+        "bodySHA256": "304b7b24af362766839bf8c63e6ebc07724e3958ad2142e173bd3820469758b5",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 8,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/afe23866-fbed-497e-8577-2fcbe179f439",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE_GROUP",
+          "id": "afe23866-fbed-497e-8577-2fcbe179f439",
+          "createdDateTime": "2026-11-08T15:56:48.757881+00:00",
+          "modificationDateTime": "2026-11-08T15:56:48.757881+00:00",
+          "targets": [
+            "feeder-18e61d04ec1266e8"
+          ],
+          "resourceGroupName": "street-18e61d04ec1266e8",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                {
+                  "x": 52.1,
+                  "y": 4.3
+                }
+              ]
+            }
+          ],
+          "children": [
+            {
+              "type": "ven_resource",
+              "id": "c2227f3d-8c7c-4adf-b661-fc61a4d6f03c"
+            }
+          ]
+        },
+        "bodyLength": 416,
+        "bodySHA256": "b0498ccb14207f7cc45431b714c3a15aec5f3e2abc89b4b7a594b7441ec8bac9",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 9,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "query": "resourceGroupName=district-18e61d04ec1266e8",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "objectType": "RESOURCE_GROUP",
+            "id": "deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+            "createdDateTime": "2026-11-08T15:56:48.763582+00:00",
+            "modificationDateTime": "2026-11-08T15:56:48.763582+00:00",
+            "targets": [],
+            "resourceGroupName": "district-18e61d04ec1266e8",
+            "children": [
+              {
+                "type": "resource_group",
+                "id": "afe23866-fbed-497e-8577-2fcbe179f439"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 332,
+        "bodySHA256": "d9669c2c4f79bb0e991a822b6ed43954d02fbd7afbb16d9145dab8e8e777e2b9",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 10,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [
+          {
+            "objectType": "RESOURCE_GROUP",
+            "id": "afe23866-fbed-497e-8577-2fcbe179f439",
+            "createdDateTime": "2026-11-08T15:56:48.757881+00:00",
+            "modificationDateTime": "2026-11-08T15:56:48.757881+00:00",
+            "targets": [
+              "feeder-18e61d04ec1266e8"
+            ],
+            "resourceGroupName": "street-18e61d04ec1266e8",
+            "attributes": [
+              {
+                "type": "LOCATION",
+                "values": [
+                  {
+                    "x": 52.1,
+                    "y": 4.3
+                  }
+                ]
+              }
+            ],
+            "children": [
+              {
+                "type": "ven_resource",
+                "id": "c2227f3d-8c7c-4adf-b661-fc61a4d6f03c"
+              }
+            ]
+          },
+          {
+            "objectType": "RESOURCE_GROUP",
+            "id": "deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+            "createdDateTime": "2026-11-08T15:56:48.763582+00:00",
+            "modificationDateTime": "2026-11-08T15:56:48.763582+00:00",
+            "targets": [],
+            "resourceGroupName": "district-18e61d04ec1266e8",
+            "children": [
+              {
+                "type": "resource_group",
+                "id": "afe23866-fbed-497e-8577-2fcbe179f439"
+              }
+            ]
+          }
+        ],
+        "bodyLength": 749,
+        "bodySHA256": "9ee32a448ed9e4cf42694d5fd28b7a1729dbc4b55a2253f97d81f144c4d51378",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 11,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE_GROUP",
+          "id": "deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+          "createdDateTime": "2026-11-08T15:56:48.763582+00:00",
+          "modificationDateTime": "2026-11-08T15:56:48.763582+00:00",
+          "targets": [],
+          "resourceGroupName": "district-18e61d04ec1266e8",
+          "children": [
+            {
+              "type": "resource_group",
+              "id": "afe23866-fbed-497e-8577-2fcbe179f439"
+            }
+          ]
+        },
+        "bodyLength": 330,
+        "bodySHA256": "304b7b24af362766839bf8c63e6ebc07724e3958ad2142e173bd3820469758b5",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 12,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 13,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-2",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-2"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-2"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "d8af9c39c896f12aa1a675a7b80986802992e129b27d0560168ed920697fea05"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-3",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "0d7e2b6412c1a6c900bbd00747ce182341d2772319bfe8ad9be81b2e22072140",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 14,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-2",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-3",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [],
+        "bodyLength": 2,
+        "bodySHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 15,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-2",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/afe23866-fbed-497e-8577-2fcbe179f439",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-3",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "5ee15a75-ce8e-40a1-ba04-edde2b35e91b"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "5ec52ebce9c0a1cd6b51cc8feae7fcf4dfd4882dcc5ad0ea71207b601004cc13",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 16,
+      "transport": "http",
+      "actor": "anonymous",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/auth/server",
+        "path": "/auth/server",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "tokenURL": "http://vtn.invalid/auth/token"
+        },
+        "bodyLength": 44,
+        "bodySHA256": "3d31dd2facf8cf849d1e434c53abbfb4ca4008102f3f6e6f43f3bbcb16a45e04",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 17,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/auth/token",
+        "path": "/auth/token",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "form",
+        "form": {
+          "client_id": [
+            "interop-ven-1"
+          ],
+          "client_secret": [
+            "redacted-secret-ven-1"
+          ],
+          "grant_type": [
+            "client_credentials"
+          ]
+        },
+        "bodyLength": 89,
+        "bodySHA256": "8f91da093514086c0d7012b0c092a19eb9ee46737ae786dfa4cc0fbe01226285"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "access_token": "redacted-token-1",
+          "token_type": "Bearer",
+          "expires_in": 2592000
+        },
+        "bodyLength": 78,
+        "bodySHA256": "864bea01df4489dfd6ebb80860bb6a0db333290cc5151db15e7c42558103afcf",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 18,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "POST",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "resourceGroupName": "mine-18e61d04ec1266e8",
+          "targets": [],
+          "children": []
+        },
+        "bodyLength": 72,
+        "bodySHA256": "101993b306257b0e8a8f4df6850abed3b3118952a541693bead72bc0cfc7277a"
+      },
+      "response": {
+        "status": 403,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "403 Forbidden",
+          "status": 403,
+          "detail": "Missing 'write_vens_bl' scope",
+          "instance": "b55aaefd-f366-4edf-9a1a-b72ae6305c93"
+        },
+        "bodyLength": 150,
+        "bodySHA256": "45da2bc5346795d9d5906bb015cae5107dd4ae58056b92f9869a00e30ae14876",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 19,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "PUT",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/afe23866-fbed-497e-8577-2fcbe179f439",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "Content-Type": "application/json",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "resourceGroupName": "street-renamed-18e61d04ec1266e8",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                {
+                  "x": 52.1,
+                  "y": 4.3
+                }
+              ]
+            }
+          ],
+          "targets": [
+            "feeder-18e61d04ec1266e8"
+          ],
+          "children": []
+        },
+        "bodyLength": 172,
+        "bodySHA256": "9101c4fa864a9e78989d75114ac3da621d8d719afa629ccb804ad387e62b45dd"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE_GROUP",
+          "id": "afe23866-fbed-497e-8577-2fcbe179f439",
+          "createdDateTime": "2026-11-08T15:56:48.757881+00:00",
+          "modificationDateTime": "2026-11-08T15:56:48.805871+00:00",
+          "targets": [
+            "feeder-18e61d04ec1266e8"
+          ],
+          "resourceGroupName": "street-renamed-18e61d04ec1266e8",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                {
+                  "x": 52.1,
+                  "y": 4.3
+                }
+              ]
+            }
+          ],
+          "children": []
+        },
+        "bodyLength": 357,
+        "bodySHA256": "9d7c99b1023a6e2bf6a941bd2964fab5d39a6aa23707d2003abcd39f9d2b4ca2",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 20,
+      "transport": "http",
+      "actor": "VEN",
+      "client": "ven-1",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups",
+        "path": "/resource_groups",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-1",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": [],
+        "bodyLength": 2,
+        "bodySHA256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439",
+          "deac4e45-e9a3-49b6-ad26-fcda15bfbf28"
+        ]
+      }
+    },
+    {
+      "n": 21,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE_GROUP",
+          "id": "deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+          "createdDateTime": "2026-11-08T15:56:48.763582+00:00",
+          "modificationDateTime": "2026-11-08T15:56:48.763582+00:00",
+          "targets": [],
+          "resourceGroupName": "district-18e61d04ec1266e8",
+          "children": [
+            {
+              "type": "resource_group",
+              "id": "afe23866-fbed-497e-8577-2fcbe179f439"
+            }
+          ]
+        },
+        "bodyLength": 330,
+        "bodySHA256": "304b7b24af362766839bf8c63e6ebc07724e3958ad2142e173bd3820469758b5",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439"
+        ]
+      }
+    },
+    {
+      "n": 22,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "GET",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "4401efe6-671c-40f8-bf89-d7d848b3e960"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "b06432add2abe1b8809f1dc13c279d6511ecb00526170b4eeae135138c866ba7",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439"
+        ]
+      }
+    },
+    {
+      "n": 23,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/deac4e45-e9a3-49b6-ad26-fcda15bfbf28",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 404,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "type": "about:blank",
+          "title": "404 Not Found",
+          "status": 404,
+          "instance": "6ad771dd-be3f-449a-a052-6d0f12385ff2"
+        },
+        "bodyLength": 109,
+        "bodySHA256": "8d60fe440a8832c75b7f59ded1d9895fc35dc56bb42ab93e18dc358cec86ab9a",
+        "bodyEncoding": "gzip"
+      },
+      "state": {
+        "resource_groups": [
+          "afe23866-fbed-497e-8577-2fcbe179f439"
+        ]
+      }
+    },
+    {
+      "n": 24,
+      "transport": "http",
+      "actor": "BL",
+      "client": "bl",
+      "origin": "self",
+      "request": {
+        "method": "DELETE",
+        "route": "/resource_groups/{resourceGroupID}",
+        "path": "/resource_groups/afe23866-fbed-497e-8577-2fcbe179f439",
+        "headers": {
+          "Accept": "application/json",
+          "Accept-Encoding": "gzip",
+          "Authorization": "Bearer redacted-token-2",
+          "User-Agent": "Go-http-client/1.1"
+        },
+        "bodyFormat": "empty",
+        "bodyLength": 0
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json"
+        },
+        "bodyFormat": "json",
+        "body": {
+          "objectType": "RESOURCE_GROUP",
+          "id": "afe23866-fbed-497e-8577-2fcbe179f439",
+          "createdDateTime": "2026-11-08T15:56:48.757881+00:00",
+          "modificationDateTime": "2026-11-08T15:56:48.805871+00:00",
+          "targets": [
+            "feeder-18e61d04ec1266e8"
+          ],
+          "resourceGroupName": "street-renamed-18e61d04ec1266e8",
+          "attributes": [
+            {
+              "type": "LOCATION",
+              "values": [
+                {
+                  "x": 52.1,
+                  "y": 4.3
+                }
+              ]
+            }
+          ],
+          "children": []
+        },
+        "bodyLength": 357,
+        "bodySHA256": "9d7c99b1023a6e2bf6a941bd2964fab5d39a6aa23707d2003abcd39f9d2b4ca2",
+        "bodyEncoding": "gzip"
+      }
+    }
+  ]
+}

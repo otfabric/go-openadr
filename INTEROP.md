@@ -410,6 +410,36 @@ go run ./cmd/openadr-interop -url http://127.0.0.1:8080 \
     -bl-client-id utility -ven-client-id site-1 -ven2-client-id site-2 -target-name go-openadr
 ```
 
+## Recorded transcripts
+
+The interop suite also records what passes (`make transcripts-record`):
+31 transcripts with 1281 exchanges, in
+[testdata/transcripts](testdata/transcripts/README.md), replayed offline in
+`make test` through the clients, the VTN and the webhook handler. The
+scenario requests written for them were also sent to this module's VTN and
+the answers compared with OpenLEADR's and cB-Sigma's (`TestTranscriptDifferential`):
+of 312, 237 are answered alike and 75 differently, each classified. Two
+differences were defects of this module and are fixed: a body declared
+`text/plain` was accepted as JSON (OpenLEADR answers 415), and the token
+endpoint's 401 for credentials sent in the form had no `WWW-Authenticate`
+(both other VTNs send one). Differences of the other implementations that
+the transcripts show, for their maintainers rather than this module:
+
+- OpenLEADR v0.2.8 names the MQTT authentication method `OAUTH2BEARERTOKEN`
+  (3.1.0: `OAUTH2_BEARER_TOKEN`), leaves out `WEBHOOK` in `GET /notifiers`,
+  which the schema requires, names the subscription member `clientId`, drops
+  `readingType` from a report's payload descriptors and the `targets` of a
+  subscription, creates a subscription without `callbackUrl`, refuses
+  `limit=0` and the operation `READ`, answers 404 for
+  `/notifiers/mqtt/topics/subscriptions`, answers a VEN the topics of
+  another VEN's ven, and lets a VEN create a resource on another client's
+  ven.
+- cB-Sigma v0.2.0 refuses `activeOnly` on `GET /events` and the operation
+  `READ` of a subscription.
+
+The transcripts are a software testbed: they say nothing about hardware or
+about production deployments, of which none was found to record.
+
 ## Not covered
 
 **A webhook receiver of another library, and a WebSocket client of another

@@ -269,7 +269,9 @@ parameter or ID, a callback URL that could not be verified, or a
 subscription by a mechanism the VTN does not have), 401 (also for a request
 without a token to an operation that needs one, on a VTN with
 `AllowAnonymous`), 403, 404, 405 (with `Allow`), 409 (also for one WebSocket
-too many), 413 (body over `Config.MaxBodyBytes`), 426 (an ordinary request
+too many), 413 (body over `Config.MaxBodyBytes`), 415 (a request body
+whose `Content-Type` is not `application/json` or `application/*+json`;
+one without a `Content-Type` is read as JSON), 426 (an ordinary request
 to `/notifiers/ws`, or a WebSocket handshake of another version), 429 (with
 `Retry-After`, when `Config.Limiter` refuses the request), 500, 501
 (subscriptions without `Config.Webhooks` and `Config.WebSocket`, the MQTT

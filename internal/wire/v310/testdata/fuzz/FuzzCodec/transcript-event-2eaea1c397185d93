@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(1)
+[]byte("{\"id\":\"fcaeb8e3bd7b1f33ac3fd87adc79fd91\",\"createdDateTime\":\"2026-11-08T15:55:59.181301Z\",\"modificationDateTime\":\"2026-11-08T15:55:59.181301Z\",\"objectType\":\"EVENT\",\"programID\":\"7efed28c38ff6aa5a04611224cc02c17\",\"eventName\":\"for-group-a-1\",\"targets\":[\"group-a\"],\"intervals\":[{\"id\":0,\"payloads\":[{\"type\":\"PRICE\",\"values\":[0.2]}]}]}")

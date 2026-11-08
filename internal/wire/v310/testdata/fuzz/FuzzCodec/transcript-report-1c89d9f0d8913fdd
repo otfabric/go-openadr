@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(2)
+[]byte("{\"eventID\":\"d79a40a3e5585f4e8602f3584717ef61\",\"clientName\":\"site-1\",\"reportName\":\"usage\",\"payloadDescriptors\":null,\"resources\":[{\"resourceName\":\"battery\",\"intervalPeriod\":null,\"intervals\":[{\"id\":0,\"intervalPeriod\":null,\"payloads\":[{\"type\":\"USAGE\",\"values\":[1.8]}]}]}]}")

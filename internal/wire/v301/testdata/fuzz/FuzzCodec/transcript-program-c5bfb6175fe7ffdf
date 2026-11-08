@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(0)
+[]byte("{\"id\":\"6b0a3bd6-07a7-4fb6-9ca4-7f4e28d51ff3\",\"createdDateTime\":\"2026-11-08T15:57:29.768640+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:29.768640+00:00\",\"objectType\":\"PROGRAM\",\"programName\":\"group-a-flex\",\"targets\":[{\"type\":\"VEN_NAME\",\"values\":[\"site-1\"]}]}")

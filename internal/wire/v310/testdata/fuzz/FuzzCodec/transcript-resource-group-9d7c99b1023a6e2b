@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(6)
+[]byte("{\"objectType\":\"RESOURCE_GROUP\",\"id\":\"afe23866-fbed-497e-8577-2fcbe179f439\",\"createdDateTime\":\"2026-11-08T15:56:48.757881+00:00\",\"modificationDateTime\":\"2026-11-08T15:56:48.805871+00:00\",\"targets\":[\"feeder-18e61d04ec1266e8\"],\"resourceGroupName\":\"street-renamed-18e61d04ec1266e8\",\"attributes\":[{\"type\":\"LOCATION\",\"values\":[{\"x\":52.1,\"y\":4.3}]}],\"children\":[]}")

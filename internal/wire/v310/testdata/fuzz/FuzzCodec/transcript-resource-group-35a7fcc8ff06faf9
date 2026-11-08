@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(6)
+[]byte("{\"resourceGroupName\":\"street-renamed\",\"targets\":[\"group-a\"],\"attributes\":null,\"children\":[{\"type\":\"ven_resource\",\"id\":\"932416c7c5f3272424517e51eba0c47e\"}],\"objectType\":\"RESOURCE_GROUP\"}")

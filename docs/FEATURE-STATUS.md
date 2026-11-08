@@ -15,6 +15,8 @@ Levels: **implemented**, **tested** (in this repository, `make test` and `make e
 | DNS-SD discovery (`discovery`) | independently verified | independently verified | Avahi 0.8; OpenLEADR v0.2.8; Apple mDNSResponder by hand |
 | Time series helper (`timeline`) | tested | n/a | `timeline` tests and `FuzzReadCSV` |
 
+Recorded exchanges with OpenLEADR v0.2.8 and v0.1.4, cB-Sigma v0.2.0 and the ElaadNL client 2.4.2, and the examples of the OpenAPI documents, are replayed through the codecs, clients, VTN and webhook handler in `make test` ([TESTING.md](../TESTING.md#recorded-transcripts)): software-testbed evidence (level D) and specification-derived cases (level E), no hardware.
+
 Wire decoders are fuzzed: MQTT packets, WebSocket frames, DNS messages, events, durations, CSV. `make fuzz` runs them; the Nightly workflow runs each for 5 minutes.
 
 ## Platforms

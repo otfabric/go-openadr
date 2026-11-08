@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(4)
+[]byte("{\"id\":\"aaa9741e-5771-4fc5-b88b-13b1c8dc3991\",\"createdDateTime\":\"2026-11-08T15:57:12.527876+00:00\",\"modificationDateTime\":\"2026-11-08T15:57:12.527876+00:00\",\"venID\":\"c6724c26-c78e-4f2e-a5c9-7db7329d2b86\",\"objectType\":\"RESOURCE\",\"resourceName\":\"meter\"}")

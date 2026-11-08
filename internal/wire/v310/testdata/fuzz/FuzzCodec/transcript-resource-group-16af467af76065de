@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(6)
+[]byte("{\"resourceGroupName\":\"district\",\"targets\":[],\"attributes\":null,\"children\":[{\"type\":\"resource_group\",\"id\":\"047bf683b433e5b07ee18bddd0881838\"}],\"objectType\":\"RESOURCE_GROUP\"}")

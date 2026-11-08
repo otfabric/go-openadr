@@ -1,0 +1,1232 @@
+{
+  "version": "3.1.0",
+  "cases": [
+    {
+      "schema": "BlResourceRequest",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "BL_RESOURCE_REQUEST",
+        "clientID": "249rj49jiej",
+        "targets": null,
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "BlResourceRequest",
+      "variant": "populated",
+      "instance": {
+        "objectType": "BL_RESOURCE_REQUEST",
+        "clientID": "249rj49jiej",
+        "targets": [
+          "group-1"
+        ],
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "BlVenRequest",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "BL_VEN_REQUEST",
+        "clientID": "249rj49jiej",
+        "targets": null,
+        "venName": "VEN-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "BlVenRequest",
+      "variant": "populated",
+      "instance": {
+        "objectType": "BL_VEN_REQUEST",
+        "clientID": "249rj49jiej",
+        "targets": [
+          "group-1"
+        ],
+        "venName": "VEN-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "VenResourceRequest",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "VEN_RESOURCE_REQUEST",
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "VenResourceRequest",
+      "variant": "populated",
+      "instance": {
+        "objectType": "VEN_RESOURCE_REQUEST",
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "VenVenRequest",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "VEN_VEN_REQUEST",
+        "venName": "VEN-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "VenVenRequest",
+      "variant": "populated",
+      "instance": {
+        "objectType": "VEN_VEN_REQUEST",
+        "venName": "VEN-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "authError",
+      "variant": "defaults",
+      "instance": {
+        "error": "invalid_request",
+        "error_description": "Request was missing the 'client_id' parameter.",
+        "error_uri": "See the full API docs at https://authorization-server.com/docs/access_toke"
+      },
+      "missing": []
+    },
+    {
+      "schema": "authServerInfo",
+      "variant": "defaults",
+      "instance": {},
+      "missing": [
+        "/tokenURL"
+      ]
+    },
+    {
+      "schema": "clientCredentialRequest",
+      "variant": "defaults",
+      "instance": {
+        "grant_type": "client_credentials",
+        "client_id": "ven_client_99",
+        "client_secret": "ven_secret_99",
+        "scope": "read_all"
+      },
+      "missing": []
+    },
+    {
+      "schema": "clientCredentialResponse",
+      "variant": "defaults",
+      "instance": {
+        "access_token": "MTQ0NjJkZmQ5OTM2NDE1ZTZjNGZmZjI3",
+        "token_type": "Bearer",
+        "expires_in": 3600,
+        "refresh_token": "IwOGYzYTlmM2YxOTQ5MGE3YmNmMDFkNTVk",
+        "scope": "read_all"
+      },
+      "missing": []
+    },
+    {
+      "schema": "clientID",
+      "variant": "defaults",
+      "instance": "249rj49jiej",
+      "missing": []
+    },
+    {
+      "schema": "clientName",
+      "variant": "defaults",
+      "instance": "VEN-999",
+      "missing": []
+    },
+    {
+      "schema": "dateTime",
+      "variant": "defaults",
+      "instance": "2023-06-15T09:30:00Z",
+      "missing": []
+    },
+    {
+      "schema": "duration",
+      "variant": "defaults",
+      "instance": "PT1H",
+      "missing": []
+    },
+    {
+      "schema": "event",
+      "variant": "defaults",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "EVENT",
+        "programID": "object-999",
+        "eventName": "price event 11-18-2022",
+        "duration": "PT1H",
+        "priority": 0,
+        "targets": null,
+        "reportDescriptors": null,
+        "payloadDescriptors": null,
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "intervals": [
+          {
+            "id": 0,
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "payloads": [
+              {
+                "type": "PRICE",
+                "values": [
+                  0.17
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "event",
+      "variant": "populated",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "EVENT",
+        "programID": "object-999",
+        "eventName": "price event 11-18-2022",
+        "duration": "PT1H",
+        "priority": 0,
+        "targets": [
+          "group-1"
+        ],
+        "reportDescriptors": [
+          {
+            "payloadType": "USAGE",
+            "readingType": "DIRECT_READ",
+            "units": "KWH",
+            "targets": [
+              "group-1"
+            ],
+            "aggregate": false,
+            "startInterval": -1,
+            "numIntervals": -1,
+            "historical": true,
+            "frequency": -1,
+            "repeat": 1,
+            "reportIntervals": "INTERVALS"
+          }
+        ],
+        "payloadDescriptors": [
+          {
+            "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+            "payloadType": "PRICE",
+            "units": "KWH",
+            "currency": "USD"
+          }
+        ],
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "intervals": [
+          {
+            "id": 0,
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "payloads": [
+              {
+                "type": "PRICE",
+                "values": [
+                  0.17
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "eventPayloadDescriptor",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+        "payloadType": "PRICE",
+        "units": "KWH",
+        "currency": "USD"
+      },
+      "missing": []
+    },
+    {
+      "schema": "eventRequest",
+      "variant": "defaults",
+      "instance": {
+        "programID": "object-999",
+        "eventName": "price event 11-18-2022",
+        "duration": "PT1H",
+        "priority": 0,
+        "targets": null,
+        "reportDescriptors": null,
+        "payloadDescriptors": null,
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "intervals": [
+          {
+            "id": 0,
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "payloads": [
+              {
+                "type": "PRICE",
+                "values": [
+                  0.17
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "eventRequest",
+      "variant": "populated",
+      "instance": {
+        "programID": "object-999",
+        "eventName": "price event 11-18-2022",
+        "duration": "PT1H",
+        "priority": 0,
+        "targets": [
+          "group-1"
+        ],
+        "reportDescriptors": [
+          {
+            "payloadType": "USAGE",
+            "readingType": "DIRECT_READ",
+            "units": "KWH",
+            "targets": [
+              "group-1"
+            ],
+            "aggregate": false,
+            "startInterval": -1,
+            "numIntervals": -1,
+            "historical": true,
+            "frequency": -1,
+            "repeat": 1,
+            "reportIntervals": "INTERVALS"
+          }
+        ],
+        "payloadDescriptors": [
+          {
+            "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+            "payloadType": "PRICE",
+            "units": "KWH",
+            "currency": "USD"
+          }
+        ],
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "intervals": [
+          {
+            "id": 0,
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "payloads": [
+              {
+                "type": "PRICE",
+                "values": [
+                  0.17
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "interval",
+      "variant": "defaults",
+      "instance": {
+        "id": 0,
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "payloads": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "intervalPeriod",
+      "variant": "defaults",
+      "instance": {
+        "start": "2023-06-15T09:30:00Z",
+        "duration": "PT1H",
+        "randomizeStart": "PT1H"
+      },
+      "missing": []
+    },
+    {
+      "schema": "mqttNotifierAuthenticationAnonymous",
+      "variant": "defaults",
+      "instance": {
+        "method": "ANONYMOUS"
+      },
+      "missing": []
+    },
+    {
+      "schema": "mqttNotifierAuthenticationCertificate",
+      "variant": "defaults",
+      "instance": {
+        "method": "CERTIFICATE"
+      },
+      "missing": [
+        "/caCert",
+        "/clientCert",
+        "/clientKey"
+      ]
+    },
+    {
+      "schema": "mqttNotifierAuthenticationOauth2BearerToken",
+      "variant": "defaults",
+      "instance": {
+        "method": "OAUTH2_BEARER_TOKEN"
+      },
+      "missing": [
+        "/username"
+      ]
+    },
+    {
+      "schema": "mqttNotifierBindingObject",
+      "variant": "defaults",
+      "instance": {
+        "URIS": [
+          "mqtts://broker.vtn.company.com"
+        ],
+        "serialization": "JSON",
+        "authentication": {
+          "method": "ANONYMOUS"
+        }
+      },
+      "missing": []
+    },
+    {
+      "schema": "notification",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "EVENT",
+        "operation": "UPDATE",
+        "object": {},
+        "targets": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "notification",
+      "variant": "populated",
+      "instance": {
+        "objectType": "EVENT",
+        "operation": "UPDATE",
+        "object": {},
+        "targets": [
+          "group-1"
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "notifierOperationsTopics",
+      "variant": "defaults",
+      "instance": {
+        "CREATE": "{objectType}s/create",
+        "UPDATE": "{objectType}s/update",
+        "DELETE": "{objectType}s/delete",
+        "ALL": "{objectType}s/+"
+      },
+      "missing": []
+    },
+    {
+      "schema": "notifierTopicsResponse",
+      "variant": "defaults",
+      "instance": {
+        "topics": {
+          "CREATE": "{objectType}s/create",
+          "UPDATE": "{objectType}s/update",
+          "DELETE": "{objectType}s/delete",
+          "ALL": "{objectType}s/+"
+        }
+      },
+      "missing": []
+    },
+    {
+      "schema": "notifiersResponse",
+      "variant": "defaults",
+      "instance": {
+        "WEBHOOK": true,
+        "MQTT": {
+          "URIS": [
+            "mqtts://broker.vtn.company.com"
+          ],
+          "serialization": "JSON",
+          "authentication": {
+            "method": "ANONYMOUS"
+          }
+        }
+      },
+      "missing": []
+    },
+    {
+      "schema": "objectID",
+      "variant": "defaults",
+      "instance": "object-999",
+      "missing": []
+    },
+    {
+      "schema": "objectMetadata",
+      "variant": "defaults",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "EVENT"
+      },
+      "missing": []
+    },
+    {
+      "schema": "objectTypes",
+      "variant": "defaults",
+      "instance": "EVENT",
+      "missing": []
+    },
+    {
+      "schema": "point",
+      "variant": "defaults",
+      "instance": {
+        "x": 1.0,
+        "y": 2.0
+      },
+      "missing": []
+    },
+    {
+      "schema": "problem",
+      "variant": "defaults",
+      "instance": {
+        "type": "https://zalando.github.io/problem/constraint-violation",
+        "status": 503,
+        "detail": "Connection to database timed out"
+      },
+      "missing": [
+        "/instance",
+        "/title"
+      ]
+    },
+    {
+      "schema": "program",
+      "variant": "defaults",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "PROGRAM",
+        "programName": "ResTOU",
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "programDescriptions": null,
+        "payloadDescriptors": null,
+        "attributes": null,
+        "targets": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "program",
+      "variant": "populated",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "PROGRAM",
+        "programName": "ResTOU",
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "programDescriptions": [
+          {
+            "URL": "https://www.myCorporation.com/myProgramDescription"
+          }
+        ],
+        "payloadDescriptors": [
+          {
+            "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+            "payloadType": "PRICE",
+            "units": "KWH",
+            "currency": "USD"
+          }
+        ],
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ],
+        "targets": [
+          "group-1"
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "programRequest",
+      "variant": "defaults",
+      "instance": {
+        "programName": "ResTOU",
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "programDescriptions": null,
+        "payloadDescriptors": null,
+        "attributes": null,
+        "targets": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "programRequest",
+      "variant": "populated",
+      "instance": {
+        "programName": "ResTOU",
+        "intervalPeriod": {
+          "start": "2023-06-15T09:30:00Z",
+          "duration": "PT1H",
+          "randomizeStart": "PT1H"
+        },
+        "programDescriptions": [
+          {
+            "URL": "https://www.myCorporation.com/myProgramDescription"
+          }
+        ],
+        "payloadDescriptors": [
+          {
+            "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+            "payloadType": "PRICE",
+            "units": "KWH",
+            "currency": "USD"
+          }
+        ],
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ],
+        "targets": [
+          "group-1"
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "readingType",
+      "variant": "defaults",
+      "instance": "DIRECT_READ",
+      "missing": []
+    },
+    {
+      "schema": "report",
+      "variant": "defaults",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "REPORT",
+        "eventID": "object-999",
+        "clientName": "VEN-999",
+        "reportName": "Battery_usage_04112023",
+        "payloadDescriptors": null,
+        "resources": [
+          {
+            "resourceName": "RESOURCE-999",
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "intervalPeriod": {
+                  "start": "2023-06-15T09:30:00Z",
+                  "duration": "PT1H",
+                  "randomizeStart": "PT1H"
+                },
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.17
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "clientID": "249rj49jiej"
+      },
+      "missing": []
+    },
+    {
+      "schema": "report",
+      "variant": "populated",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "REPORT",
+        "eventID": "object-999",
+        "clientName": "VEN-999",
+        "reportName": "Battery_usage_04112023",
+        "payloadDescriptors": [
+          {
+            "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+            "payloadType": "USAGE",
+            "readingType": "DIRECT_READ",
+            "units": "KWH",
+            "accuracy": 0.0,
+            "confidence": 100
+          }
+        ],
+        "resources": [
+          {
+            "resourceName": "RESOURCE-999",
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "intervalPeriod": {
+                  "start": "2023-06-15T09:30:00Z",
+                  "duration": "PT1H",
+                  "randomizeStart": "PT1H"
+                },
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.17
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "clientID": "249rj49jiej"
+      },
+      "missing": []
+    },
+    {
+      "schema": "reportDescriptor",
+      "variant": "defaults",
+      "instance": {
+        "payloadType": "USAGE",
+        "readingType": "DIRECT_READ",
+        "units": "KWH",
+        "targets": null,
+        "aggregate": false,
+        "startInterval": -1,
+        "numIntervals": -1,
+        "historical": true,
+        "frequency": -1,
+        "repeat": 1,
+        "reportIntervals": "INTERVALS"
+      },
+      "missing": []
+    },
+    {
+      "schema": "reportDescriptor",
+      "variant": "populated",
+      "instance": {
+        "payloadType": "USAGE",
+        "readingType": "DIRECT_READ",
+        "units": "KWH",
+        "targets": [
+          "group-1"
+        ],
+        "aggregate": false,
+        "startInterval": -1,
+        "numIntervals": -1,
+        "historical": true,
+        "frequency": -1,
+        "repeat": 1,
+        "reportIntervals": "INTERVALS"
+      },
+      "missing": []
+    },
+    {
+      "schema": "reportPayloadDescriptor",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+        "payloadType": "USAGE",
+        "readingType": "DIRECT_READ",
+        "units": "KWH",
+        "accuracy": 0.0,
+        "confidence": 100
+      },
+      "missing": []
+    },
+    {
+      "schema": "reportRequest",
+      "variant": "defaults",
+      "instance": {
+        "eventID": "object-999",
+        "clientName": "VEN-999",
+        "reportName": "Battery_usage_04112023",
+        "payloadDescriptors": null,
+        "resources": [
+          {
+            "resourceName": "RESOURCE-999",
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "intervalPeriod": {
+                  "start": "2023-06-15T09:30:00Z",
+                  "duration": "PT1H",
+                  "randomizeStart": "PT1H"
+                },
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.17
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "reportRequest",
+      "variant": "populated",
+      "instance": {
+        "eventID": "object-999",
+        "clientName": "VEN-999",
+        "reportName": "Battery_usage_04112023",
+        "payloadDescriptors": [
+          {
+            "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+            "payloadType": "USAGE",
+            "readingType": "DIRECT_READ",
+            "units": "KWH",
+            "accuracy": 0.0,
+            "confidence": 100
+          }
+        ],
+        "resources": [
+          {
+            "resourceName": "RESOURCE-999",
+            "intervalPeriod": {
+              "start": "2023-06-15T09:30:00Z",
+              "duration": "PT1H",
+              "randomizeStart": "PT1H"
+            },
+            "intervals": [
+              {
+                "id": 0,
+                "intervalPeriod": {
+                  "start": "2023-06-15T09:30:00Z",
+                  "duration": "PT1H",
+                  "randomizeStart": "PT1H"
+                },
+                "payloads": [
+                  {
+                    "type": "PRICE",
+                    "values": [
+                      0.17
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "resource",
+      "variant": "defaults",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "RESOURCE",
+        "clientID": "249rj49jiej",
+        "targets": null,
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "resource",
+      "variant": "populated",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "RESOURCE",
+        "clientID": "249rj49jiej",
+        "targets": [
+          "group-1"
+        ],
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "resourceName",
+      "variant": "defaults",
+      "instance": "RESOURCE-999",
+      "missing": []
+    },
+    {
+      "schema": "resourceRequest",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "BL_RESOURCE_REQUEST",
+        "clientID": "249rj49jiej",
+        "targets": null,
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "resourceRequest",
+      "variant": "populated",
+      "instance": {
+        "objectType": "BL_RESOURCE_REQUEST",
+        "clientID": "249rj49jiej",
+        "targets": [
+          "group-1"
+        ],
+        "resourceName": "RESOURCE-999",
+        "venID": "object-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "subscription",
+      "variant": "defaults",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "SUBSCRIPTION",
+        "clientName": "VEN-999",
+        "programID": "object-999",
+        "objectOperations": [
+          {
+            "objects": [
+              "EVENT"
+            ],
+            "operations": [
+              "CREATE"
+            ],
+            "callbackUrl": "https://myserver.com/send/callback/here",
+            "bearerToken": "NCEJGI9E8ER9802UT9HUG"
+          }
+        ],
+        "targets": null,
+        "clientID": "249rj49jiej"
+      },
+      "missing": []
+    },
+    {
+      "schema": "subscription",
+      "variant": "populated",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "SUBSCRIPTION",
+        "clientName": "VEN-999",
+        "programID": "object-999",
+        "objectOperations": [
+          {
+            "objects": [
+              "EVENT"
+            ],
+            "operations": [
+              "CREATE"
+            ],
+            "callbackUrl": "https://myserver.com/send/callback/here",
+            "bearerToken": "NCEJGI9E8ER9802UT9HUG"
+          }
+        ],
+        "targets": [
+          "group-1"
+        ],
+        "clientID": "249rj49jiej"
+      },
+      "missing": []
+    },
+    {
+      "schema": "subscriptionRequest",
+      "variant": "defaults",
+      "instance": {
+        "clientName": "VEN-999",
+        "programID": "object-999",
+        "objectOperations": [
+          {
+            "objects": [
+              "EVENT"
+            ],
+            "operations": [
+              "CREATE"
+            ],
+            "callbackUrl": "https://myserver.com/send/callback/here",
+            "bearerToken": "NCEJGI9E8ER9802UT9HUG"
+          }
+        ],
+        "targets": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "subscriptionRequest",
+      "variant": "populated",
+      "instance": {
+        "clientName": "VEN-999",
+        "programID": "object-999",
+        "objectOperations": [
+          {
+            "objects": [
+              "EVENT"
+            ],
+            "operations": [
+              "CREATE"
+            ],
+            "callbackUrl": "https://myserver.com/send/callback/here",
+            "bearerToken": "NCEJGI9E8ER9802UT9HUG"
+          }
+        ],
+        "targets": [
+          "group-1"
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "target",
+      "variant": "defaults",
+      "instance": "group-1",
+      "missing": []
+    },
+    {
+      "schema": "units",
+      "variant": "defaults",
+      "instance": "KWH",
+      "missing": []
+    },
+    {
+      "schema": "valuesMap",
+      "variant": "defaults",
+      "instance": {
+        "type": "PRICE",
+        "values": [
+          0.17
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "ven",
+      "variant": "defaults",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "VEN",
+        "clientID": "249rj49jiej",
+        "targets": null,
+        "venName": "VEN-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "ven",
+      "variant": "populated",
+      "instance": {
+        "id": "object-999",
+        "createdDateTime": "2023-06-15T09:30:00Z",
+        "modificationDateTime": "2023-06-15T09:30:00Z",
+        "objectType": "VEN",
+        "clientID": "249rj49jiej",
+        "targets": [
+          "group-1"
+        ],
+        "venName": "VEN-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    },
+    {
+      "schema": "venName",
+      "variant": "defaults",
+      "instance": "VEN-999",
+      "missing": []
+    },
+    {
+      "schema": "venRequest",
+      "variant": "defaults",
+      "instance": {
+        "objectType": "VEN_VEN_REQUEST",
+        "venName": "VEN-999",
+        "attributes": null
+      },
+      "missing": []
+    },
+    {
+      "schema": "venRequest",
+      "variant": "populated",
+      "instance": {
+        "objectType": "VEN_VEN_REQUEST",
+        "venName": "VEN-999",
+        "attributes": [
+          {
+            "type": "PRICE",
+            "values": [
+              0.17
+            ]
+          }
+        ]
+      },
+      "missing": []
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(4)
+[]byte("{\"clientID\":\"interop-ven-1\",\"createdDateTime\":\"2026-11-08T15:57:28.231Z\",\"id\":\"18e61d0e2a66d5cc1ef1029b\",\"modificationDateTime\":\"2026-11-08T15:57:28.233Z\",\"objectType\":\"RESOURCE\",\"resourceName\":\"transcript-res-9d470c\",\"venID\":\"18e61d0e15cb8912fcfe4dcd\"}")

@@ -1,0 +1,3 @@
+go test fuzz v1
+uint8(10)
+[]byte("{\"type\":\"about:blank\",\"title\":\"403 Forbidden\",\"status\":403,\"detail\":\"User does not have the required role\",\"instance\":\"84860359-2e62-4e92-9ec0-b1378b8120b7\"}")

@@ -135,3 +135,34 @@ func TestNewIssuerRejectsBadClients(t *testing.T) {
 		}
 	}
 }
+
+// A 401 of the token endpoint carries a challenge however the client sent
+// its credentials (RFC 9110 section 15.5.2). Before, a wrong secret sent in
+// the form was answered 401 without WWW-Authenticate; the VTNs of cB-Sigma
+// and OpenLEADR send one (testdata/transcripts, "token: wrong secret").
+func TestIssuerUnauthorizedHasChallenge(t *testing.T) {
+	is, err := NewIssuer(IssuerConfig{Clients: []Client{{ID: "c", Secret: "s", Scopes: VENScopes()}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, set := range map[string]func(*http.Request){
+		"form": func(r *http.Request) {},
+		"basic": func(r *http.Request) {
+			r.SetBasicAuth("c", "wrong")
+		},
+	} {
+		body := url.Values{"grant_type": {"client_credentials"}}
+		if name == "form" {
+			body.Set("client_id", "c")
+			body.Set("client_secret", "wrong")
+		}
+		req := httptest.NewRequest(http.MethodPost, "/auth/token", strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		set(req)
+		rec := httptest.NewRecorder()
+		is.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized || rec.Header().Get("WWW-Authenticate") != `Basic realm="openadr"` {
+			t.Errorf("%s: %d, WWW-Authenticate %q", name, rec.Code, rec.Header().Get("WWW-Authenticate"))
+		}
+	}
+}
