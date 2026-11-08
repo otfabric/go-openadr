@@ -62,7 +62,7 @@ type ManifestFile struct {
 
 // LoadManifest reads a manifest.
 func LoadManifest(path string) (Manifest, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- a path of the test corpus
+	data, err := readFile(path)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -76,7 +76,7 @@ func LoadManifest(path string) (Manifest, error) {
 }
 
 func fileSum(path string) (int64, string, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- a path of the test corpus
+	data, err := readFile(path)
 	if err != nil {
 		return 0, "", err
 	}
@@ -160,7 +160,7 @@ func (m Manifest) Verify(dir string) error {
 
 // ReadSums reads a SHA256SUMS file (shasum -a 256 format).
 func ReadSums(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path) // #nosec G304 -- a path of the test corpus
+	data, err := readFile(path)
 	if err != nil {
 		return nil, err
 	}
