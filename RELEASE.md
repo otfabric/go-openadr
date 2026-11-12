@@ -1,5 +1,21 @@
 # go-openadr Releases
 
+## v0.7.1
+
+**Date:** 2026-11-12
+**Previous release:** v0.7.0
+
+### Changed
+
+- **The interop suite pins openadr-interop v0.8.1** (contract 1.5, unchanged), which it had at v0.8.0: the Makefile, `interop/harness_test.go` and the Interop workflow take the four reference images (OpenLEADR v0.2.8 and v0.1.4, ElaadNL openadr3-client 2.4.2, cB-Sigma openadr v0.2.0) by the digests of its `manifest.json`. The upstream versions and the fixtures do not change; v0.8.1 fixes what the `otfabric` adapter reports for `listen-webhook`, which this suite does not use. The library does not change.
+- `make interop` passes against the v0.8.1 images (linux/arm64 containers on macOS): 29 tests pass, 101 with their subtests, none fail; 10 skip that need no reference (the own-stack tests without `OPENADR_INTEROP_OTFABRIC_IMAGE`, and the transcript recorders without `OPENADR_TRANSCRIPT_RECORD`).
+
+### Documentation
+
+- INTEROP.md names openadr-interop v0.8.1 and the date of the run. The recorded transcripts keep the v0.8.0 image references they were recorded with.
+
+---
+
 ## v0.7.0
 
 **Date:** 2026-11-08

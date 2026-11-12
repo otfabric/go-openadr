@@ -16,7 +16,7 @@ import (
 )
 
 // cbsigma is cB-Sigma openadr (Go, Apache-2.0), an implementation of
-// OpenADR 3 independent of this module, as openadr-interop v0.8.0 publishes
+// OpenADR 3 independent of this module, as openadr-interop v0.8.1 publishes
 // it: its VTN (oadr3/vtn) and its REST client (oadr3.APIClient) for both
 // roles. See INTEROP.md.
 const cbsigma = "cbsigma"

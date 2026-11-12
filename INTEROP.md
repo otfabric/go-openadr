@@ -27,8 +27,8 @@ specific tests against specific versions.
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
 | the specification-driven suite of openadr-interop v0.8.0 | go-openadr | 24 of 24 scenarios, in openadr-interop's Own stack workflow | see below |
 
-Last run: 2026-11-07, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.8.0, pinned by
+Last run: 2026-11-12, on a developer machine (linux/arm64 containers on
+macOS), against the published images of openadr-interop v0.8.1, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -40,7 +40,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.8.0, pinned by
+Needs Docker. The images are those of openadr-interop v0.8.1, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -332,7 +332,7 @@ change in either implementation is noticed:
 ## cB-Sigma openadr: both directions and webhooks
 
 `interop/cbsigma_test.go` and `interop/webhook_test.go` run against the
-`cbsigma` image of openadr-interop v0.8.0: [cB-Sigma
+`cbsigma` image of openadr-interop v0.8.1: [cB-Sigma
 openadr](https://github.com/cB-Sigma/openadr) v0.2.0, written in Go
 independently of this module, as its VTN (`oadr3/vtn`) and its REST client
 (`oadr3.APIClient`) in both roles.
