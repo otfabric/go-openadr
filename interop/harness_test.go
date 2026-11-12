@@ -20,15 +20,15 @@ import (
 	"time"
 )
 
-// The reference images of otfabric/openadr-interop v0.8.0, by multi-arch
+// The reference images of otfabric/openadr-interop v0.8.1, by multi-arch
 // index digest. Keep in step with the Makefile and .github/workflows/interop.yml.
 var defaultImages = map[string]string{
-	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:8f5c8e55a31a50888d2eca6da6431734c32b589b5151c68e86ddb68076da171e",
-	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:48b02fd2cbef75282093804837330a681934c4473c6e6907862ea8f0b34a3a65",
+	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:fa2c79c47714cee50b012aa951c1be59928812d889bbff5d6e2033a13a6b155e",
+	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:c1304a49eb3eb60ed8a9eb2812481ac8a8bc5a9644022ad22b610caa8e57f8d2",
 	// OpenLEADR v0.1.4, a VTN of OpenADR 3.0.1.
-	"openleadr301": "ghcr.io/otfabric/openadr-interop-openleadr301@sha256:ce3c87d9a633ef90816a3bba5daf972a19013b501cc728a64445767e93de0256",
+	"openleadr301": "ghcr.io/otfabric/openadr-interop-openleadr301@sha256:2113661296e4cd6535b7c0f175daa8f59e63fa6c29429f0e22d4ac41e2c77d96",
 	// cB-Sigma openadr v0.2.0 (Go), a VTN and a client of both roles.
-	"cbsigma": "ghcr.io/otfabric/openadr-interop-cbsigma@sha256:626f3742826ba30d4b62775cd343653c7ed0633422af4676a61aa3975b9be4ab",
+	"cbsigma": "ghcr.io/otfabric/openadr-interop-cbsigma@sha256:289ec02fe983921ce729dc4227c353a167ca27510a3e5ae038bf643f352e8186",
 
 	// MQTT brokers, as their makers publish them, for brokers_test.go:
 	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition
