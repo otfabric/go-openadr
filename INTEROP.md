@@ -18,17 +18,17 @@ specific tests against specific versions.
 | go-openadr WebSocket subscriber | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr BL and VEN, resource groups | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr VEN and BL, **OpenADR 3.0.1** | OpenLEADR v0.1.4 (Rust) | Passing, run locally | `make interop` |
-| go-openadr VEN and BL | [cB-Sigma openadr](https://github.com/cB-Sigma/openadr) v0.2.0 (Go) | Passing, run locally; one known bug of the VTN ([cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1)) | `make interop` |
-| cB-Sigma openadr v0.2.0 client, VEN and BL | go-openadr | Passing, run locally | `make interop` |
-| go-openadr `webhook.Handler`, notified | cB-Sigma openadr v0.2.0 | Passing, run locally | `make interop` |
+| go-openadr VEN and BL | [cB-Sigma openadr](https://github.com/cB-Sigma/openadr) v0.2.1 (Go) | Passing, run locally | `make interop` |
+| cB-Sigma openadr v0.2.1 client, VEN and BL | go-openadr | Passing, run locally | `make interop` |
+| go-openadr `webhook.Handler`, notified | cB-Sigma openadr v0.2.1 | Passing, run locally | `make interop` |
 | cB-Sigma client's `listen-webhook` receiver, notified by `webhook.Sender` | go-openadr | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | OpenLEADR v0.2.8, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
 | the specification-driven suite of openadr-interop v0.8.0 | go-openadr | 24 of 24 scenarios, in openadr-interop's Own stack workflow | see below |
 
-Last run: 2026-11-12, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.8.1, pinned by
+Last run: 2026-11-13, on a developer machine (linux/arm64 containers on
+macOS), against the published images of openadr-interop v0.8.2, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -40,7 +40,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.8.1, pinned by
+Needs Docker. The images are those of openadr-interop v0.8.2, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -332,8 +332,8 @@ change in either implementation is noticed:
 ## cB-Sigma openadr: both directions and webhooks
 
 `interop/cbsigma_test.go` and `interop/webhook_test.go` run against the
-`cbsigma` image of openadr-interop v0.8.1: [cB-Sigma
-openadr](https://github.com/cB-Sigma/openadr) v0.2.0, written in Go
+`cbsigma` image of openadr-interop v0.8.2: [cB-Sigma
+openadr](https://github.com/cB-Sigma/openadr) v0.2.1, written in Go
 independently of this module, as its VTN (`oadr3/vtn`) and its REST client
 (`oadr3.APIClient`) in both roles.
 
@@ -349,20 +349,20 @@ independently of this module, as its VTN (`oadr3/vtn`) and its REST client
   receiver. That receiver is openadr-interop's, as the library has none: it
   checks the echo request and the bearer token as the specification asks.
 
-Two differences, neither a fault of this module:
+One difference, not a fault of this module, and one bug, fixed:
 
 - **Targets in a VEN's search do not narrow it** (the image's feature
   `serverTargetsUnlock`). Naming `group-a`, `ven-1` is shown `group-a-flex`
   and the untargeted `day-ahead`; this module's VTN and OpenLEADR's show
   `group-a-flex` only. The OpenAPI document says of the parameter only
   "Indicates targets". The target test takes either reading from the image.
-- **A VEN cannot read a targeted program by ID** (a bug of the VTN,
-  [cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1)).
+- **A VEN reads a targeted program by ID** (fixed in v0.2.1). In v0.2.0
   `GET /programs/{programID}` as `ven-1`, granted `group-a`, of `group-a-flex`
-  answers 404; the VTN wants the target named in a query that this operation
-  does not define. `TestCbsigmaVTNReadsTargetedProgramByID` asserts the 404
-  for v0.2.0, and the program for any other version, so a fixed image fails
-  it until the waiver goes.
+  answered 404: the VTN wanted the target named in a query that this
+  operation does not define. Reported as
+  [cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1) from a
+  run of this suite. `TestCbsigmaVTNReadsTargetedProgramByID` now asserts the
+  program, with no waiver.
 
 ## What it took
 

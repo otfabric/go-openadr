@@ -1,5 +1,22 @@
 # go-openadr Releases
 
+## v0.7.2
+
+**Date:** 2026-11-13
+**Previous release:** v0.7.1
+
+### Changed
+
+- **The interop suite pins openadr-interop v0.8.2** (contract 1.5, unchanged), which it had at v0.8.1. The Makefile, `interop/harness_test.go` and the Interop workflow take the four reference images by the digests of its `manifest.json`. In v0.8.2, `cbsigma` moves to cB-Sigma openadr v0.2.1, and the alpine and python base images move to their current digests. OpenLEADR v0.2.8 and v0.1.4, ElaadNL openadr3-client 2.4.2 and the fixtures do not change. The library does not change.
+- **cB-Sigma openadr v0.2.1 fixes [cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1)**, found by this suite: a VEN now reads a program targeted at it by ID. `TestCbsigmaVTNReadsTargetedProgramByID` drops its waiver for v0.2.0 and asserts the program; the helper that read the image's upstream version for it is removed.
+- `make interop` passes against the v0.8.2 images (linux/arm64 containers on macOS): 29 tests pass, 101 with their subtests, none fail; 10 skip that need no reference (the own-stack tests without `OPENADR_INTEROP_OTFABRIC_IMAGE`, and the transcript recorders without `OPENADR_TRANSCRIPT_RECORD`). One earlier run, made while another Docker suite was running on the same daemon, failed `TestCbsigmaListensToGoVTNWebhook`: the VTN could not reach the receiver's callback for its echo check. Run alone, the cbsigma tests passed three times in a row and the whole suite passed twice.
+
+### Documentation
+
+- INTEROP.md names openadr-interop v0.8.2 and cB-Sigma openadr v0.2.1, records the fix, and gives the date of the run. The recorded transcripts keep the v0.8.0 image references they were recorded with.
+
+---
+
 ## v0.7.1
 
 **Date:** 2026-11-12
