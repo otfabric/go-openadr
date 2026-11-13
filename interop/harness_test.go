@@ -20,23 +20,23 @@ import (
 	"time"
 )
 
-// The reference images of otfabric/openadr-interop v0.8.1, by multi-arch
+// The reference images of otfabric/openadr-interop v0.8.2, by multi-arch
 // index digest. Keep in step with the Makefile and .github/workflows/interop.yml.
 var defaultImages = map[string]string{
-	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:fa2c79c47714cee50b012aa951c1be59928812d889bbff5d6e2033a13a6b155e",
-	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:c1304a49eb3eb60ed8a9eb2812481ac8a8bc5a9644022ad22b610caa8e57f8d2",
+	"openleadr": "ghcr.io/otfabric/openadr-interop-openleadr@sha256:581fe48fd09ef168969046cd2ef7d4c108718326e170af25b52ea488a7b7f217",
+	"elaadnl":   "ghcr.io/otfabric/openadr-interop-elaadnl@sha256:74d8992703faf47456995804923002db944b23483bd31efe1868fb808beca3d3",
 	// OpenLEADR v0.1.4, a VTN of OpenADR 3.0.1.
-	"openleadr301": "ghcr.io/otfabric/openadr-interop-openleadr301@sha256:2113661296e4cd6535b7c0f175daa8f59e63fa6c29429f0e22d4ac41e2c77d96",
-	// cB-Sigma openadr v0.2.0 (Go), a VTN and a client of both roles.
-	"cbsigma": "ghcr.io/otfabric/openadr-interop-cbsigma@sha256:289ec02fe983921ce729dc4227c353a167ca27510a3e5ae038bf643f352e8186",
+	"openleadr301": "ghcr.io/otfabric/openadr-interop-openleadr301@sha256:eb99d519e394470711393ae96dd338aca30cb0f1253dea495a9d3be0e953e94f",
+	// cB-Sigma openadr v0.2.1 (Go), a VTN and a client of both roles.
+	"cbsigma": "ghcr.io/otfabric/openadr-interop-cbsigma@sha256:2dde56e44e485b0805e465728bad737a82c589ecd6f04d47570bd2aa4bba2c54",
 
 	// MQTT brokers, as their makers publish them, for brokers_test.go:
-	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition
-	// 2026.5 and EMQX 6.3.1.
-	"mosquitto": "eclipse-mosquitto@sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408",
-	"nanomq":    "emqx/nanomq@sha256:4c01fb8421b0c5cdf9ad17a913bcdcdb13c6a25947e17caae2b09a338aa669f5",
+	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.7, HiveMQ Community Edition
+	// 2026.5 and EMQX 6.3.3.
+	"mosquitto": "eclipse-mosquitto@sha256:75d6662dee52c947dc9dd9c29f1d8d7ffef78ddaf38001caa09755681e8bbc98",
+	"nanomq":    "emqx/nanomq@sha256:ed5a9bb892f58e59aa4e47a9932fb7e056f5ae57ba201414c793b8c961587784",
 	"hivemq":    "hivemq/hivemq-ce@sha256:bac6d4d1d815bffe4bc9a7fca8d06ea12b32d34f84ef2f1851ff4548560ee67b",
-	"emqx":      "emqx/emqx@sha256:5ecbf93d04e34aaf4096af074e93b773d0838c8ea668cfabdec7976b272d9606",
+	"emqx":      "emqx/emqx@sha256:54778dba62a5cbcb03ca381c9bceb3d8a87cab9e3da155ed3607d994454df900",
 
 	// The base of the containers of mdns_test.go: Alpine Linux, in which
 	// Avahi is installed and this module's own probe runs.

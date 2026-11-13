@@ -132,10 +132,10 @@ fuzz: ## Run every fuzz target for FUZZTIME (default 30s; targets discovered, ne
 		done; \
 	done
 
-# Reference implementations for 'make interop': otfabric/openadr-interop v0.8.1
+# Reference implementations for 'make interop': otfabric/openadr-interop v0.8.2
 # (the OpenLEADR VTN v0.2.8 with a Mosquitto broker, the ElaadNL
 # openadr3-client 2.4.2, OpenLEADR v0.1.4 for OpenADR 3.0.1, and cB-Sigma
-# openadr v0.2.0, a VTN and clients), pinned by multi-arch index digest.
+# openadr v0.2.1, a VTN and clients), pinned by multi-arch index digest.
 # Keep in step with interop/harness_test.go and .github/workflows/interop.yml.
 # The suite also runs this module's MQTT publisher and subscriber on four
 # brokers (Mosquitto, NanoMQ, HiveMQ CE, EMQX), whose images are pinned in
@@ -144,10 +144,10 @@ fuzz: ## Run every fuzz target for FUZZTIME (default 30s; targets discovered, ne
 # passing by skipping would say nothing.
 # Override to test other builds, e.g. the local ones of a checkout of that repository:
 #   make interop OPENADR_INTEROP_OPENLEADR_IMAGE=ghcr.io/otfabric/openadr-interop-openleadr:dev
-OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:fa2c79c47714cee50b012aa951c1be59928812d889bbff5d6e2033a13a6b155e
-OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:c1304a49eb3eb60ed8a9eb2812481ac8a8bc5a9644022ad22b610caa8e57f8d2
-OPENADR_INTEROP_OPENLEADR301_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr301@sha256:2113661296e4cd6535b7c0f175daa8f59e63fa6c29429f0e22d4ac41e2c77d96
-OPENADR_INTEROP_CBSIGMA_IMAGE   ?= ghcr.io/otfabric/openadr-interop-cbsigma@sha256:289ec02fe983921ce729dc4227c353a167ca27510a3e5ae038bf643f352e8186
+OPENADR_INTEROP_OPENLEADR_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr@sha256:581fe48fd09ef168969046cd2ef7d4c108718326e170af25b52ea488a7b7f217
+OPENADR_INTEROP_ELAADNL_IMAGE   ?= ghcr.io/otfabric/openadr-interop-elaadnl@sha256:74d8992703faf47456995804923002db944b23483bd31efe1868fb808beca3d3
+OPENADR_INTEROP_OPENLEADR301_IMAGE ?= ghcr.io/otfabric/openadr-interop-openleadr301@sha256:eb99d519e394470711393ae96dd338aca30cb0f1253dea495a9d3be0e953e94f
+OPENADR_INTEROP_CBSIGMA_IMAGE   ?= ghcr.io/otfabric/openadr-interop-cbsigma@sha256:2dde56e44e485b0805e465728bad737a82c589ecd6f04d47570bd2aa4bba2c54
 
 test-interop: ## Run the interop suite: OpenLEADR (3.1.0 and 3.0.1), ElaadNL and cB-Sigma reference images, and four MQTT brokers (needs Docker)
 	@echo "Running interop tests against $(OPENADR_INTEROP_OPENLEADR_IMAGE), $(OPENADR_INTEROP_ELAADNL_IMAGE), $(OPENADR_INTEROP_OPENLEADR301_IMAGE) and $(OPENADR_INTEROP_CBSIGMA_IMAGE)"

@@ -14,21 +14,21 @@ specific tests against specific versions.
 | ElaadNL client over TLS, and its answers compressed | go-openadr | Passing, run locally | `make interop` |
 | ElaadNL client: subscriptions (webhook delivered), MQTT listener, resource groups, no token | go-openadr | Passing, run locally | `make interop` |
 | go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
-| go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ CE 2026.5, EMQX 6.3.1 | Passing, run locally | `make interop` |
+| go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.7, HiveMQ CE 2026.5, EMQX 6.3.3 | Passing, run locally; NanoMQ loses messages of a burst (below) | `make interop` |
 | go-openadr WebSocket subscriber | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr BL and VEN, resource groups | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr VEN and BL, **OpenADR 3.0.1** | OpenLEADR v0.1.4 (Rust) | Passing, run locally | `make interop` |
-| go-openadr VEN and BL | [cB-Sigma openadr](https://github.com/cB-Sigma/openadr) v0.2.0 (Go) | Passing, run locally; one known bug of the VTN ([cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1)) | `make interop` |
-| cB-Sigma openadr v0.2.0 client, VEN and BL | go-openadr | Passing, run locally | `make interop` |
-| go-openadr `webhook.Handler`, notified | cB-Sigma openadr v0.2.0 | Passing, run locally | `make interop` |
+| go-openadr VEN and BL | [cB-Sigma openadr](https://github.com/cB-Sigma/openadr) v0.2.1 (Go) | Passing, run locally | `make interop` |
+| cB-Sigma openadr v0.2.1 client, VEN and BL | go-openadr | Passing, run locally | `make interop` |
+| go-openadr `webhook.Handler`, notified | cB-Sigma openadr v0.2.1 | Passing, run locally | `make interop` |
 | cB-Sigma client's `listen-webhook` receiver, notified by `webhook.Sender` | go-openadr | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Avahi 0.8 | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | OpenLEADR v0.2.8, VTN and client library | Passing, run locally | `make interop` |
 | go-openadr `discovery`, both directions | Apple mDNSResponder (macOS) | Passing, by hand | see below |
 | the specification-driven suite of openadr-interop v0.8.0 | go-openadr | 24 of 24 scenarios, in openadr-interop's Own stack workflow | see below |
 
-Last run: 2026-11-12, on a developer machine (linux/arm64 containers on
-macOS), against the published images of openadr-interop v0.8.1, pinned by
+Last run: 2026-11-13, on a developer machine (linux/arm64 containers on
+macOS), against the published images of openadr-interop v0.8.2, pinned by
 digest. The `Interop` workflow runs the same tests in CI on linux/amd64.
 
 The reference implementations come from
@@ -40,7 +40,7 @@ what they assert are here, in `interop/` (build tag `interop`).
 
 ## Running it
 
-Needs Docker. The images are those of openadr-interop v0.8.1, pinned by
+Needs Docker. The images are those of openadr-interop v0.8.2, pinned by
 digest in the Makefile, and are pulled when they are not there:
 
 ```sh
@@ -122,7 +122,8 @@ Business Logic, on the topics the VTN names for each:
 - create, update and delete of an event arrive in that order, at Business
   Logic with all targets, at the VEN with the one it was granted;
 - an event for another group does not appear on the VEN's topics;
-- a burst of 200 events arrives complete and in order, at QoS 1;
+- a burst of 200 events arrives complete and in order, at QoS 1 (on
+  NanoMQ: in order, but not always complete; see below);
 - an event of a thousand intervals, about 60 kB, arrives whole;
 - the broker is restarted: the subscriber connects and subscribes again,
   the publisher connects again, and what is published after arrives.
@@ -130,6 +131,22 @@ Business Logic, on the topics the VTN names for each:
 All four passed without a change to the client. The images are pinned by
 digest in `interop/harness_test.go`; `OPENADR_INTEROP_MOSQUITTO_IMAGE`,
 `..._NANOMQ_IMAGE`, `..._HIVEMQ_IMAGE` and `..._EMQX_IMAGE` select others.
+
+**NanoMQ loses messages of a burst.** Now and then, during the burst,
+NanoMQ logs `nni_pipe_set_pid: Client ID collision or set ID failed!` for a
+subscriber that connected once, reports it offline and online again, and
+closes its connection. The subscriber connects again at once, but with the
+clean session it uses (as documented for `mqtt.Subscriber`) it misses what
+was published in between: the first notifications of the burst, from one to
+twenty-three of them. In CI, one run on linux/amd64 lost a single message
+in the middle of a burst with no disconnect in the broker's log. Mosquitto,
+HiveMQ CE and EMQX delivered every burst complete, in 10 runs each, with
+no connection dropped before the planned restart. Measured on a developer
+machine (linux/arm64 containers on macOS), 2026-11-13: NanoMQ 0.25.6 lost
+messages in 3 of 160 runs, 0.25.7 in 38 of 120. The publisher sends one
+message at a time and the subscriber hands every PUBLISH it reads to
+`Notify`; nothing on this module's side skips one. So on NanoMQ the test
+asserts that what arrives comes in order and once, and logs what was lost.
 
 What this does not show: TLS and logins on these brokers (the test connects
 in the clear, without a password), their access control, which is what
@@ -332,8 +349,8 @@ change in either implementation is noticed:
 ## cB-Sigma openadr: both directions and webhooks
 
 `interop/cbsigma_test.go` and `interop/webhook_test.go` run against the
-`cbsigma` image of openadr-interop v0.8.1: [cB-Sigma
-openadr](https://github.com/cB-Sigma/openadr) v0.2.0, written in Go
+`cbsigma` image of openadr-interop v0.8.2: [cB-Sigma
+openadr](https://github.com/cB-Sigma/openadr) v0.2.1, written in Go
 independently of this module, as its VTN (`oadr3/vtn`) and its REST client
 (`oadr3.APIClient`) in both roles.
 
@@ -349,20 +366,20 @@ independently of this module, as its VTN (`oadr3/vtn`) and its REST client
   receiver. That receiver is openadr-interop's, as the library has none: it
   checks the echo request and the bearer token as the specification asks.
 
-Two differences, neither a fault of this module:
+One difference, not a fault of this module, and one bug, fixed:
 
 - **Targets in a VEN's search do not narrow it** (the image's feature
   `serverTargetsUnlock`). Naming `group-a`, `ven-1` is shown `group-a-flex`
   and the untargeted `day-ahead`; this module's VTN and OpenLEADR's show
   `group-a-flex` only. The OpenAPI document says of the parameter only
   "Indicates targets". The target test takes either reading from the image.
-- **A VEN cannot read a targeted program by ID** (a bug of the VTN,
-  [cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1)).
+- **A VEN reads a targeted program by ID** (fixed in v0.2.1). In v0.2.0
   `GET /programs/{programID}` as `ven-1`, granted `group-a`, of `group-a-flex`
-  answers 404; the VTN wants the target named in a query that this operation
-  does not define. `TestCbsigmaVTNReadsTargetedProgramByID` asserts the 404
-  for v0.2.0, and the program for any other version, so a fixed image fails
-  it until the waiver goes.
+  answered 404: the VTN wanted the target named in a query that this
+  operation does not define. Reported as
+  [cB-Sigma/openadr#1](https://github.com/cB-Sigma/openadr/issues/1) from a
+  run of this suite. `TestCbsigmaVTNReadsTargetedProgramByID` now asserts the
+  program, with no waiver.
 
 ## What it took
 
