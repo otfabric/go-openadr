@@ -135,7 +135,7 @@ fuzz: ## Run every fuzz target for FUZZTIME (default 30s; targets discovered, ne
 # Reference implementations for 'make interop': otfabric/openadr-interop v0.8.2
 # (the OpenLEADR VTN v0.2.8 with a Mosquitto broker, the ElaadNL
 # openadr3-client 2.4.2, OpenLEADR v0.1.4 for OpenADR 3.0.1, and cB-Sigma
-# openadr v0.2.0, a VTN and clients), pinned by multi-arch index digest.
+# openadr v0.2.1, a VTN and clients), pinned by multi-arch index digest.
 # Keep in step with interop/harness_test.go and .github/workflows/interop.yml.
 # The suite also runs this module's MQTT publisher and subscriber on four
 # brokers (Mosquitto, NanoMQ, HiveMQ CE, EMQX), whose images are pinned in

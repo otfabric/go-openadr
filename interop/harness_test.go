@@ -31,12 +31,12 @@ var defaultImages = map[string]string{
 	"cbsigma": "ghcr.io/otfabric/openadr-interop-cbsigma@sha256:2dde56e44e485b0805e465728bad737a82c589ecd6f04d47570bd2aa4bba2c54",
 
 	// MQTT brokers, as their makers publish them, for brokers_test.go:
-	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.6, HiveMQ Community Edition
-	// 2026.5 and EMQX 6.3.1.
-	"mosquitto": "eclipse-mosquitto@sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408",
-	"nanomq":    "emqx/nanomq@sha256:4c01fb8421b0c5cdf9ad17a913bcdcdb13c6a25947e17caae2b09a338aa669f5",
+	// Eclipse Mosquitto 2.1.2, NanoMQ 0.25.7, HiveMQ Community Edition
+	// 2026.5 and EMQX 6.3.3.
+	"mosquitto": "eclipse-mosquitto@sha256:75d6662dee52c947dc9dd9c29f1d8d7ffef78ddaf38001caa09755681e8bbc98",
+	"nanomq":    "emqx/nanomq@sha256:ed5a9bb892f58e59aa4e47a9932fb7e056f5ae57ba201414c793b8c961587784",
 	"hivemq":    "hivemq/hivemq-ce@sha256:bac6d4d1d815bffe4bc9a7fca8d06ea12b32d34f84ef2f1851ff4548560ee67b",
-	"emqx":      "emqx/emqx@sha256:5ecbf93d04e34aaf4096af074e93b773d0838c8ea668cfabdec7976b272d9606",
+	"emqx":      "emqx/emqx@sha256:54778dba62a5cbcb03ca381c9bceb3d8a87cab9e3da155ed3607d994454df900",
 
 	// The base of the containers of mdns_test.go: Alpine Linux, in which
 	// Avahi is installed and this module's own probe runs.

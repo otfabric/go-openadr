@@ -35,11 +35,18 @@ var brokers = []struct {
 	name string
 	// args go after the image, for a broker that needs telling.
 	args []string
+	// loses says why a broker may lose QoS 1 messages of a burst; empty
+	// for one that delivers them all. What arrives must still be in order.
+	loses string
 }{
 	// Mosquitto 2 listens on loopback only unless given a configuration;
 	// the image ships this one, which opens port 1883 to everyone.
 	{name: "mosquitto", args: []string{"mosquitto", "-c", "/mosquitto-no-auth.conf"}},
-	{name: "nanomq"},
+	// Under a burst, NanoMQ 0.25 now and then logs "Client ID collision"
+	// for a client that connected once, and closes its connection: the
+	// subscriber, with a clean session, misses what is published until it
+	// is back. It has also lost one message of a burst with no disconnect.
+	{name: "nanomq", loses: "NanoMQ 0.25 drops subscriber sessions, and messages, under a burst (INTEROP.md)"},
 	{name: "hivemq"},
 	{name: "emqx"},
 }
@@ -165,6 +172,27 @@ func subscribeOn(t *testing.T, url, clientID string, topics ...string) (*mqtt.Su
 	return sub, received
 }
 
+// receiveBurst gives the names of the events that arrive on ch until the one
+// named last does, or until nothing has arrived for five seconds.
+func receiveBurst(ch chan openadr.Notification, last string) []string {
+	var got []string
+	for {
+		select {
+		case n := <-ch:
+			e, ok := n.Object.(openadr.Event)
+			if !ok {
+				continue
+			}
+			got = append(got, e.Name)
+			if e.Name == last {
+				return got
+			}
+		case <-time.After(5 * time.Second):
+			return got
+		}
+	}
+}
+
 func TestMQTTBrokers(t *testing.T) {
 	for _, b := range brokers {
 		t.Run(b.name, func(t *testing.T) {
@@ -250,10 +278,26 @@ func TestMQTTBrokers(t *testing.T) {
 				}
 			}
 			for who, ch := range map[string]chan openadr.Notification{"Business Logic": forBL, "the VEN": forVEN} {
-				for i := range burst {
-					if _, e := next(who, ch); e.Name != fmt.Sprintf("burst-%03d", i) {
-						t.Fatalf("%s: notification %d of the burst is of %q", who, i, e.Name)
+				if b.loses == "" {
+					for i := range burst {
+						if _, e := next(who, ch); e.Name != fmt.Sprintf("burst-%03d", i) {
+							t.Fatalf("%s: notification %d of the burst is of %q", who, i, e.Name)
+						}
 					}
+					continue
+				}
+				// Some may be missing; those that came are in order, once.
+				got := receiveBurst(ch, fmt.Sprintf("burst-%03d", burst-1))
+				if len(got) == 0 {
+					t.Fatalf("%s: no notification of the burst arrived", who)
+				}
+				for i := 1; i < len(got); i++ {
+					if got[i] <= got[i-1] {
+						t.Fatalf("%s: %q of the burst came after %q", who, got[i], got[i-1])
+					}
+				}
+				if len(got) < burst {
+					t.Logf("%s: %d of the %d notifications of the burst arrived: %s", who, len(got), burst, b.loses)
 				}
 			}
 
