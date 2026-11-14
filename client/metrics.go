@@ -14,7 +14,9 @@ import "time"
 // small and fixed, so it is fit to be a label.
 //
 // The callbacks run on the goroutine of the call and must not block: count,
-// observe, return. Implementations must be safe for concurrent use.
+// observe, return. Implementations must be safe for concurrent use. A
+// callback that does not return normally is logged (see Config.Logger), and
+// the call goes on as if it had returned.
 //
 // Every call gives one OnRequest and then exactly one of the other three.
 type Metrics interface {

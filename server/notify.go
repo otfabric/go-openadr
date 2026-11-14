@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/auth"
+	"github.com/otfabric/go-openadr/internal/guard"
 	"github.com/otfabric/go-openadr/server/storage"
 )
 
@@ -130,9 +132,7 @@ func (s *Server) notify(ctx context.Context, op openadr.Operation, sub subject) 
 }
 
 func (s *Server) logNotify(sub subject, err error) {
-	if s.logger != nil {
-		s.logger.Error("openadr: notification failed", slog.String("object", string(sub.kind)), slog.Any("error", err))
-	}
+	s.logger.Error("openadr: notification failed", slog.String("object", string(sub.kind)), slog.Any("error", err))
 }
 
 // --- subscriptions
@@ -205,7 +205,7 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 	for i, c := range checks {
 		urls[i] = c.url
 	}
-	for i, err := range verifyAll(ctx, s.webhooks, urls) {
+	for i, err := range verifyAll(ctx, s.webhooks, s.logger, urls) {
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -218,24 +218,34 @@ func (s *Server) verifyCallbacks(ctx context.Context, sub openadr.Subscription, 
 
 // verifyAll verifies the URLs, verifyAtOnce at a time, and returns the
 // error of each.
-func verifyAll(ctx context.Context, hooks WebhookSender, urls []string) []error {
+func verifyAll(ctx context.Context, hooks WebhookSender, log guard.Logger, urls []string) []error {
 	errs := make([]error, len(urls))
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, verifyAtOnce)
 	for i := range urls {
 		wg.Add(1)
-		go verifyOne(ctx, hooks, urls, errs, i, slots, &wg)
+		go verifyOne(ctx, hooks, log, urls, errs, i, slots, &wg)
 	}
 	wg.Wait()
 	return errs
 }
 
-// verifyOne verifies urls[i] into errs[i] when it has a slot.
-func verifyOne(ctx context.Context, hooks WebhookSender, urls []string, errs []error, i int, slots chan struct{}, wg *sync.WaitGroup) {
+// errNotVerified is the error of a Verify that did not return normally,
+// as the client that named the URL is told it.
+var errNotVerified = errors.New("could not be verified")
+
+// verifyOne verifies urls[i] into errs[i] when it has a slot. It runs on a
+// goroutine of its own: a Verify that does not return normally is logged,
+// and the URL counts as not verified.
+func verifyOne(ctx context.Context, hooks WebhookSender, log guard.Logger, urls []string, errs []error, i int, slots chan struct{}, wg *sync.WaitGroup) {
 	defer wg.Done()
 	slots <- struct{}{}
-	defer func() { <-slots }()
-	errs[i] = hooks.Verify(ctx, urls[i])
+	fail := guard.Try("WebhookSender.Verify", func() { errs[i] = hooks.Verify(ctx, urls[i]) })
+	<-slots
+	if fail != nil {
+		errs[i] = errNotVerified
+		log.Report(fail)
+	}
 }
 
 // verifyAtOnce is how many callback URLs of one subscription are verified

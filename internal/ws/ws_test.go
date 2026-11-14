@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -145,17 +146,39 @@ func TestPingIsAnswered(t *testing.T) {
 		ponged <- err
 	})
 	conn := dial(t, ts)
+	// The text goes after the pong: once the pong has been written.
+	watched := &pongWatch{ReadWriteCloser: conn.rw, written: make(chan struct{})}
+	conn.rw = watched
 	go func() {
 		// Reading is what answers the ping.
 		_, _ = conn.ReadMessage()
 	}()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-watched.written:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the ping was not answered")
+	}
 	if err := conn.WriteText([]byte("after"), time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if err := <-ponged; err != nil {
 		t.Error(err)
 	}
+}
+
+// pongWatch closes written once a pong has been written through it.
+type pongWatch struct {
+	io.ReadWriteCloser
+	written chan struct{}
+	once    sync.Once
+}
+
+func (w *pongWatch) Write(b []byte) (int, error) {
+	n, err := w.ReadWriteCloser.Write(b)
+	if len(b) > 0 && b[0] == 0x80|opPong {
+		w.once.Do(func() { close(w.written) })
+	}
+	return n, err
 }
 
 func TestReadDeadline(t *testing.T) {

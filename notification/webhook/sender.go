@@ -27,6 +27,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/backoff"
+	"github.com/otfabric/go-openadr/internal/guard"
 )
 
 // SenderConfig configures a Sender. The zero value is a Sender for
@@ -64,8 +65,15 @@ type SenderConfig struct {
 
 // Metrics receives a callback for what becomes of each notification given
 // to a Sender: exactly one of the three. The callbacks run on the
-// Sender's goroutines, or for OnDropped on the caller's, and must not
-// block. Implementations must be safe for concurrent use.
+// Sender's goroutines, or for OnDropped on the caller's, without a lock of
+// the Sender held, and must not block. Implementations must be safe for
+// concurrent use.
+//
+// A callback that does not return normally is logged at error level, as
+// "webhook: callback did not return normally" with the fields callback,
+// value and stack, and the Sender goes on as if it had returned. So are
+// the done function of SendConfirmed and the handler of the Logger, which
+// loses that entry.
 type Metrics interface {
 	// OnDelivered is called when a webhook has confirmed a notification:
 	// after how many attempts, and how long after the first began.
@@ -92,6 +100,7 @@ type Metrics interface {
 type Sender struct {
 	cfg    SenderConfig
 	client *http.Client
+	logger guard.Logger
 
 	mu     sync.Mutex
 	closed bool
@@ -99,9 +108,10 @@ type Sender struct {
 	wg     sync.WaitGroup
 	// stop ends the waits between attempts when Close runs out of time;
 	// stopped is cancelled with it, and ends the requests on their way.
-	stop    chan struct{}
-	stopped context.Context
-	abort   context.CancelFunc
+	stop     chan struct{}
+	stopOnce sync.Once
+	stopped  context.Context
+	abort    context.CancelFunc
 }
 
 type delivery struct {
@@ -111,9 +121,17 @@ type delivery struct {
 	done func(error)
 }
 
-func (d delivery) finish(err error) {
+// finish tells done what became of the delivery.
+func (s *Sender) finish(d delivery, err error) {
 	if d.done != nil {
-		d.done(err)
+		s.logger.Call("SendConfirmed done", func() { d.done(err) })
+	}
+}
+
+// metric calls a callback of the Metrics, when there are any.
+func (s *Sender) metric(callback string, f func(Metrics)) {
+	if s.cfg.Metrics != nil {
+		s.logger.Call(callback, func() { f(s.cfg.Metrics) })
 	}
 }
 
@@ -150,7 +168,7 @@ func NewSender(cfg SenderConfig) *Sender {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}
-	s := &Sender{cfg: cfg, client: cfg.HTTPClient, stop: make(chan struct{})}
+	s := &Sender{cfg: cfg, client: cfg.HTTPClient, logger: guard.NewLogger(cfg.Logger, "webhook"), stop: make(chan struct{})}
 	s.stopped, s.abort = context.WithCancel(context.Background())
 	if s.client == nil {
 		s.client = defaultClient(cfg.AllowInsecure)
@@ -283,7 +301,8 @@ func (s *Sender) Send(callbackURL, bearerToken string, body []byte) {
 // the webhook confirmed it, with a *RefusedError when it will never take
 // it, and otherwise with the reason it was given up on for now: its
 // attempts are used up, the queue was full, the Sender was closed. A VTN
-// uses it to keep a notification until it is delivered.
+// uses it to keep a notification until it is delivered. done must not
+// call Close: Close waits for the goroutines it runs on.
 func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, done func(error)) {
 	d := delivery{url: callbackURL, token: bearerToken, body: body, done: done}
 	h := fnv.New32a()
@@ -291,7 +310,7 @@ func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, don
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		d.finish(fmt.Errorf("%w: the sender", openadr.ErrClosed))
+		s.finish(d, fmt.Errorf("%w: the sender", openadr.ErrClosed))
 		return
 	}
 	select {
@@ -300,17 +319,19 @@ func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, don
 	default:
 		s.mu.Unlock()
 		s.log("webhook: queue full, notification dropped", callbackURL, nil)
-		if s.cfg.Metrics != nil {
-			s.cfg.Metrics.OnDropped()
-		}
-		d.finish(errors.New("webhook: the queue is full"))
+		s.metric("Metrics.OnDropped", Metrics.OnDropped)
+		s.finish(d, errors.New("webhook: the queue is full"))
 	}
 }
 
 // Close stops accepting notifications and waits until those that are queued
 // have been delivered or given up on, or until ctx ends, whichever is first.
 // When ctx ends first, the requests on their way are cancelled and what is
-// still queued is given up on without being sent.
+// still queued is given up on without being sent. It may be called more
+// than once and from several goroutines at the same time; each call waits
+// in the same way. It must not be called from a Metrics callback or a done
+// function of SendConfirmed that runs on a goroutine of the Sender, which
+// it waits for.
 func (s *Sender) Close(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.closed {
@@ -328,11 +349,7 @@ func (s *Sender) Close(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		// Give up on what is still waiting between attempts.
-		select {
-		case <-s.stop:
-		default:
-			close(s.stop)
-		}
+		s.stopOnce.Do(func() { close(s.stop) })
 		s.abort()
 		<-done
 		return ctx.Err()
@@ -350,10 +367,8 @@ func (s *Sender) deliver(d delivery) {
 	start := time.Now()
 	failed := func(attempts int, err error) {
 		s.log("webhook: notification not delivered", d.url, err)
-		if s.cfg.Metrics != nil {
-			s.cfg.Metrics.OnFailed(attempts, time.Since(start), err)
-		}
-		d.finish(err)
+		s.metric("Metrics.OnFailed", func(m Metrics) { m.OnFailed(attempts, time.Since(start), err) })
+		s.finish(d, err)
 	}
 	select {
 	case <-s.stop:
@@ -366,10 +381,8 @@ func (s *Sender) deliver(d delivery) {
 	for attempt := 1; ; attempt++ {
 		retry, after, err := s.post(d)
 		if err == nil {
-			if s.cfg.Metrics != nil {
-				s.cfg.Metrics.OnDelivered(attempt, time.Since(start))
-			}
-			d.finish(nil)
+			s.metric("Metrics.OnDelivered", func(m Metrics) { m.OnDelivered(attempt, time.Since(start)) })
+			s.finish(d, nil)
 			return
 		}
 		if !retry {
@@ -434,7 +447,7 @@ func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
 // log reports a failure without the query of the URL, which may hold a
 // secret of the subscriber.
 func (s *Sender) log(msg, callbackURL string, err error) {
-	if s.cfg.Logger == nil {
+	if !s.logger.Active() {
 		return
 	}
 	where := callbackURL
@@ -446,7 +459,7 @@ func (s *Sender) log(msg, callbackURL string, err error) {
 	if err != nil {
 		attrs = append(attrs, slog.Any("error", err))
 	}
-	s.cfg.Logger.Warn(msg, attrs...)
+	s.logger.Warn(msg, attrs...)
 }
 
 // queueOf is the queue of the hash among n, the same for a callback URL on

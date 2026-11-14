@@ -78,7 +78,11 @@ type Advertisement struct {
 	NoAuth bool
 	// OpenAPIURL is where the VTN serves its OpenAPI document, if it does.
 	OpenAPIURL string
-	// Logger receives failures to send. Nil disables logging.
+	// Logger receives failures to send. Nil disables logging. A handler of
+	// the Logger that does not return normally loses that entry, which is
+	// reported once more at error level, as "discovery: callback did not
+	// return normally" with the fields callback, value and stack; the
+	// Advertiser goes on.
 	Logger *slog.Logger
 
 }
@@ -112,7 +116,7 @@ It does not probe for the names first: an instance or host name that another mac
 func (ad *Advertiser) Close() error
 ```
 
-Close takes the announcement back and stops answering.
+Close takes the announcement back and stops answering. It may be called more than once and from several goroutines at the same time; each call returns when the Advertiser has stopped. It must not be called from the Logger's handler, which runs on the goroutines it waits for.
 
 ### type Options
 

@@ -4,13 +4,20 @@ package server_test
 
 import (
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/otfabric/go-openadr/server"
 	"github.com/otfabric/go-openadr/server/storage"
 )
 
+// In a bubble of testing/synctest, where time.Now and time.Sleep are a
+// clock of the test's own: the wait is exactly as long as named.
 func TestRateLimiter(t *testing.T) {
+	synctest.Test(t, testRateLimiter)
+}
+
+func testRateLimiter(t *testing.T) {
 	l := server.NewRateLimiter(20, 3)
 	// A burst, and then no more.
 	for i := range 3 {
@@ -28,8 +35,12 @@ func TestRateLimiter(t *testing.T) {
 			t.Errorf("client %q was refused for what another did", id)
 		}
 	}
-	// It refills with time.
-	time.Sleep(wait + 10*time.Millisecond)
+	// It refills with time: not before the wait it named, and after it.
+	time.Sleep(wait - time.Millisecond)
+	if ok, _ := l.Allow("a", "GET /programs"); ok {
+		t.Error("taken before the wait it named")
+	}
+	time.Sleep(time.Millisecond)
 	if ok, _ := l.Allow("a", "GET /programs"); !ok {
 		t.Error("refused after the wait it named")
 	}

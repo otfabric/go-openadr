@@ -7,11 +7,14 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/guard"
 	"github.com/otfabric/go-openadr/internal/wire/codecs"
 )
 
@@ -21,7 +24,10 @@ import (
 // It answers the VTN's verification request (GET with an echo parameter),
 // and for every notification (POST) checks the bearer token, decodes the
 // body and calls Notify. The VTN is told 200 when Notify returns nil, and
-// 500 otherwise, on which it sends the notification again later.
+// 500 otherwise, on which it sends the notification again later. A Notify
+// that does not return normally is answered 500 too, and written with its
+// stack where the http.Server that serves the Handler writes errors: its
+// ErrorLog, or the standard logger.
 //
 // Notify may be called concurrently, and with the same notification more
 // than once: delivery is at least once. Notifications tell that something
@@ -104,9 +110,30 @@ func (h *Handler) receive(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
-	if err := h.Notify(r.Context(), n); err != nil {
+	if err := h.notify(r, n); err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// notify calls Notify. One that does not return normally is an error, and
+// is written where the HTTP server writes errors, as net/http writes a
+// handler that does not return normally.
+func (h *Handler) notify(r *http.Request, n openadr.Notification) (err error) {
+	fail := guard.Try("Notify", func() { err = h.Notify(r.Context(), n) })
+	if fail == nil {
+		return err
+	}
+	if fail.Value() == http.ErrAbortHandler {
+		// How a handler asks net/http to abort the response: passed on.
+		panic(http.ErrAbortHandler)
+	}
+	entry := fmt.Sprintf("webhook: callback did not return normally: callback=Notify value=%v\n%s", fail.Value(), fail.Stack())
+	if srv, ok := r.Context().Value(http.ServerContextKey).(*http.Server); ok && srv.ErrorLog != nil {
+		srv.ErrorLog.Print(entry)
+	} else {
+		log.Print(entry)
+	}
+	return fail
 }

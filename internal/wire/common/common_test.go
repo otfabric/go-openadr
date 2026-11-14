@@ -47,7 +47,7 @@ func TestValueTo(t *testing.T) {
 	if _, err := ValuesMapsTo([]openadr.ValuesMap{{Type: "X", Values: []openadr.Value{{}}}}); err == nil {
 		t.Error("a values map with the zero Value was encoded")
 	}
-	if _, err := IntervalsTo([]openadr.Interval{{Payloads: []openadr.ValuesMap{{Type: "X", Values: []openadr.Value{{}}}}}}); err == nil {
+	if _, err := IntervalsTo("intervals", []openadr.Interval{{Payloads: []openadr.ValuesMap{{Type: "X", Values: []openadr.Value{{}}}}}}); err == nil {
 		t.Error("an interval with the zero Value was encoded")
 	}
 	if _, err := ReportResourcesTo([]openadr.ReportResource{{Intervals: []openadr.Interval{{Payloads: []openadr.ValuesMap{{Type: "X", Values: []openadr.Value{{}}}}}}}}); err == nil {

@@ -97,9 +97,35 @@ func valuesMaps(field string, vms []ValuesMap) error {
 	return nil
 }
 
+// duration checks that a duration has an ISO 8601 form.
+func duration(field string, d *Duration) error {
+	if d == nil {
+		return nil
+	}
+	if p := d.problem(); p != "" {
+		return invalid(field, "%s", p)
+	}
+	return nil
+}
+
+// period checks the durations of an interval period.
+func period(field string, p *IntervalPeriod) error {
+	if p == nil {
+		return nil
+	}
+	if err := duration(field+".duration", p.Duration); err != nil {
+		return err
+	}
+	return duration(field+".randomizeStart", p.RandomizeStart)
+}
+
 func intervals(field string, ivs []Interval) error {
 	for i, iv := range ivs {
-		if err := valuesMaps(fmt.Sprintf("%s[%d].payloads", field, i), iv.Payloads); err != nil {
+		f := fmt.Sprintf("%s[%d]", field, i)
+		if err := period(f+".intervalPeriod", iv.IntervalPeriod); err != nil {
+			return err
+		}
+		if err := valuesMaps(f+".payloads", iv.Payloads); err != nil {
 			return err
 		}
 	}
@@ -136,6 +162,9 @@ func (d ReportPayloadDescriptor) validate(field string) error {
 // not look at Metadata.
 func (p Program) Validate() error {
 	if err := name("programName", p.Name, true); err != nil {
+		return err
+	}
+	if err := period("intervalPeriod", p.IntervalPeriod); err != nil {
 		return err
 	}
 	for i, d := range p.Descriptions {
@@ -175,6 +204,12 @@ func (e Event) Validate() error {
 	}
 	if e.Priority != nil && *e.Priority < 0 {
 		return invalid("priority", "is negative")
+	}
+	if err := duration("duration", e.Duration); err != nil {
+		return err
+	}
+	if err := period("intervalPeriod", e.IntervalPeriod); err != nil {
+		return err
 	}
 	if err := targets("targets", e.Targets); err != nil {
 		return err
@@ -233,6 +268,9 @@ func (r Report) Validate() error {
 	for i, res := range r.Resources {
 		f := fmt.Sprintf("resources[%d]", i)
 		if err := name(f+".resourceName", res.ResourceName, true); err != nil {
+			return err
+		}
+		if err := period(f+".intervalPeriod", res.IntervalPeriod); err != nil {
 			return err
 		}
 		if err := intervals(f+".intervals", res.Intervals); err != nil {

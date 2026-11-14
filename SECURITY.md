@@ -152,7 +152,9 @@ A retry policy makes a client send a request again. The client only does so wher
 - Object IDs are checked against the pattern of the specification before they are used in a URL
 - Internal errors are logged, when a logger is configured, and answered with a bare 500: no detail of the failure reaches the client
 - The decoders are fuzzed: of JSON objects, of ISO 8601 durations, of MQTT packets, of WebSocket frames, of DNS messages and of CSV tables
-- `timeline` refuses to lay out a table of more than about a million rows, so that an event that repeats one-second intervals for years costs an error and not the memory
+- `timeline` refuses to lay out a table of more than about a million rows, so that an event that repeats one-second intervals for years costs an error and not the memory. `timeline.ReadCSV` reads at most about a million rows and bounds neither a line nor its input: a program that reads a table it was sent, such as an upload, reads it through an `io.LimitReader`
+- The MQTT and WebSocket decoders check a declared length against their limit (4 MiB; 64 KiB for what a client sends a VTN over its WebSocket) before they allocate for it; tests hold them, and the decoding of a notification, to a budget (see [TESTING.md](TESTING.md#allocation-budgets))
+- Application code that the module calls (callbacks, metrics hooks, a logger's handler, and on a VTN's own goroutines its `WebhookSender`, outbox and store) and that does not return normally is logged and does not stop the component it was called from; see [OBSERVABILITY.md](OBSERVABILITY.md#callbacks-that-do-not-return-normally)
 
 ### What is not there
 

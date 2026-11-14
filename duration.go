@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/otfabric/go-openadr/internal/isoduration"
 )
 
 // Duration is an ISO 8601 duration as OpenADR uses it, for example PT1H or
@@ -18,6 +20,10 @@ import (
 //
 // The format allows either days or weeks, not both; String writes weeks only
 // when Days is zero.
+//
+// ParseDuration gives components that are not negative and seconds that are
+// finite. A Duration built otherwise has no ISO 8601 form: Validate of the
+// objects that carry one refuses it, and so does the encoder.
 type Duration struct {
 	Negative bool
 	Years    int64
@@ -147,7 +153,8 @@ func (d Duration) String() string {
 
 // TimeDuration converts to a time.Duration, taking a day as 24 hours. It
 // reports false when the duration has years or months, whose length is not
-// fixed, or does not fit in a time.Duration.
+// fixed, has seconds that are not a number, or does not fit in a
+// time.Duration.
 func (d Duration) TimeDuration() (time.Duration, bool) {
 	if d.Years != 0 || d.Months != 0 {
 		return 0, false
@@ -156,7 +163,14 @@ func (d Duration) TimeDuration() (time.Duration, bool) {
 		float64(d.Hours)*float64(time.Hour) +
 		float64(d.Minutes)*float64(time.Minute) +
 		d.Seconds*float64(time.Second)
-	if total >= float64(math.MaxInt64) {
+	// Every float64 in [-2^63, 2^63) is an int64 once rounded; outside, and
+	// for NaN, the conversion has no defined result.
+	const limit = float64(1 << 63)
+	switch {
+	case math.IsNaN(total), total >= limit, total < -limit:
+		return 0, false
+	case d.Negative && total == -limit:
+		// Negated, it is 2^63.
 		return 0, false
 	}
 	if d.Negative {
@@ -165,11 +179,18 @@ func (d Duration) TimeDuration() (time.Duration, bool) {
 	return time.Duration(math.Round(total)), true
 }
 
+// problem says why d has no ISO 8601 form that reads back as d, "" when it
+// has one.
+func (d Duration) problem() string {
+	return isoduration.Problem(d.Years, d.Months, d.Weeks, d.Days, d.Hours, d.Minutes, d.Seconds)
+}
+
 // AddTo returns t moved by the duration, applying years, months and days on
 // the calendar in t's location, and hours, minutes and seconds as elapsed
 // time.
 //
 // A duration too long for a time.Duration still moves t by all of it.
+// Seconds that are not a number are not added.
 // Components so large that the result would be millions of years away are
 // taken as that far: about two million years (2^20 years, 2^24 months or
 // 2^30 days), well past P9999Y, the longest duration the specification
@@ -189,6 +210,10 @@ func (d Duration) AddTo(t time.Time) time.Time {
 	// added on the calendar of UTC, where a day is always 24 hours, and
 	// the rest as elapsed time.
 	h, m, sec := d.Hours, d.Minutes, d.Seconds
+	if math.IsNaN(sec) {
+		// Not a number of seconds: none are added.
+		sec = 0
+	}
 	clockDays := addSat(h/24, m/(24*60))
 	h, m = h%24, m%(24*60)
 	secDays := math.Floor(sec / 86400)

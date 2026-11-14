@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/isoduration"
 )
 
 // Discriminator values of the payload descriptors.
@@ -87,13 +88,17 @@ func MetaFrom(m Metadata) openadr.Metadata {
 
 // --- durations and interval periods
 
-// DurationTo writes a duration in ISO 8601.
-func DurationTo(d *openadr.Duration) *string {
+// DurationTo writes a duration in ISO 8601. A duration that has no such
+// form (see isoduration) is refused: what is written, DurationFrom reads.
+func DurationTo(field string, d *openadr.Duration) (*string, error) {
 	if d == nil {
-		return nil
+		return nil, nil
+	}
+	if p := isoduration.Problem(d.Years, d.Months, d.Weeks, d.Days, d.Hours, d.Minutes, d.Seconds); p != "" {
+		return nil, Invalid(field, "%s", p)
 	}
 	s := d.String()
-	return &s
+	return &s, nil
 }
 
 // DurationFrom reads an ISO 8601 duration.
@@ -135,16 +140,23 @@ type IntervalPeriod struct {
 }
 
 // PeriodTo writes an interval period.
-func PeriodTo(p *openadr.IntervalPeriod) *IntervalPeriod {
+func PeriodTo(field string, p *openadr.IntervalPeriod) (*IntervalPeriod, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
-	out := &IntervalPeriod{Duration: DurationTo(p.Duration), RandomizeStart: DurationTo(p.RandomizeStart)}
+	out := &IntervalPeriod{}
+	var err error
+	if out.Duration, err = DurationTo(field+".duration", p.Duration); err != nil {
+		return nil, err
+	}
+	if out.RandomizeStart, err = DurationTo(field+".randomizeStart", p.RandomizeStart); err != nil {
+		return nil, err
+	}
 	if p.Start != nil {
 		start := StartTime(*p.Start)
 		out.Start = &start
 	}
-	return out
+	return out, nil
 }
 
 // PeriodFrom reads an interval period.
@@ -290,8 +302,9 @@ type Interval struct {
 }
 
 // IntervalsTo always returns a non-nil slice: where the schema has
-// intervals at all, callers decide whether to omit it.
-func IntervalsTo(ivs []openadr.Interval) ([]Interval, error) {
+// intervals at all, callers decide whether to omit it. field names the
+// intervals in an error.
+func IntervalsTo(field string, ivs []openadr.Interval) ([]Interval, error) {
 	out := make([]Interval, len(ivs))
 	for i, iv := range ivs {
 		id := iv.ID
@@ -302,7 +315,11 @@ func IntervalsTo(ivs []openadr.Interval) ([]Interval, error) {
 		if payloads == nil {
 			payloads = []ValuesMap{}
 		}
-		out[i] = Interval{ID: &id, IntervalPeriod: PeriodTo(iv.IntervalPeriod), Payloads: payloads}
+		period, err := PeriodTo(fmt.Sprintf("%s[%d].intervalPeriod", field, i), iv.IntervalPeriod)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = Interval{ID: &id, IntervalPeriod: period, Payloads: payloads}
 	}
 	return out, nil
 }
@@ -506,11 +523,16 @@ type ReportResource struct {
 func ReportResourcesTo(rs []openadr.ReportResource) ([]ReportResource, error) {
 	out := make([]ReportResource, len(rs))
 	for i, res := range rs {
-		ivs, err := IntervalsTo(res.Intervals)
+		f := fmt.Sprintf("resources[%d]", i)
+		ivs, err := IntervalsTo(f+".intervals", res.Intervals)
 		if err != nil {
 			return nil, err
 		}
-		out[i] = ReportResource{ResourceName: res.ResourceName, IntervalPeriod: PeriodTo(res.IntervalPeriod), Intervals: ivs}
+		period, err := PeriodTo(f+".intervalPeriod", res.IntervalPeriod)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = ReportResource{ResourceName: res.ResourceName, IntervalPeriod: period, Intervals: ivs}
 	}
 	return out, nil
 }

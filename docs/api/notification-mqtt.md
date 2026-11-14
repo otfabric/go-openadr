@@ -54,12 +54,16 @@ type Metrics interface {
 	// queue is full: the broker has been away for too long.
 	OnDropped()
 	// OnReceived is called for every notification a Subscriber hands to
-	// its Notify function.
+	// its Notify function, before it does. A notification is not handed
+	// to Notify when the Subscriber was closed meanwhile, by OnReceived
+	// for one.
 	OnReceived()
 }
 ```
 
-Metrics receives a callback for what a Publisher or a Subscriber does. A Publisher calls OnPublished and OnDropped, a Subscriber OnReceived, and both the two about the connection. The callbacks run on the goroutines of the Publisher or Subscriber and must not block. Implementations must be safe for concurrent use.
+Metrics receives a callback for what a Publisher or a Subscriber does. A Publisher calls OnPublished and OnDropped, a Subscriber OnReceived, and both the two about the connection. The callbacks run on the goroutines of the Publisher or Subscriber, or for OnDropped on the caller's of Publish, and must not block. They run without a lock of the Publisher or Subscriber held, but OnReceived, which runs as Notify does: one at a time, and a Close on another goroutine waits for it. Implementations must be safe for concurrent use.
+
+A callback that does not return normally is logged at error level, as "mqtt: callback did not return normally" with the fields callback, value and stack, and the Publisher or Subscriber goes on as if it had returned. So is the handler of the Logger, which loses that entry.
 
 ### type Publisher
 
@@ -89,7 +93,7 @@ NewPublisher returns a running Publisher. It does not wait for the broker: the c
 func (p *Publisher) Close(ctx context.Context) error
 ```
 
-Close stops accepting notifications and waits until those that are queued have reached the broker, or until ctx ends, whichever is first.
+Close stops accepting notifications and waits until those that are queued have reached the broker, or until ctx ends, whichever is first. It may be called more than once and from several goroutines at the same time; each call waits in the same way.
 
 #### func (Publisher) Publish
 
@@ -127,6 +131,9 @@ type Subscriber struct {
 
 	// calling is held while Notify runs, so that Close can wait for it.
 
+	// runner is the goroutine of run, and notifying the one in Notify
+	// (0 when none): a Close called on one of them does not wait for it.
+
 }
 ```
 
@@ -148,7 +155,9 @@ NewSubscriber returns a running Subscriber. It does not wait for the broker; use
 func (s *Subscriber) Close() error
 ```
 
-Close disconnects and stops the Subscriber. Notify is not called after Close has returned.
+Close disconnects and stops the Subscriber, and returns when it has stopped and a Notify in progress has returned. Notify is not called after Close has returned.
+
+Close may be called more than once, from several goroutines at the same time, and from Notify, the Metrics callbacks and the Logger's handler. From one of those it does not wait for the callback it is called from, which goes on until it returns. Called from Notify or OnReceived, it returns when the rest of the Subscriber has stopped. Called from OnConnected, OnDisconnected or the Logger's handler, it may return before that: the Subscriber stops once that callback has returned, and a Notify in progress goes on until it returns. In every case no Notify begins after Close has returned. A goroutine that Notify waits for is not Notify: a Close there waits for Notify, which must not wait for it.
 
 #### func (Subscriber) Ready
 
@@ -177,7 +186,11 @@ type SubscriberConfig struct {
 	Topics []string
 	// Notify is called for each notification, one at a time, in the order
 	// the broker delivers them. Required. It should return soon: nothing
-	// else is received meanwhile.
+	// else is received meanwhile. It may call Close (see Close). A Notify
+	// that does not return normally is logged at error level, as
+	// "mqtt: callback did not return normally" with the fields callback,
+	// value and stack; the message is acknowledged and the Subscriber
+	// goes on with the next.
 	Notify func(ctx context.Context, topic string, n openadr.Notification)
 	// Logger receives connection failures and messages that are not
 	// notifications. Nil disables logging.

@@ -31,6 +31,7 @@ import (
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/guard"
 	"github.com/otfabric/go-openadr/internal/wire"
 	"github.com/otfabric/go-openadr/internal/wire/codecs"
 )
@@ -80,7 +81,11 @@ type Config struct {
 	// level every call, with its operation, duration and outcome; at info
 	// level a token that was renewed because the VTN refused the old one;
 	// at warn level every retry. Never bodies, tokens or secrets. Nil
-	// disables logging.
+	// disables logging. At error level it also receives "openadr: callback
+	// did not return normally", with the fields callback, value and stack,
+	// for a Metrics callback that did not return normally; the call goes
+	// on as if it had returned. A handler of the Logger that does not
+	// return normally loses that entry.
 	Logger *slog.Logger
 }
 
@@ -97,7 +102,7 @@ type core struct {
 	retryCreates bool
 	metrics      Metrics
 	attempts     AttemptMetrics
-	logger       *slog.Logger
+	logger       guard.Logger
 }
 
 func newCore(cfg Config) (*core, error) {
@@ -134,7 +139,7 @@ func newCore(cfg Config) (*core, error) {
 		retry:        cfg.RetryPolicy,
 		retryCreates: cfg.RetryCreates,
 		metrics:      cfg.Metrics,
-		logger:       cfg.Logger,
+		logger:       guard.NewLogger(cfg.Logger, "openadr"),
 	}
 	if c.retry == nil {
 		c.retry = NoRetry()
@@ -221,9 +226,7 @@ func (c *core) do(ctx context.Context, method, path string, query url.Values, bo
 // reports the call to the metrics and the log.
 func (c *core) call(ctx context.Context, op, method string, attempt func() error) error {
 	start := time.Now()
-	if c.metrics != nil {
-		c.metrics.OnRequest(op)
-	}
+	c.metric("Metrics.OnRequest", func(m Metrics) { m.OnRequest(op) })
 	var (
 		err error
 		n   int
@@ -233,7 +236,7 @@ attempts:
 		began := time.Now()
 		err = attempt()
 		if c.attempts != nil {
-			c.attempts.OnAttempt(op, n, time.Since(began), err)
+			c.logger.Call("AttemptMetrics.OnAttempt", func() { c.attempts.OnAttempt(op, n, time.Since(began), err) })
 		}
 		if err == nil || !retryable(method, err, c.retryCreates) {
 			break
@@ -249,9 +252,7 @@ attempts:
 			// now as it would then, without keeping the caller.
 			break
 		}
-		if c.logger != nil {
-			c.logger.WarnContext(ctx, "openadr: retrying", slog.String("op", op), slog.Int("attempt", n), slog.Duration("wait", wait), slog.Any("error", err))
-		}
+		c.logger.Log(ctx, slog.LevelWarn, "openadr: retrying", slog.String("op", op), slog.Int("attempt", n), slog.Duration("wait", wait), slog.Any("error", err))
 		timer := time.NewTimer(wait)
 		select {
 		case <-timer.C:
@@ -263,24 +264,29 @@ attempts:
 		}
 	}
 	duration := time.Since(start)
-	if c.metrics != nil {
-		switch {
-		case err == nil:
-			c.metrics.OnResponse(op, duration)
-		case errors.Is(err, openadr.ErrTimeout):
-			c.metrics.OnTimeout(op, duration)
-		default:
-			c.metrics.OnError(op, duration, err)
-		}
+	switch {
+	case err == nil:
+		c.metric("Metrics.OnResponse", func(m Metrics) { m.OnResponse(op, duration) })
+	case errors.Is(err, openadr.ErrTimeout):
+		c.metric("Metrics.OnTimeout", func(m Metrics) { m.OnTimeout(op, duration) })
+	default:
+		c.metric("Metrics.OnError", func(m Metrics) { m.OnError(op, duration, err) })
 	}
-	if c.logger != nil && c.logger.Enabled(ctx, slog.LevelDebug) {
+	if c.logger.Enabled(ctx, slog.LevelDebug) {
 		attrs := []any{slog.String("op", op), slog.Duration("duration", duration)}
 		if err != nil {
 			attrs = append(attrs, slog.Any("error", err))
 		}
-		c.logger.DebugContext(ctx, "openadr: call", attrs...)
+		c.logger.Log(ctx, slog.LevelDebug, "openadr: call", attrs...)
 	}
 	return err
+}
+
+// metric calls a callback of the Metrics, when there are any.
+func (c *core) metric(callback string, f func(Metrics)) {
+	if c.metrics != nil {
+		c.logger.Call(callback, func() { f(c.metrics) })
+	}
 }
 
 // once sends a request and returns the body of a 2xx response. A 401 is
@@ -305,9 +311,7 @@ func (c *core) once(ctx context.Context, method, path string, query url.Values, 
 		if status == http.StatusUnauthorized && attempt == 0 && token != "" {
 			if inv, ok := c.tokens.(interface{ Invalidate(token string) }); ok {
 				inv.Invalidate(token)
-				if c.logger != nil {
-					c.logger.InfoContext(ctx, "openadr: the VTN refused the token; asking for a new one", slog.String("op", opName(method, path)))
-				}
+				c.logger.Log(ctx, slog.LevelInfo, "openadr: the VTN refused the token; asking for a new one", slog.String("op", opName(method, path)))
 				continue
 			}
 		}

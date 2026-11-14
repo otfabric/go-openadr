@@ -15,8 +15,11 @@ import (
 )
 
 // Metrics receives a callback for every request a VTN serves. The
-// callbacks run on the goroutine of the request and must not block: count,
-// observe, return. Implementations must be safe for concurrent use.
+// callbacks run on the goroutine of the request, without a lock of the VTN
+// held, and must not block: count, observe, return. Implementations must
+// be safe for concurrent use. A callback that does not return normally is
+// logged (see Config.Logger), and the request goes on as if it had
+// returned.
 //
 // op names the operation by method and path as the specification writes
 // it, such as "GET /events" or "PUT /programs/{id}". A request that is not
@@ -50,7 +53,9 @@ const (
 	MechanismMQTT      = "MQTT"
 )
 
-// NotificationMetrics is an optional extension of Metrics.
+// NotificationMetrics is an optional extension of Metrics. Its callback
+// runs on the goroutine of the request that changed the object, without a
+// lock of the VTN held, as those of Metrics do.
 type NotificationMetrics interface {
 	// OnNotification is called for every notification the VTN hands to a
 	// mechanism: one per webhook request queued, per message published to
@@ -70,7 +75,9 @@ const (
 )
 
 // SocketMetrics is an optional extension of Metrics, for a VTN with
-// Config.WebSocket.
+// Config.WebSocket. Its callbacks run on the goroutine of the request that
+// opened the WebSocket, without a lock of the VTN held, as those of
+// Metrics do.
 type SocketMetrics interface {
 	// OnSocketOpened is called when a client has opened a WebSocket.
 	OnSocketOpened()
@@ -131,25 +138,21 @@ func (o *observed) finish(status int) {
 
 // observe serves a request and reports it to the metrics and the log.
 func (s *Server) observe(w http.ResponseWriter, r *http.Request) {
-	debug := s.logger != nil && s.logger.Enabled(r.Context(), slog.LevelDebug)
+	debug := s.logger.Enabled(r.Context(), slog.LevelDebug)
 	if s.metrics == nil && !debug {
 		s.mux.ServeHTTP(w, r)
 		return
 	}
 	op, start := s.opOf(r), time.Now()
-	if s.metrics != nil {
-		s.metrics.OnRequest(op)
-	}
+	s.metric("Metrics.OnRequest", func(m Metrics) { m.OnRequest(op) })
 	o := &observed{ResponseWriter: w}
 	o.done = func(status int) {
 		duration := time.Since(start)
-		if s.metrics != nil {
-			s.metrics.OnResponse(op, status, duration)
-		}
+		s.metric("Metrics.OnResponse", func(m Metrics) { m.OnResponse(op, status, duration) })
 		if debug {
 			// The operation, not the path: IDs stay out of the log unless
 			// asked for by a failure, which logError reports.
-			s.logger.DebugContext(r.Context(), "openadr: request", slog.String("op", op), slog.Int("status", status), slog.Duration("duration", duration))
+			s.logger.Log(r.Context(), slog.LevelDebug, "openadr: request", slog.String("op", op), slog.Int("status", status), slog.Duration("duration", duration))
 		}
 	}
 	s.mux.ServeHTTP(o, r)
@@ -162,6 +165,13 @@ func (s *Server) observe(w http.ResponseWriter, r *http.Request) {
 // notified reports a notification handed to a mechanism.
 func (s *Server) notified(mechanism string, sub subject, op openadr.Operation) {
 	if s.notifications != nil {
-		s.notifications.OnNotification(mechanism, sub.kind, op)
+		s.logger.Call("NotificationMetrics.OnNotification", func() { s.notifications.OnNotification(mechanism, sub.kind, op) })
+	}
+}
+
+// metric calls a callback of the Metrics, when there are any.
+func (s *Server) metric(callback string, f func(Metrics)) {
+	if s.metrics != nil {
+		s.logger.Call(callback, func() { f(s.metrics) })
 	}
 }

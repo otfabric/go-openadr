@@ -99,6 +99,14 @@ specification accepts, including the forms other implementations write
 structs. Compare their `String()` only after knowing both were written the
 same way, or compare `TimeDuration()`.
 
+A `Duration` built in code may hold what no ISO 8601 duration says: seconds
+that are not a finite number, a negative component (a negative duration
+sets `Negative` instead), or more weeks and days together than one number of
+days holds. `Validate` refuses one in an object, the encoders refuse to
+write one, and `TimeDuration` reports false for one whose total is not a
+number or does not fit a `time.Duration`. What is written is read back as
+the same duration.
+
 ### Report descriptors
 
 `NewReportDescriptor(payloadType)` returns a descriptor with the defaults of
@@ -556,7 +564,15 @@ one value as it is and several as an array; `randomize_start` is an ISO 8601
 duration. `ReadCSV` wants the header and the columns `start`, `type` and
 `values`, in any order, ignores columns it does not know, numbers the rows
 that have no `interval`, and takes a cell of `values` that is not JSON as a
-string.
+string. `WriteCSV` refuses a row it could not read back. `ReadCSV` stops
+after about a million rows and bounds neither a line nor the input: read an
+input that is not trusted, such as an upload, through an `io.LimitReader`.
+
+**Shared values.** The `Values` of the rows of `Of` and `OfEvent` are the
+payloads' own, as the objects of the root package share what they are given:
+setting an element of one sets it in the event, and in the rows that repeat
+it. Give a row a copy (`slices.Clone`) to change its values alone. `ReadCSV`
+and `Intervals` make values of their own.
 
 ## Package `discovery`
 
@@ -717,7 +733,9 @@ type JWTConfig struct {
 
 - `client.VEN` and `client.BL` are safe for concurrent use. Calls are independent HTTP exchanges; only the fetching of a token is serialized.
 - `server.Server` is safe for concurrent use, as `http.Handler` requires. A read by ID followed by a write is two steps on the store: two updates of one object at the same time both succeed, and the later one wins.
-- `storage.Memory`, `storage.File`, `auth.Issuer`, `auth.JWTValidator`, `webhook.Sender`, `mqtt.Publisher`, `mqtt.Subscriber`, `websocket.Subscriber` and `discovery.Advertiser` are safe for concurrent use. A `client.NotificationStream` is read by one goroutine at a time, and may be closed from any. A `webhook.Handler` calls `Notify` from the goroutine of each request.
+- `storage.Memory`, `storage.File`, `auth.Issuer`, `auth.JWTValidator`, `webhook.Sender`, `mqtt.Publisher`, `mqtt.Subscriber`, `websocket.Subscriber` and `discovery.Advertiser` are safe for concurrent use, `Close` included: it may be called more than once and from several goroutines at the same time. A `client.NotificationStream` is read by one goroutine at a time, and may be closed from any. A `webhook.Handler` calls `Notify` from the goroutine of each request.
+- The subscribers of `notification/mqtt` and `notification/websocket` may be closed from their own `Notify`, `Dial`, Metrics callbacks and Logger: `Close` returns there without waiting for the callback it is called from, also when two callbacks call it at the same time, and no `Notify` begins after it has returned. A `Close` from any other goroutine waits until the Subscriber has stopped and a `Notify` in progress has returned. `webhook.Sender` and `mqtt.Publisher` must not be closed from their own callbacks, which run on the goroutines their `Close` waits for.
+- Callbacks and metrics hooks run without a lock of the module held, but the `Notify` of a subscriber and the `OnReceived` before it, which a `Close` on another goroutine waits for. One that does not return normally is logged and the module goes on; see [OBSERVABILITY.md](OBSERVABILITY.md#callbacks-that-do-not-return-normally).
 - The domain types are plain values. Copying one copies its slices by reference: do not modify an object that has been handed to a store.
 
 ## Limits
@@ -738,5 +756,7 @@ type JWTConfig struct {
 | WebSockets per client | 4 | `server.WebSocketConfig.MaxPerClient` |
 | Notifications queued per WebSocket | 256 | `server.WebSocketConfig.Queue` |
 | Message on a WebSocket | 4 MiB to a client, 64 KiB to the VTN | fixed |
+| MQTT packet | 4 MiB, read by the publisher and the subscriber | fixed |
+| Notification to a webhook | 1 MiB | `webhook.Handler.MaxBodyBytes` |
 | Wait between webhook attempts | 1 minute at most | `webhook.SenderConfig.MaxBackoff` |
-| Rows of a table | about a million | `timeline.ErrTooLarge` |
+| Rows of a table | about a million | `timeline.ErrTooLarge`; `ReadCSV` bounds neither a line nor its input: wrap an input that is not trusted in an `io.LimitReader` |

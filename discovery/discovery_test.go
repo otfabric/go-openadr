@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -31,12 +32,14 @@ type fakeNet struct {
 	next  int
 	// lose is called for every packet; one it returns true for is lost.
 	lose func(data []byte, to net.Addr) bool
-	// sent records every packet, for tests that look at the traffic.
-	sent []packet
+	// sent records every packet, for tests that look at the traffic, and
+	// changed is closed and replaced when it grows.
+	sent    []packet
+	changed chan struct{}
 }
 
 func newFakeNet(addrs ...string) *fakeNet {
-	n := &fakeNet{next: 40000}
+	n := &fakeNet{next: 40000, changed: make(chan struct{})}
 	for i, a := range addrs {
 		ip := netip.MustParseAddr(a)
 		n.hosts = append(n.hosts, link{
@@ -45,6 +48,27 @@ func newFakeNet(addrs ...string) *fakeNet {
 		})
 	}
 	return n
+}
+
+// waitSent waits until ok reports true for the packets sent so far, for
+// up to 10 seconds.
+func (n *fakeNet) waitSent(t *testing.T, what string, ok func([]packet) bool) {
+	t.Helper()
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	for {
+		n.mu.Lock()
+		sent, changed := slices.Clone(n.sent), n.changed
+		n.mu.Unlock()
+		if ok(sent) {
+			return
+		}
+		select {
+		case <-changed:
+		case <-deadline.C:
+			t.Fatalf("waited 10s for %s", what)
+		}
+	}
 }
 
 // host returns the network as one of its hosts sees it.
@@ -104,6 +128,8 @@ func (s *fakeSock) WriteTo(b []byte, to net.Addr) (int, error) {
 	s.net.mu.Lock()
 	defer s.net.mu.Unlock()
 	s.net.sent = append(s.net.sent, packet{data: p.data, from: to})
+	close(s.net.changed)
+	s.net.changed = make(chan struct{})
 	if s.net.lose != nil && s.net.lose(b, to) {
 		return len(b), nil
 	}
@@ -354,8 +380,16 @@ func query(t *testing.T, sock *fakeSock, m message, wait time.Duration) (message
 func TestResponder(t *testing.T) {
 	n := newFakeNet("10.0.0.1", "10.0.0.2", "172.16.0.9")
 	ad := advertise(t, n.host(0), Advertisement{Instance: "Gate", Host: "gate", Port: 8443})
-	// Let the announcements pass, so that what is read below is an answer.
-	time.Sleep(1200 * time.Millisecond)
+	// Once both announcements have passed, what is read below is an answer.
+	n.waitSent(t, "two announcements", func(sent []packet) bool {
+		announced := 0
+		for _, p := range sent {
+			if p.from.String() == group.String() {
+				announced++
+			}
+		}
+		return announced >= 2
+	})
 	browseQ := question{name: serviceName, qtype: typePTR}
 
 	t.Run("a one-shot resolver is answered directly, as a DNS server would", func(t *testing.T) {

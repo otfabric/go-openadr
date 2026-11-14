@@ -87,8 +87,7 @@ const (
 
 func marshalProgram(p openadr.Program, form wire.Form) ([]byte, error) {
 	w := program{
-		ProgramName:    p.Name,
-		IntervalPeriod: common.PeriodTo(p.IntervalPeriod),
+		ProgramName: p.Name,
 		ProgramDescriptions: mapSlice(p.Descriptions, func(d openadr.ProgramDescription) programDescription {
 			return programDescription(d)
 		}),
@@ -97,6 +96,9 @@ func marshalProgram(p openadr.Program, form wire.Form) ([]byte, error) {
 		w.metadata = metaTo(p.Metadata, openadr.ObjectProgram)
 	}
 	var err error
+	if w.IntervalPeriod, err = common.PeriodTo("intervalPeriod", p.IntervalPeriod); err != nil {
+		return nil, err
+	}
 	if w.Targets, err = targetsTo("targets", p.Targets, p.TypedTargets); err != nil {
 		return nil, err
 	}
@@ -241,12 +243,14 @@ func marshalEvent(e openadr.Event, form wire.Form) ([]byte, error) {
 		EventName:          e.Name,
 		Priority:           e.Priority,
 		PayloadDescriptors: mapSlice(e.PayloadDescriptors, common.EventDescriptorTo),
-		IntervalPeriod:     common.PeriodTo(e.IntervalPeriod),
 	}
 	if form == wire.Object {
 		w.metadata = metaTo(e.Metadata, openadr.ObjectEvent)
 	}
 	var err error
+	if w.IntervalPeriod, err = common.PeriodTo("intervalPeriod", e.IntervalPeriod); err != nil {
+		return nil, err
+	}
 	if w.Targets, err = targetsTo("targets", e.Targets, e.TypedTargets); err != nil {
 		return nil, err
 	}
@@ -261,7 +265,7 @@ func marshalEvent(e openadr.Event, form wire.Form) ([]byte, error) {
 		}
 		w.ReportDescriptors = append(w.ReportDescriptors, rd)
 	}
-	if w.Intervals, err = common.IntervalsTo(e.Intervals); err != nil {
+	if w.Intervals, err = common.IntervalsTo("intervals", e.Intervals); err != nil {
 		return nil, err
 	}
 	return json.Marshal(w)

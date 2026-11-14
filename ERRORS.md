@@ -114,7 +114,10 @@ type ValidationError struct {
 Returned by the `Validate` methods, and by every client method that sends an
 object, before anything is sent. Also for an object ID that is not one (an
 empty ID, or characters outside `[a-zA-Z0-9_-]`), and for an update of an
-object without an ID.
+object without an ID. A `Duration` built in code that has no ISO 8601 form
+is invalid where an object carries it: seconds that are not a finite
+number, a negative component (a negative duration sets `Negative`), or more
+weeks and days together than one number of days holds.
 
 The same type reports a message that cannot be decoded: a missing required
 property, a wrong JSON type, a duration that is not ISO 8601. For a client
@@ -215,7 +218,7 @@ a logger, and connects again. `NewSubscriber` fails only without `Dial` or
 | More than about a million rows | `timeline.ErrTooLarge`; set `Options.Until` |
 | A CSV without a header line, or without `start`, `type` or `values` | a plain error that names what is missing |
 | A cell that cannot be read | a plain error with the row, from 0, and the column |
-| A value that is not set, or not a finite number, when writing CSV | a plain error with the row |
+| A value that is not set, or not a finite number, or a `RandomizeStart` that has no ISO 8601 form, when writing CSV | a plain error with the row |
 
 `Table.Intervals` cannot fail, and does not check its result: an event built
 from it is validated like any other when it is sent.

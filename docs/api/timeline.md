@@ -65,7 +65,8 @@ type Row struct {
 	// when not zero. The table shows the times as announced.
 	RandomizeStart openadr.Duration
 	// Type says what the values are, such as "PRICE".
-	Type   string
+	Type string
+	// Values are those of the payload, not a copy (see Table).
 	Values []openadr.Value
 }
 ```
@@ -79,6 +80,8 @@ type Table []Row
 ```
 
 Table is a list of rows, in the order of their intervals.
+
+The Values of the rows that Of and OfEvent lay out are the payloads' own, as the objects of the root package share what they are given: a row holds the Values slice of its payload, or with SubIntervals a part of it, and each repetition of OfEvent holds those of the row it repeats. Setting an element of a row's Values sets it in the event and in every row that shares it. To change the values of one row, give it a copy first (slices.Clone). ReadCSV and Intervals make values of their own.
 
 #### func Of
 
@@ -103,6 +106,8 @@ func ReadCSV(r io.Reader) (Table, error)
 ```
 
 ReadCSV reads a table that WriteCSV wrote, or one written by hand or by a spreadsheet. The header line is required and names the columns, in any order; start, type and values are required, and columns it does not know are ignored. A row without interval gets the number of its line, from 0. A cell of values that is not JSON is taken as a string.
+
+It reads at most about a million rows (ErrTooLarge), and bounds neither the length of a line nor the size of the input: a table read from a source that is not trusted, such as an upload, is read through an io.LimitReader of the size the application accepts.
 
 #### func (Table) At
 
@@ -139,4 +144,4 @@ WriteCSV writes the table as CSV with a header line:
 	interval,sub,start,end,type,values,randomize_start
 	0,0,2030-01-01T00:00:00Z,2030-01-01T01:00:00Z,PRICE,0.17,
 
-Times are RFC 3339 and keep their offset; end is empty for a period without end. values is written as JSON: one value as it is (0.17, true, "text", {"x":1,"y":2}), several as an array. randomize\_start is an ISO 8601 duration, or empty.
+Times are RFC 3339 and keep their offset; end is empty for a period without end. values is written as JSON: one value as it is (0.17, true, "text", {"x":1,"y":2}), several as an array. randomize\_start is an ISO 8601 duration, or empty. A row that ReadCSV would not read back, such as one with a value that is not a finite number or a RandomizeStart with a negative component, is refused with openadr.ErrInvalid.

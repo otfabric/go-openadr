@@ -92,7 +92,14 @@ type Config struct {
 	// Logger receives internal errors, with the method and the path of the
 	// request and never its body or token; and at debug level one line
 	// per request, with its operation, status and duration. Nil disables
-	// logging.
+	// logging. It also receives, at error level, "openadr: callback did
+	// not return normally" with the fields callback, value and stack, for
+	// a Metrics callback that did not return normally, and for what the
+	// VTN calls on goroutines of its own: Verify of the WebhookSender, and,
+	// with Outbox, the Outbox, the Store, SendConfirmed and Now. The VTN
+	// goes on as if a Metrics callback had returned, and as if the others
+	// had failed. A handler of the Logger that does not return normally
+	// loses that entry.
 	Logger *slog.Logger
 	// Outbox makes webhook notifications survive: each is recorded there
 	// before it is sent and forgotten when its webhook has confirmed it,
@@ -241,7 +248,7 @@ type Metrics interface {
 }
 ```
 
-Metrics receives a callback for every request a VTN serves. The callbacks run on the goroutine of the request and must not block: count, observe, return. Implementations must be safe for concurrent use.
+Metrics receives a callback for every request a VTN serves. The callbacks run on the goroutine of the request, without a lock of the VTN held, and must not block: count, observe, return. Implementations must be safe for concurrent use. A callback that does not return normally is logged (see Config.Logger), and the request goes on as if it had returned.
 
 op names the operation by method and path as the specification writes it, such as "GET /events" or "PUT /programs/{id}". A request that is not an operation of the VTN (an unknown path, a method the path does not have) is "other". The set of values is small and fixed, so op is fit to be a label; the path of the request, with its IDs, would not be.
 
@@ -261,7 +268,7 @@ type NotificationMetrics interface {
 }
 ```
 
-NotificationMetrics is an optional extension of Metrics.
+NotificationMetrics is an optional extension of Metrics. Its callback runs on the goroutine of the request that changed the object, without a lock of the VTN held, as those of Metrics do.
 
 ### type RateLimiter
 
@@ -321,7 +328,7 @@ New returns a Server for cfg.
 func (s *Server) Close() error
 ```
 
-Close ends what the Server has running of its own: the WebSockets of its clients, which the HTTP server that serves it does not close when it shuts down, because those connections are no longer its own, and the sending again of recorded notifications (Config.Outbox). New WebSockets are refused after. A Server with neither has nothing to close.
+Close ends what the Server has running of its own: the WebSockets of its clients, which the HTTP server that serves it does not close when it shuts down, because those connections are no longer its own, and the sending again of recorded notifications (Config.Outbox). New WebSockets are refused after. A Server with neither has nothing to close. Close may be called more than once and from several goroutines at the same time; each call returns when both have ended. It must not be called from a callback of SocketMetrics, nor from the Outbox, the Store, the sender or Now as the VTN calls them for an Outbox: those may run on the goroutines Close waits for.
 
 #### func (Server) ServeHTTP
 
@@ -342,7 +349,7 @@ type SocketMetrics interface {
 }
 ```
 
-SocketMetrics is an optional extension of Metrics, for a VTN with Config.WebSocket.
+SocketMetrics is an optional extension of Metrics, for a VTN with Config.WebSocket. Its callbacks run on the goroutine of the request that opened the WebSocket, without a lock of the VTN held, as those of Metrics do.
 
 ### type WebSocketConfig
 
@@ -370,7 +377,9 @@ A WebSocket is not a queue. What happens while a client is not connected it is n
 type WebhookSender interface {
 	// Verify checks, before a subscription is accepted, that a callback
 	// URL may be used and that a webhook answers there. Its error is shown
-	// to the client that named the URL.
+	// to the client that named the URL. It is called on a goroutine of the
+	// VTN; one that does not return normally is logged (see Config.Logger)
+	// and the URL is refused as one that "could not be verified".
 	Verify(ctx context.Context, callbackURL string) error
 	// Send delivers a notification in the background and returns at once.
 	// bearerToken is empty when the subscription has none.

@@ -28,6 +28,9 @@ in [INTEROP.md](INTEROP.md), the security consequences in
 - VENs, resources and reports have no limit per client unless
   `server.Config.Limits` sets one. Subscriptions are limited to 100 per
   client by default, and callback URLs to 16 per subscription.
+- `timeline.ReadCSV` stops after about a million rows, and bounds neither
+  the length of a line nor the size of its input: wrap an input that is not
+  trusted in an `io.LimitReader`.
 - `client.Each` stops at a VTN that returns the same full page again, which
   means it ignores `skip`. A VTN that keeps returning full pages of new
   objects is not told apart from a long result: end it with the context or

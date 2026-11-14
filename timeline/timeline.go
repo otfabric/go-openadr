@@ -45,11 +45,21 @@ type Row struct {
 	// when not zero. The table shows the times as announced.
 	RandomizeStart openadr.Duration
 	// Type says what the values are, such as "PRICE".
-	Type   string
+	Type string
+	// Values are those of the payload, not a copy (see Table).
 	Values []openadr.Value
 }
 
 // Table is a list of rows, in the order of their intervals.
+//
+// The Values of the rows that Of and OfEvent lay out are the payloads'
+// own, as the objects of the root package share what they are given: a
+// row holds the Values slice of its payload, or with SubIntervals a part
+// of it, and each repetition of OfEvent holds those of the row it
+// repeats. Setting an element of a row's Values sets it in the event and
+// in every row that shares it. To change the values of one row, give it a
+// copy first (slices.Clone). ReadCSV and Intervals make values of their
+// own.
 type Table []Row
 
 // Options decide how intervals are laid out.

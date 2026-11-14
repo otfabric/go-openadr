@@ -17,10 +17,13 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/backoff"
+	"github.com/otfabric/go-openadr/internal/goid"
+	"github.com/otfabric/go-openadr/internal/guard"
 	imqtt "github.com/otfabric/go-openadr/internal/mqtt"
 	v310 "github.com/otfabric/go-openadr/internal/wire/v310"
 )
@@ -119,8 +122,16 @@ func (b Broker) connect(stop <-chan struct{}, o imqtt.Options, report func(error
 // Metrics receives a callback for what a Publisher or a Subscriber does.
 // A Publisher calls OnPublished and OnDropped, a Subscriber OnReceived,
 // and both the two about the connection. The callbacks run on the
-// goroutines of the Publisher or Subscriber and must not block.
+// goroutines of the Publisher or Subscriber, or for OnDropped on the
+// caller's of Publish, and must not block. They run without a lock of the
+// Publisher or Subscriber held, but OnReceived, which runs as Notify does:
+// one at a time, and a Close on another goroutine waits for it.
 // Implementations must be safe for concurrent use.
+//
+// A callback that does not return normally is logged at error level, as
+// "mqtt: callback did not return normally" with the fields callback,
+// value and stack, and the Publisher or Subscriber goes on as if it had
+// returned. So is the handler of the Logger, which loses that entry.
 type Metrics interface {
 	// OnConnected is called when a connection to the broker is made, and,
 	// for a Subscriber, the subscriptions with it.
@@ -134,7 +145,9 @@ type Metrics interface {
 	// queue is full: the broker has been away for too long.
 	OnDropped()
 	// OnReceived is called for every notification a Subscriber hands to
-	// its Notify function.
+	// its Notify function, before it does. A notification is not handed
+	// to Notify when the Subscriber was closed meanwhile, by OnReceived
+	// for one.
 	OnReceived()
 }
 
@@ -164,10 +177,12 @@ type PublisherConfig struct {
 //
 // A Publisher is safe for concurrent use. Close it to stop it.
 type Publisher struct {
-	cfg   PublisherConfig
-	queue chan message
-	stop  chan struct{}
-	done  chan struct{}
+	cfg      PublisherConfig
+	log      guard.Logger
+	queue    chan message
+	stop     chan struct{}
+	stopOnce sync.Once
+	done     chan struct{}
 
 	mu     sync.Mutex
 	closed bool
@@ -187,7 +202,7 @@ func NewPublisher(cfg PublisherConfig) (*Publisher, error) {
 	if cfg.Queue <= 0 {
 		cfg.Queue = 1024
 	}
-	p := &Publisher{cfg: cfg, queue: make(chan message, cfg.Queue), stop: make(chan struct{}), done: make(chan struct{})}
+	p := &Publisher{cfg: cfg, log: guard.NewLogger(cfg.Logger, "mqtt"), queue: make(chan message, cfg.Queue), stop: make(chan struct{}), done: make(chan struct{})}
 	go p.run()
 	return p, nil
 }
@@ -199,23 +214,34 @@ func checkURL(uri string) error {
 
 // Publish queues a notification for a topic and returns at once.
 func (p *Publisher) Publish(topic string, body []byte) {
+	if !p.enqueue(message{topic: topic, body: body}) {
+		// Reported once the lock is released: a Logger or Metrics that
+		// is slow holds up this call and no other.
+		p.warn("mqtt: queue full, notification dropped", slog.String("topic", topic))
+		metric(p.log, p.cfg.Metrics, "Metrics.OnDropped", Metrics.OnDropped)
+	}
+}
+
+// enqueue queues m, and reports false when the queue is full. After Close
+// it drops m and reports true: there is nothing to report.
+func (p *Publisher) enqueue(m message) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
-		return
+		return true
 	}
 	select {
-	case p.queue <- message{topic: topic, body: body}:
+	case p.queue <- m:
+		return true
 	default:
-		p.warn("mqtt: queue full, notification dropped", slog.String("topic", topic))
-		if p.cfg.Metrics != nil {
-			p.cfg.Metrics.OnDropped()
-		}
+		return false
 	}
 }
 
 // Close stops accepting notifications and waits until those that are queued
-// have reached the broker, or until ctx ends, whichever is first.
+// have reached the broker, or until ctx ends, whichever is first. It may be
+// called more than once and from several goroutines at the same time; each
+// call waits in the same way.
 func (p *Publisher) Close(ctx context.Context) error {
 	p.mu.Lock()
 	if !p.closed {
@@ -227,19 +253,20 @@ func (p *Publisher) Close(ctx context.Context) error {
 	case <-p.done:
 		return nil
 	case <-ctx.Done():
-		select {
-		case <-p.stop:
-		default:
-			close(p.stop)
-		}
+		p.stopOnce.Do(func() { close(p.stop) })
 		<-p.done
 		return ctx.Err()
 	}
 }
 
 func (p *Publisher) warn(msg string, attrs ...any) {
-	if p.cfg.Logger != nil {
-		p.cfg.Logger.Warn(msg, attrs...)
+	p.log.Warn(msg, attrs...)
+}
+
+// metric calls a callback of m, when there is an m, through log.
+func metric(log guard.Logger, m Metrics, callback string, f func(Metrics)) {
+	if m != nil {
+		log.Call(callback, func() { f(m) })
 	}
 }
 
@@ -266,23 +293,17 @@ func (p *Publisher) run() {
 				if conn == nil {
 					return // closed while the broker was away
 				}
-				if p.cfg.Metrics != nil {
-					p.cfg.Metrics.OnConnected()
-				}
+				metric(p.log, p.cfg.Metrics, "Metrics.OnConnected", Metrics.OnConnected)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			err := conn.Publish(ctx, m.topic, m.body)
 			cancel()
 			if err == nil {
-				if p.cfg.Metrics != nil {
-					p.cfg.Metrics.OnPublished()
-				}
+				metric(p.log, p.cfg.Metrics, "Metrics.OnPublished", Metrics.OnPublished)
 				wait = p.cfg.firstWait()
 				break
 			}
-			if p.cfg.Metrics != nil {
-				p.cfg.Metrics.OnDisconnected(err)
-			}
+			metric(p.log, p.cfg.Metrics, "Metrics.OnDisconnected", func(m Metrics) { m.OnDisconnected(err) })
 			p.warn("mqtt: publishing failed, reconnecting", slog.String("topic", m.topic), slog.Any("error", err))
 			_ = conn.Close()
 			conn = nil
@@ -303,7 +324,11 @@ type SubscriberConfig struct {
 	Topics []string
 	// Notify is called for each notification, one at a time, in the order
 	// the broker delivers them. Required. It should return soon: nothing
-	// else is received meanwhile.
+	// else is received meanwhile. It may call Close (see Close). A Notify
+	// that does not return normally is logged at error level, as
+	// "mqtt: callback did not return normally" with the fields callback,
+	// value and stack; the message is acknowledged and the Subscriber
+	// goes on with the next.
 	Notify func(ctx context.Context, topic string, n openadr.Notification)
 	// Logger receives connection failures and messages that are not
 	// notifications. Nil disables logging.
@@ -322,9 +347,11 @@ type SubscriberConfig struct {
 // client that must not miss a change still polls from time to time, and
 // does so after every reconnect; Connected tells when.
 type Subscriber struct {
-	cfg  SubscriberConfig
-	stop chan struct{}
-	done chan struct{}
+	cfg      SubscriberConfig
+	log      guard.Logger
+	stop     chan struct{}
+	stopOnce sync.Once
+	done     chan struct{}
 
 	mu        sync.Mutex
 	connected chan struct{} // closed while subscribed
@@ -332,6 +359,9 @@ type Subscriber struct {
 
 	// calling is held while Notify runs, so that Close can wait for it.
 	calling sync.Mutex
+	// runner is the goroutine of run, and notifying the one in Notify
+	// (0 when none): a Close called on one of them does not wait for it.
+	runner, notifying atomic.Uint64
 }
 
 var codec = v310.Codec()
@@ -359,7 +389,7 @@ func newSubscriber(cfg SubscriberConfig) (*Subscriber, error) {
 	if cfg.Notify == nil {
 		return nil, errors.New("mqtt: a Subscriber needs Notify")
 	}
-	s := &Subscriber{cfg: cfg, stop: make(chan struct{}), done: make(chan struct{}), connected: make(chan struct{})}
+	s := &Subscriber{cfg: cfg, log: guard.NewLogger(cfg.Logger, "mqtt"), stop: make(chan struct{}), done: make(chan struct{}), connected: make(chan struct{})}
 	go s.run()
 	return s, nil
 }
@@ -395,29 +425,57 @@ func (s *Subscriber) Sessions() int {
 	return s.sessions
 }
 
-// Close disconnects and stops the Subscriber. Notify is not called after
+// Close disconnects and stops the Subscriber, and returns when it has
+// stopped and a Notify in progress has returned. Notify is not called after
 // Close has returned.
+//
+// Close may be called more than once, from several goroutines at the same
+// time, and from Notify, the Metrics callbacks and the Logger's handler.
+// From one of those it does not wait for the callback it is called from,
+// which goes on until it returns. Called from Notify or OnReceived, it
+// returns when the rest of the Subscriber has stopped. Called from
+// OnConnected, OnDisconnected or the Logger's handler, it may return
+// before that: the Subscriber stops once that callback has returned, and a
+// Notify in progress goes on until it returns. In every case no Notify
+// begins after Close has returned. A goroutine that Notify waits for is not
+// Notify: a Close there waits for Notify, which must not wait for it.
 func (s *Subscriber) Close() error {
-	select {
-	case <-s.stop:
-	default:
-		close(s.stop)
+	s.stopOnce.Do(func() { close(s.stop) })
+	me := goid.ID()
+	if me != 0 && me == s.runner.Load() {
+		// A callback on the goroutine that Close would wait for: it stops
+		// when the callback has returned. A Notify in progress is not
+		// waited for either: it may call Close, which waits for this
+		// goroutine.
+		return nil
 	}
 	<-s.done
-	// A call to Notify that had begun is over when this lock is had.
-	s.calling.Lock()
-	defer s.calling.Unlock()
+	if me == 0 || me != s.notifying.Load() {
+		// A call to Notify that had begun is over when this lock is had,
+		// unless Close is called from it.
+		s.calling.Lock()
+		defer s.calling.Unlock()
+	}
 	return nil
 }
 
-func (s *Subscriber) warn(msg string, attrs ...any) {
-	if s.cfg.Logger != nil {
-		s.cfg.Logger.Warn(msg, attrs...)
+// stopped reports whether Close has been called.
+func (s *Subscriber) stopped() bool {
+	select {
+	case <-s.stop:
+		return true
+	default:
+		return false
 	}
+}
+
+func (s *Subscriber) warn(msg string, attrs ...any) {
+	s.log.Warn(msg, attrs...)
 }
 
 func (s *Subscriber) run() {
 	defer close(s.done)
+	s.runner.Store(goid.ID())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
@@ -432,14 +490,25 @@ func (s *Subscriber) run() {
 			s.warn("mqtt: a message that is not a notification", slog.String("topic", topic), slog.Any("error", err))
 			return
 		}
+		// What does not return normally is reported once calling is
+		// released.
+		var received, notified *guard.Failure
 		s.calling.Lock()
-		defer s.calling.Unlock()
-		if ctx.Err() == nil {
+		if !s.stopped() {
+			s.notifying.Store(goid.ID())
 			if s.cfg.Metrics != nil {
-				s.cfg.Metrics.OnReceived()
+				received = guard.Try("Metrics.OnReceived", s.cfg.Metrics.OnReceived)
 			}
-			s.cfg.Notify(ctx, topic, n)
+			// Not after a Close that came meanwhile, from OnReceived for
+			// one.
+			if !s.stopped() {
+				notified = guard.Try("Notify", func() { s.cfg.Notify(ctx, topic, n) })
+			}
+			s.notifying.Store(0)
 		}
+		s.calling.Unlock()
+		s.log.Report(received)
+		s.log.Report(notified)
 	}
 	// wait is the pause after a session that was lost: a broker that
 	// accepts every connection and subscription and drops it at once is
@@ -476,9 +545,7 @@ func (s *Subscriber) run() {
 func (s *Subscriber) session(conn *imqtt.Conn) time.Duration {
 	// Reported before Ready returns: whoever was told the subscriber
 	// is connected finds it in the metrics.
-	if s.cfg.Metrics != nil {
-		s.cfg.Metrics.OnConnected()
-	}
+	metric(s.log, s.cfg.Metrics, "Metrics.OnConnected", Metrics.OnConnected)
 	s.mu.Lock()
 	s.sessions++
 	close(s.connected)
@@ -487,9 +554,7 @@ func (s *Subscriber) session(conn *imqtt.Conn) time.Duration {
 
 	select {
 	case <-conn.Done():
-		if s.cfg.Metrics != nil {
-			s.cfg.Metrics.OnDisconnected(conn.Err())
-		}
+		metric(s.log, s.cfg.Metrics, "Metrics.OnDisconnected", func(m Metrics) { m.OnDisconnected(conn.Err()) })
 		s.warn("mqtt: connection to the broker lost", slog.Any("error", conn.Err()))
 	case <-s.stop:
 		// The pause that follows sees stop and ends the run.
