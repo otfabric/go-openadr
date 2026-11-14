@@ -14,6 +14,7 @@ import (
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/isoduration"
 )
 
 // The columns of the CSV form of a table.
@@ -27,7 +28,9 @@ var columns = []string{"interval", "sub", "start", "end", "type", "values", "ran
 // Times are RFC 3339 and keep their offset; end is empty for a period
 // without end. values is written as JSON: one value as it is (0.17, true,
 // "text", {"x":1,"y":2}), several as an array. randomize_start is an ISO
-// 8601 duration, or empty.
+// 8601 duration, or empty. A row that ReadCSV would not read back, such as
+// one with a value that is not a finite number or a RandomizeStart with a
+// negative component, is refused with openadr.ErrInvalid.
 func (t Table) WriteCSV(w io.Writer) error {
 	// A row that cannot be written is the table's fault; anything else is
 	// the writer's.
@@ -60,8 +63,11 @@ func (t Table) writeCSV(w io.Writer) error {
 		if !row.End.IsZero() {
 			end = row.End.Format(time.RFC3339Nano)
 		}
-		if !row.RandomizeStart.IsZero() {
-			randomize = row.RandomizeStart.String()
+		if r := row.RandomizeStart; !r.IsZero() {
+			if p := isoduration.Problem(r.Years, r.Months, r.Weeks, r.Days, r.Hours, r.Minutes, r.Seconds); p != "" {
+				return &rowError{row: i, err: fmt.Errorf("randomize_start %s", p)}
+			}
+			randomize = r.String()
 		}
 		err = cw.Write([]string{
 			strconv.FormatInt(int64(row.IntervalID), 10), strconv.Itoa(row.Sub),
@@ -80,6 +86,11 @@ func (t Table) writeCSV(w io.Writer) error {
 // order; start, type and values are required, and columns it does not know
 // are ignored. A row without interval gets the number of its line, from 0.
 // A cell of values that is not JSON is taken as a string.
+//
+// It reads at most about a million rows (ErrTooLarge), and bounds neither
+// the length of a line nor the size of the input: a table read from a
+// source that is not trusted, such as an upload, is read through an
+// io.LimitReader of the size the application accepts.
 func ReadCSV(r io.Reader) (Table, error) {
 	table, err := readCSV(r)
 	if err != nil && !errors.Is(err, ErrTooLarge) {

@@ -18,12 +18,12 @@ to standard error.
 
 | Who | Configuration | Debug | Info | Warn | Error |
 |---|---|---|---|---|---|
-| Client | `client.Config.Logger` | every call: operation, duration, error | a token renewed because the VTN refused the old one | every retry: operation, attempt, wait, error | |
-| VTN | `server.Config.Logger` | every request: operation, status, duration | | | a failure answered with 500: method, path, error; a notification that could not be decided |
-| Webhook sender | `webhook.SenderConfig.Logger` | | | a notification dropped or not delivered | |
-| MQTT publisher, subscriber | `mqtt.PublisherConfig.Logger`, `mqtt.SubscriberConfig.Logger` | | | broker unreachable, connection lost, notification dropped, a message that is not a notification | |
-| WebSocket subscriber | `websocket.SubscriberConfig.Logger` | | | VTN unreachable, connection lost | |
-| Advertiser | `discovery.Advertisement.Logger` | | | a packet that could not be sent or received | |
+| Client | `client.Config.Logger` | every call: operation, duration, error | a token renewed because the VTN refused the old one | every retry: operation, attempt, wait, error | a callback that did not return normally |
+| VTN | `server.Config.Logger` | every request: operation, status, duration | | | a failure answered with 500: method, path, error; a notification that could not be decided; a callback that did not return normally |
+| Webhook sender | `webhook.SenderConfig.Logger` | | | a notification dropped or not delivered | a callback that did not return normally |
+| MQTT publisher, subscriber | `mqtt.PublisherConfig.Logger`, `mqtt.SubscriberConfig.Logger` | | | broker unreachable, connection lost, notification dropped, a message that is not a notification | a callback that did not return normally |
+| WebSocket subscriber | `websocket.SubscriberConfig.Logger` | | | VTN unreachable, connection lost | a callback that did not return normally |
+| Advertiser | `discovery.Advertisement.Logger` | | | a packet that could not be sent or received | a handler of the Logger that did not return normally |
 
 ```go
 logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -46,8 +46,10 @@ module has no metrics library of its own and depends on none: an
 implementation is a few lines that feed whatever the program uses, a
 Prometheus counter and histogram, OpenTelemetry instruments, `expvar`.
 
-The callbacks run on the path of the call or request. They must not block:
-count, observe, return. They are called from many goroutines.
+The callbacks run on the path of the call or request, without a lock of the
+module held: one that is slow holds up the call it is made for, and no other.
+They must not block: count, observe, return. They are called from many
+goroutines.
 
 ### A client's calls
 
@@ -118,6 +120,36 @@ The ones to alert on: `OnDropped` anywhere (a queue was full: a webhook or
 the broker has been away too long, and notifications are being lost),
 `OnFailed` of the webhook sender, `slow` WebSockets, and a subscriber whose
 `OnDisconnected` keeps coming without an `OnConnected` between.
+
+## Callbacks that do not return normally
+
+Application code that the module calls and that does not return normally
+(a callback such as `Notify` or `Dial`, a metrics hook, the handler of a
+logger, and, on the goroutines of a VTN, `Verify` of its `WebhookSender` and,
+with an `Outbox`, the outbox, the store, `SendConfirmed` and `Config.Now`)
+is stopped where it was called. Once the module has released its locks, the
+logger of the component writes, at error level:
+
+| Field | Value |
+|---|---|
+| message | `<prefix>: callback did not return normally`; the prefix is `openadr` for the client and the VTN, `webhook`, `mqtt`, `websocket` or `discovery` |
+| `callback` | what was called: `Notify`, `Dial`, `Metrics.OnReceived`, `SendConfirmed done`, `WebhookSender.Verify`, `Outbox.Deliveries`, `Logger`, ... |
+| `value` | what it ended with |
+| `stack` | the stack of the goroutine where it ended |
+
+The module then goes on: as if a callback or a metrics hook had returned,
+and as if the other code had failed (a callback URL that could not be
+verified, a notification that stays recorded for the next attempt). A
+handler of the logger that does not return normally loses that entry and is
+reported once more in the same way, with `callback` `Logger`; when it does
+not return normally for that entry either, the entry is dropped. Without a
+logger nothing is written, and the module goes on all the same.
+
+A `Notify` of `webhook.Handler` runs in an HTTP request instead: one that
+does not return normally is answered 500, and written with its stack where
+the `http.Server` that serves the Handler writes errors (its `ErrorLog`, or
+the standard logger), as `net/http` writes a handler that does not return
+normally. `http.ErrAbortHandler` is passed on to `net/http`.
 
 ## Retries
 

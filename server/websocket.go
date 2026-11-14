@@ -45,6 +45,9 @@ type socket struct {
 	dropOnce sync.Once
 	// why is the close code to drop with.
 	why int
+	// promised is the room in queue that send has kept for notifications
+	// it is about to queue; sockets.mu guards it.
+	promised int
 }
 
 func (c *socket) close(code int) {
@@ -79,21 +82,36 @@ func newSockets(cfg WebSocketConfig) *sockets {
 
 // send queues a notification for every connection of a client. queued is
 // called for each connection it is queued for, before it is: by the time
-// a client reads a notification, it has been accounted for.
+// a client reads a notification, it has been accounted for. queued runs
+// without the lock: a metrics hook that is slow holds up this send, and
+// neither the connections of other clients nor other sends.
 func (ss *sockets) send(clientID string, body []byte, queued func()) {
 	ss.mu.Lock()
-	defer ss.mu.Unlock()
+	var room []*socket
 	for _, c := range ss.byClient[clientID] {
-		// Only this function fills the queues, and it holds the lock:
-		// room that is there now is still there a line further.
-		if len(c.queue) < cap(c.queue) {
-			queued()
+		// Only this function fills the queues: room it keeps under the
+		// lock is still there when it comes back to fill it.
+		if len(c.queue)+c.promised < cap(c.queue) {
+			c.promised++
+			room = append(room, c)
+			continue
 		}
+		// It does not keep up. Better gone, so that it notices and
+		// catches up, than silently behind.
+		c.close(ws.CloseTryAgainLater)
+	}
+	ss.mu.Unlock()
+	for range room {
+		queued()
+	}
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	for _, c := range room {
+		c.promised--
 		select {
 		case c.queue <- body:
 		default:
-			// It does not keep up. Better gone, so that it notices and
-			// catches up, than silently behind.
+			// Not reached: the room was kept.
 			c.close(ws.CloseTryAgainLater)
 		}
 	}
@@ -182,7 +200,7 @@ func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request, id auth.Ide
 	conn, status, err := ws.AcceptAfter(w, r, func() {
 		opened = true
 		if s.socketMetrics != nil {
-			s.socketMetrics.OnSocketOpened()
+			s.logger.Call("SocketMetrics.OnSocketOpened", s.socketMetrics.OnSocketOpened)
 		}
 	})
 	if opened && s.socketMetrics != nil {
@@ -193,7 +211,7 @@ func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request, id auth.Ide
 				reason = map[int]string{ws.CloseTryAgainLater: SocketSlow, ws.CloseGoingAway: SocketShutdown}[c.why]
 			default:
 			}
-			s.socketMetrics.OnSocketClosed(reason)
+			s.logger.Call("SocketMetrics.OnSocketClosed", func() { s.socketMetrics.OnSocketClosed(reason) })
 		}()
 	}
 	if err != nil {
@@ -254,7 +272,12 @@ func (s *Server) serveSocket(w http.ResponseWriter, r *http.Request, id auth.Ide
 // clients, which the HTTP server that serves it does not close when it
 // shuts down, because those connections are no longer its own, and the
 // sending again of recorded notifications (Config.Outbox). New WebSockets
-// are refused after. A Server with neither has nothing to close.
+// are refused after. A Server with neither has nothing to close. Close may
+// be called more than once and from several goroutines at the same time;
+// each call returns when both have ended. It must not be called from a
+// callback of SocketMetrics, nor from the Outbox, the Store, the sender or
+// Now as the VTN calls them for an Outbox: those may run on the goroutines
+// Close waits for.
 func (s *Server) Close() error {
 	if s.outbox != nil {
 		s.outbox.close()

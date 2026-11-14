@@ -341,7 +341,10 @@ func (f *File) write(rec record) error {
 	return nil
 }
 
-// Close flushes and closes the journal. The store must not be used after.
+// Close flushes and closes the journal. The store must not be used after:
+// a write is refused with openadr.ErrClosed. Close may be called more than
+// once and from several goroutines at the same time; a call after the
+// first returns nil.
 func (f *File) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

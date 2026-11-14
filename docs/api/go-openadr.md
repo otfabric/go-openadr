@@ -134,6 +134,8 @@ Duration is an ISO 8601 duration as OpenADR uses it, for example PT1H or P1DT12H
 
 The format allows either days or weeks, not both; String writes weeks only when Days is zero.
 
+ParseDuration gives components that are not negative and seconds that are finite. A Duration built otherwise has no ISO 8601 form: Validate of the objects that carry one refuses it, and so does the encoder.
+
 #### func DurationOf
 
 ```go
@@ -158,7 +160,7 @@ func (d Duration) AddTo(t time.Time) time.Time
 
 AddTo returns t moved by the duration, applying years, months and days on the calendar in t's location, and hours, minutes and seconds as elapsed time.
 
-A duration too long for a time.Duration still moves t by all of it. Components so large that the result would be millions of years away are taken as that far: about two million years (2^20 years, 2^24 months or 2^30 days), well past P9999Y, the longest duration the specification gives a meaning to.
+A duration too long for a time.Duration still moves t by all of it. Seconds that are not a number are not added. Components so large that the result would be millions of years away are taken as that far: about two million years (2^20 years, 2^24 months or 2^30 days), well past P9999Y, the longest duration the specification gives a meaning to.
 
 #### func (Duration) IsInfinite
 
@@ -190,7 +192,7 @@ String returns the ISO 8601 form. The zero Duration is "PT0S".
 func (d Duration) TimeDuration() (time.Duration, bool)
 ```
 
-TimeDuration converts to a time.Duration, taking a day as 24 hours. It reports false when the duration has years or months, whose length is not fixed, or does not fit in a time.Duration.
+TimeDuration converts to a time.Duration, taking a day as 24 hours. It reports false when the duration has years or months, whose length is not fixed, has seconds that are not a number, or does not fit in a time.Duration.
 
 ### type Error
 

@@ -214,4 +214,21 @@ func TestFileClosed(t *testing.T) {
 	if !errors.Is(err, openadr.ErrClosed) || errors.Is(err, ErrReadOnly) {
 		t.Errorf("a write to a closed store: %v", err)
 	}
+	// L1, L2: again, and from several goroutines at once.
+	if err := f.Close(); err != nil {
+		t.Errorf("Close again: %v", err)
+	}
+	g := openFile(t, filepath.Join(t.TempDir(), "other.journal"))
+	var start, all sync.WaitGroup
+	start.Add(1)
+	for range 8 {
+		all.Go(func() {
+			start.Wait()
+			if err := g.Close(); err != nil {
+				t.Errorf("Close at the same time: %v", err)
+			}
+		})
+	}
+	start.Done()
+	all.Wait()
 }

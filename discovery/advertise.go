@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/otfabric/go-openadr/internal/guard"
 )
 
 // Advertisement is what a VTN announces on the local network.
@@ -41,7 +43,11 @@ type Advertisement struct {
 	NoAuth bool
 	// OpenAPIURL is where the VTN serves its OpenAPI document, if it does.
 	OpenAPIURL string
-	// Logger receives failures to send. Nil disables logging.
+	// Logger receives failures to send. Nil disables logging. A handler of
+	// the Logger that does not return normally loses that entry, which is
+	// reported once more at error level, as "discovery: callback did not
+	// return normally" with the fields callback, value and stack; the
+	// Advertiser goes on.
 	Logger *slog.Logger
 
 	net network
@@ -53,7 +59,7 @@ type Advertiser struct {
 	instance, host name
 	port           uint16
 	text           []string
-	logger         *slog.Logger
+	logger         guard.Logger
 
 	ports []advertisedOn
 	stop  chan struct{}
@@ -142,7 +148,7 @@ func Advertise(a Advertisement) (*Advertiser, error) {
 	}
 	ad := &Advertiser{
 		instance: append(name{a.Instance}, serviceName...), host: name{host, "local"},
-		port: uint16(a.Port), text: text, logger: a.Logger, stop: make(chan struct{}),
+		port: uint16(a.Port), text: text, logger: guard.NewLogger(a.Logger, "discovery"), stop: make(chan struct{}),
 	}
 	var failed error
 	for _, l := range links {
@@ -177,7 +183,10 @@ func Advertise(a Advertisement) (*Advertiser, error) {
 	return ad, nil
 }
 
-// Close takes the announcement back and stops answering.
+// Close takes the announcement back and stops answering. It may be called
+// more than once and from several goroutines at the same time; each call
+// returns when the Advertiser has stopped. It must not be called from the
+// Logger's handler, which runs on the goroutines it waits for.
 func (ad *Advertiser) Close() error {
 	ad.once.Do(func() {
 		close(ad.stop)
@@ -192,9 +201,7 @@ func (ad *Advertiser) Close() error {
 }
 
 func (ad *Advertiser) warn(msg string, err error) {
-	if ad.logger != nil {
-		ad.logger.Warn(msg, slog.Any("error", err))
-	}
+	ad.logger.Warn(msg, slog.Any("error", err))
 }
 
 // The records of the VTN on one link.

@@ -42,6 +42,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/auth"
+	"github.com/otfabric/go-openadr/internal/guard"
 	"github.com/otfabric/go-openadr/internal/wire"
 	v310 "github.com/otfabric/go-openadr/internal/wire/v310"
 	"github.com/otfabric/go-openadr/server/storage"
@@ -94,7 +95,14 @@ type Config struct {
 	// Logger receives internal errors, with the method and the path of the
 	// request and never its body or token; and at debug level one line
 	// per request, with its operation, status and duration. Nil disables
-	// logging.
+	// logging. It also receives, at error level, "openadr: callback did
+	// not return normally" with the fields callback, value and stack, for
+	// a Metrics callback that did not return normally, and for what the
+	// VTN calls on goroutines of its own: Verify of the WebhookSender, and,
+	// with Outbox, the Outbox, the Store, SendConfirmed and Now. The VTN
+	// goes on as if a Metrics callback had returned, and as if the others
+	// had failed. A handler of the Logger that does not return normally
+	// loses that entry.
 	Logger *slog.Logger
 	// Outbox makes webhook notifications survive: each is recorded there
 	// before it is sent and forgotten when its webhook has confirmed it,
@@ -144,7 +152,9 @@ type Config struct {
 type WebhookSender interface {
 	// Verify checks, before a subscription is accepted, that a callback
 	// URL may be used and that a webhook answers there. Its error is shown
-	// to the client that named the URL.
+	// to the client that named the URL. It is called on a goroutine of the
+	// VTN; one that does not return normally is logged (see Config.Logger)
+	// and the URL is refused as one that "could not be verified".
 	Verify(ctx context.Context, callbackURL string) error
 	// Send delivers a notification in the background and returns at once.
 	// bearerToken is empty when the subscription has none.
@@ -187,7 +197,7 @@ type Server struct {
 	anonymous bool
 	compress  bool
 	codec     *wire.Codec
-	logger    *slog.Logger
+	logger    guard.Logger
 	metrics   Metrics
 	// The optional extensions of metrics, nil when it has not got them.
 	notifications NotificationMetrics
@@ -246,7 +256,7 @@ func newServer(cfg Config) (*Server, error) {
 		anonymous: cfg.AllowAnonymous,
 		compress:  !cfg.DisableCompression,
 		codec:     v310.Codec(),
-		logger:    cfg.Logger,
+		logger:    guard.NewLogger(cfg.Logger, "openadr"),
 		metrics:   cfg.Metrics,
 		maxBody:   cfg.MaxBodyBytes,
 		limits:    newLimits(cfg.Limits),
@@ -576,10 +586,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func (s *Server) logError(r *http.Request, err error) {
-	if s.logger != nil {
-		s.logger.ErrorContext(r.Context(), "openadr: request failed",
-			slog.String("method", r.Method), slog.String("path", r.URL.Path), slog.Any("error", err))
-	}
+	s.logger.Log(r.Context(), slog.LevelError, "openadr: request failed",
+		slog.String("method", r.Method), slog.String("path", r.URL.Path), slog.Any("error", err))
 }
 
 // --- requests

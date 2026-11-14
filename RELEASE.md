@@ -1,5 +1,39 @@
 # go-openadr Releases
 
+## v0.7.3
+
+**Date:** 2026-11-14
+**Previous release:** v0.7.2
+
+### Fixed
+
+- **`Close` may be called from several goroutines at the same time** on `server.Server` with an `Outbox`, `webhook.Sender`, `mqtt.Publisher` and `mqtt.Subscriber`, as API.md said. Two calls at the same moment could both close the same channel, and the second did not return normally. The stop channels are now closed once (`sync.Once`); each call waits as the first does.
+- **A `Notify` of `mqtt.Subscriber` or `websocket.Subscriber` that calls `Close` no longer waits for itself for ever.** `Close` called from `Notify`, from `Dial`, from a Metrics callback or from the Logger's handler returns without waiting for the callback it is called from, also when two callbacks call it at the same time; the Subscriber has stopped, or stops once that callback returns, and no `Notify` begins after: a notification whose `OnReceived` closed the Subscriber is not handed to `Notify`. A `Close` from any other goroutine still waits for a `Notify` in progress. The goroutine is told apart by its ID (`internal/goid`).
+- **Callbacks and metrics hooks run without a lock held.** `mqtt.Publisher.Publish` called the Logger and `Metrics.OnDropped` under its lock, and the VTN called `NotificationMetrics.OnNotification` for a WebSocket under the lock of its WebSockets: a hook that blocked held up every `Publish`, or every WebSocket send, connect and disconnect of the VTN. They are now called after the lock is released, in the same order, and before the notification is queued, as before.
+- **Durations built in code that no ISO 8601 duration says are refused.** `Validate` of `Program`, `Event` and `Report` refuses a `Duration` (an event's `duration`, and the `duration` and `randomizeStart` of every interval period) with seconds that are not a finite number, a negative component, or more weeks and days together than one number of days holds, and the 3.1.0 and 3.0.1 encoders refuse to write one, with a `*ValidationError` that names the field: before, they wrote strings such as `PTNaNS` and `PT-5H` that their own decoders refuse. `timeline.Table.WriteCSV` refuses such a `RandomizeStart` likewise. `Duration.TimeDuration` reports false for a total that is not a number or does not fit a `time.Duration`, where it returned a result that depended on the platform; `AddTo` leaves out seconds that are not a number.
+
+### Changed
+
+- **Application code that the module calls and that does not return normally is logged, and the component goes on.** Callbacks (`Notify`, `Dial`, the done function of `SendConfirmed`), metrics hooks, the handler of a logger, and, on the goroutines of a VTN, `Verify` of its `WebhookSender` and, with an `Outbox`, the outbox, the store, `SendConfirmed` and `Config.Now`, are stopped where they were called. Once the module holds no lock, the component's logger writes `<prefix>: callback did not return normally` at error level, with the fields `callback`, `value` and `stack`; the module goes on as if a callback had returned and as if the other code had failed. A callback URL whose `Verify` does not return normally is refused as one that could not be verified. A `Notify` of `webhook.Handler` that does not return normally is answered 500 and written to the `ErrorLog` of the `http.Server`. Before, it went on up the stack of the goroutine it was called on: to the caller of a client, to `net/http` in a request of the VTN, and to the runtime on a goroutine of the module's own. See OBSERVABILITY.md.
+- The exported API does not change. `gorelease` against v0.7.2: no change.
+
+### Tests
+
+- The lifecycle contract matrix L1–L16 is in TESTING.md, with the tests of each row or why it does not apply. New: `Close` from eight goroutines at once for the Server with an Outbox, `webhook.Sender`, both MQTT types, `websocket.Subscriber`, `discovery.Advertiser` and `storage.File`; `Close` from `Notify`, `Dial`, Metrics and the Logger of both subscribers, and from two callbacks at once; a VTN closed while a WebSocket is being opened; an MQTT request whose context ended, and its answer that comes after all; callbacks that call `Publish`, `Ready`, `Sessions` and the VTN they are called by; hooks that block while other calls go on; a test per place application code is called from, with `internal/guard/guardtest`.
+- Allocation budgets: what the MQTT packet and WebSocket frame decoders allocate for a declared length at their limit and past it, and what decoding a notification allocates per byte, for the shapes that cost the most. They are measured with one processor, and the budgets of a notification hold for Go 1.26 and 1.27.
+- Durations: a boundary table of `TimeDuration` and `Validate`, and every valid duration written and read back by both codecs.
+- Tests that slept until something had happened now wait for it: the announcements of the Advertiser, the arrival of a webhook request and its answer, the start of a stuck MQTT write, the pong of a WebSocket. `TestRateLimiter` runs in a bubble of `testing/synctest`.
+- Coverage is measured over the new packages `internal/goid`, `internal/guard` and `internal/isoduration` too, in the Makefile and in `.github/workflows/ci.yml`; the test helper `internal/guard/guardtest` is left out, as `internal/mqtttest` is.
+
+### Documentation
+
+- TESTING.md: the matrix, the allocation budgets, how tests wait, and the number of fuzz targets (15, found by `go test -list`), which said six; so did README.md. README.md and API.md say what may call `Close` and where callbacks run. The `Close` of each type says whether it may be called again and from several goroutines.
+- API.md: the limits table names the MQTT packet limit (4 MiB) and the body limit of `webhook.Handler`; `timeline.ReadCSV` bounds neither a line nor its input, which is for an `io.LimitReader` (also in SECURITY.md and LIMITATIONS.md); the rows of a `timeline.Table` share their `Values` with the event and with the rows that repeat them.
+- OBSERVABILITY.md: the entry for application code that does not return normally, and its fields.
+- ERRORS.md: a `Duration` that has no ISO 8601 form is a `*ValidationError`, and `WriteCSV` refuses such a `RandomizeStart`.
+
+---
+
 ## v0.7.2
 
 **Date:** 2026-11-13

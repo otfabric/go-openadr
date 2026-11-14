@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -418,6 +419,60 @@ func TestWriteCSVRejectsUnsetValue(t *testing.T) {
 	table := timeline.Table{{Start: midnight, Type: "PRICE", Values: []openadr.Value{{}}}}
 	if err := table.WriteCSV(&bytes.Buffer{}); err == nil {
 		t.Error("an unset value was written")
+	}
+}
+
+// WriteCSV refuses a RandomizeStart that ReadCSV would not read back,
+// rather than writing it.
+func TestWriteCSVRejectsUnreadableRandomizeStart(t *testing.T) {
+	for _, d := range []openadr.Duration{
+		{Minutes: -5},
+		{Seconds: math.NaN()},
+		{Seconds: math.Inf(1)},
+		{Days: 1, Weeks: math.MaxInt64},
+	} {
+		table := timeline.Table{{Start: midnight, Type: "PRICE", Values: []openadr.Value{openadr.Number(1)}, RandomizeStart: d}}
+		var buf bytes.Buffer
+		err := table.WriteCSV(&buf)
+		if !errors.Is(err, openadr.ErrInvalid) || !strings.Contains(err.Error(), "randomize_start") {
+			t.Errorf("%+v: WriteCSV = %v, wrote %q", d, err, buf.String())
+		}
+	}
+	// What can be written reads back.
+	table := timeline.Table{{Start: midnight, Type: "PRICE", Values: []openadr.Value{openadr.Number(1)}, RandomizeStart: openadr.Duration{Minutes: 5}}}
+	var buf bytes.Buffer
+	if err := table.WriteCSV(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if back, err := timeline.ReadCSV(&buf); err != nil || back[0].RandomizeStart != table[0].RandomizeStart {
+		t.Errorf("read back %+v, %v", back, err)
+	}
+}
+
+// The rows of Of and OfEvent share the Values of the payloads, as Table
+// says; ReadCSV and Intervals make their own.
+func TestRowValuesAreThePayloads(t *testing.T) {
+	e := openadr.Event{
+		Duration:       duration("PT4H"),
+		IntervalPeriod: period(midnight, "PT1H"),
+		Intervals:      []openadr.Interval{prices(0, nil, 1), prices(1, nil, 2)},
+	}
+	rows, err := timeline.OfEvent(e, timeline.Options{})
+	if err != nil || len(rows) != 4 {
+		t.Fatalf("OfEvent = %v, %v", spans(rows), err)
+	}
+	rows[0].Values[0] = openadr.Number(9)
+	if got := e.Intervals[0].Payloads[0].Values[0]; got != openadr.Number(9) {
+		t.Errorf("the payload has %v: a row's Values are not the payload's", got)
+	}
+	if got := rows[2].Values[0]; got != openadr.Number(9) {
+		t.Errorf("the repetition has %v: it does not share the row it repeats", got)
+	}
+
+	ivs := rows.Intervals()
+	ivs[1].Payloads[0].Values[0] = openadr.Number(7)
+	if got := e.Intervals[1].Payloads[0].Values[0]; got != openadr.Number(2) {
+		t.Errorf("Intervals shares the rows' values: the payload has %v", got)
 	}
 }
 

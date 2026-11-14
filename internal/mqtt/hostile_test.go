@@ -23,6 +23,9 @@ func TestCloseWhileAWriteIsStuck(t *testing.T) {
 	defer func() { _ = ln.Close() }()
 	release := make(chan struct{})
 	defer close(release)
+	// Closed when the first byte of the PUBLISH has arrived: its write,
+	// one call for the whole packet, has begun and is not read further.
+	writing := make(chan struct{})
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -33,6 +36,10 @@ func TestCloseWhileAWriteIsStuck(t *testing.T) {
 			return
 		}
 		_, _ = conn.Write([]byte{mqtt.TypeConnack << 4, 2, 0, 0})
+		first := make([]byte, 1)
+		if _, err := conn.Read(first); err == nil && first[0]>>4 == mqtt.TypePublish {
+			close(writing)
+		}
 		<-release
 	}()
 
@@ -45,9 +52,11 @@ func TestCloseWhileAWriteIsStuck(t *testing.T) {
 		// Far beyond what loopback socket buffers hold.
 		published <- conn.Publish(context.Background(), "a/b", bytes.Repeat([]byte("x"), 64<<20))
 	}()
-	// Until the write is stuck, give or take: closing earlier tests less,
-	// not something else.
-	time.Sleep(200 * time.Millisecond)
+	select {
+	case <-writing:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the PUBLISH did not begin")
+	}
 	start := time.Now()
 	_ = conn.Close()
 	if took := time.Since(start); took > 5*time.Second {

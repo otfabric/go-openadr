@@ -28,7 +28,7 @@ BIN_DIR := bin
 TEST_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/interop$$' | grep -v '/interop/')
 # Coverage is measured over the library packages, whichever package's tests exercise them:
 # the end-to-end tests in the module root drive the client and the server.
-COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/internal/leakcheck' | grep -v '/internal/transcript' | grep -v '/interop$$' | grep -v '/interop/' | paste -sd, -)
+COVER_PKGS := $(shell go list ./... | grep -v '/examples' | grep -v '/e2e$$' | grep -v '/internal/mqtttest' | grep -v '/internal/guard/guardtest' | grep -v '/internal/leakcheck' | grep -v '/internal/transcript' | grep -v '/interop$$' | grep -v '/interop/' | paste -sd, -)
 
 all: build ## Default target: build the examples
 

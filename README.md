@@ -154,7 +154,7 @@ has that the others do not show.
 | MQTT tested on several brokers | ✅ Mosquitto, NanoMQ, HiveMQ CE, EMQX | — not documented | — not documented |
 | mDNS tested against other implementations | ✅ Avahi, Apple mDNSResponder, OpenLEADR | — not documented | n/a |
 | Failure-injection tests (store, network, webhooks, broker, tokens, crash) | ✅ `make chaos` | — not documented | — not documented |
-| Fuzzed parsers | ✅ six targets | — not documented | — not documented |
+| Fuzzed parsers | ✅ 15 targets | — not documented | — not documented |
 | Authorization matrix: every operation as every kind of client | ✅ 54 rows, five clients | — not documented | n/a |
 | The three roles as runnable programs (VTN, Business Logic, VEN) | ✅ examples, run together in the tests | ✅ VTN and a client CLI | — |
 
@@ -620,7 +620,9 @@ start,end,type,values
 
 ## Things to know
 
-- **Concurrency.** Clients and the server are safe for concurrent use.
+- **Concurrency.** Clients and the server are safe for concurrent use, and
+  so are the notification senders and subscribers, `Close` included; see
+  [API.md](API.md#concurrency) for what a callback may call.
 - **Timeouts.** Every client call takes a context that bounds the whole
   call, including a token request it may trigger. The default HTTP client
   has a 30 second timeout; pass your own `http.Client` for TLS settings,

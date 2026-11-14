@@ -410,7 +410,11 @@ type Config struct {
 	// level every call, with its operation, duration and outcome; at info
 	// level a token that was renewed because the VTN refused the old one;
 	// at warn level every retry. Never bodies, tokens or secrets. Nil
-	// disables logging.
+	// disables logging. At error level it also receives "openadr: callback
+	// did not return normally", with the fields callback, value and stack,
+	// for a Metrics callback that did not return normally; the call goes
+	// on as if it had returned. A handler of the Logger that does not
+	// return normally loses that entry.
 	Logger *slog.Logger
 }
 ```
@@ -498,7 +502,7 @@ Metrics receives a callback for every call a client makes to a VTN. A call is wh
 
 op names the operation as the specification does, by method and path, with {id} in the place of an ID: "GET /events", "PUT /programs/{id}", "GET /notifiers/mqtt/topics/vens/{id}/events". The set of values is small and fixed, so it is fit to be a label.
 
-The callbacks run on the goroutine of the call and must not block: count, observe, return. Implementations must be safe for concurrent use.
+The callbacks run on the goroutine of the call and must not block: count, observe, return. Implementations must be safe for concurrent use. A callback that does not return normally is logged (see Config.Logger), and the call goes on as if it had returned.
 
 Every call gives one OnRequest and then exactly one of the other three.
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
@@ -54,10 +55,11 @@ type outbox struct {
 	mu sync.Mutex
 	// busy holds the callback URLs that have a notification with the
 	// sender, and more says that one of them was given another meanwhile.
-	busy map[string]bool
-	more map[string]bool
-	stop chan struct{}
-	done chan struct{}
+	busy     map[string]bool
+	more     map[string]bool
+	stop     chan struct{}
+	stopOnce sync.Once
+	done     chan struct{}
 }
 
 func newOutbox(s *Server, store storage.Outbox, sender ConfirmingSender, ttl, every time.Duration) *outbox {
@@ -74,9 +76,15 @@ func newOutbox(s *Server, store storage.Outbox, sender ConfirmingSender, ttl, ev
 }
 
 func (o *outbox) warn(msg string, d storage.Delivery, err error) {
-	if o.s.logger != nil {
-		o.s.logger.Warn(msg, slog.String("delivery", d.ID), slog.String("subscription", d.SubscriptionID), slog.Any("error", err))
-	}
+	o.s.logger.Warn(msg, slog.String("delivery", d.ID), slog.String("subscription", d.SubscriptionID), slog.Any("error", err))
+}
+
+// call calls the application's code that callback names: the Outbox, the
+// Store, the sender or the clock. It reports false when that did not
+// return normally, which is logged: the caller goes on as after an error,
+// and the notification stays recorded for the loop to take up again.
+func (o *outbox) call(callback string, f func()) bool {
+	return o.s.logger.Call(callback, f)
 }
 
 // add records a notification and sees to its delivery.
@@ -146,11 +154,14 @@ func (o *outbox) next(callbackURL string, queue []storage.Delivery) {
 		default:
 		}
 		if len(queue) == 0 {
-			all, err := o.store.Deliveries(ctx)
+			var all []storage.Delivery
+			var err error
+			if !o.call("Outbox.Deliveries", func() { all, err = o.store.Deliveries(ctx) }) {
+				o.release(callbackURL)
+				return
+			}
 			if err != nil {
-				if o.s.logger != nil {
-					o.s.logger.Warn("openadr: the recorded notifications could not be read", slog.Any("error", err))
-				}
+				o.s.logger.Warn("openadr: the recorded notifications could not be read", slog.Any("error", err))
 				o.release(callbackURL)
 				return
 			}
@@ -169,41 +180,78 @@ func (o *outbox) next(callbackURL string, queue []storage.Delivery) {
 		d := queue[0]
 		queue = queue[1:]
 
+		var old bool
+		if !o.call("Config.Now", func() { old = o.s.now().Sub(d.Created) > o.ttl }) {
+			o.release(callbackURL)
+			return
+		}
 		give := ""
-		if o.s.now().Sub(d.Created) > o.ttl {
+		if old {
 			give = "openadr: a notification is too old to be of use and is given up"
-		} else if _, err := o.s.store.Subscriptions().Get(ctx, d.SubscriptionID); errors.Is(err, openadr.ErrNotFound) {
-			// Nobody is waiting for it any more.
-			give = "openadr: the subscription of a notification is gone and it is given up"
+		} else {
+			var err error
+			if !o.call("Store.Subscriptions", func() { _, err = o.s.store.Subscriptions().Get(ctx, d.SubscriptionID) }) {
+				o.release(callbackURL)
+				return
+			}
+			if errors.Is(err, openadr.ErrNotFound) {
+				// Nobody is waiting for it any more.
+				give = "openadr: the subscription of a notification is gone and it is given up"
+			}
 		}
 		if give != "" {
 			o.warn(give, d, nil)
-			_ = o.store.RemoveDelivery(ctx, d.ID)
+			if !o.call("Outbox.RemoveDelivery", func() { _ = o.store.RemoveDelivery(ctx, d.ID) }) {
+				o.release(callbackURL)
+				return
+			}
 			continue
 		}
 
 		rest := queue
-		o.sender.SendConfirmed(d.CallbackURL, d.BearerToken, d.Body, func(err error) {
-			var refused interface{ Permanent() bool }
-			final := errors.As(err, &refused) && refused.Permanent()
-			if err != nil && !final {
-				// It stays recorded, and so does what comes after it:
-				// the loop takes the URL up again.
-				o.release(callbackURL)
-				return
-			}
-			if err != nil {
-				o.warn("openadr: a notification was refused for good and is given up", d, err)
-			}
-			if rerr := o.store.RemoveDelivery(ctx, d.ID); rerr != nil {
-				o.warn("openadr: a delivered notification could not be forgotten and may be sent again", d, rerr)
-				o.release(callbackURL)
-				return
-			}
-			o.next(callbackURL, rest)
+		// settled is taken by whichever comes first: the sender's answer,
+		// or a SendConfirmed that did not return normally. The other is
+		// ignored, so that the URL has one delivery on its way at most.
+		var settled atomic.Bool
+		sent := o.call("ConfirmingSender.SendConfirmed", func() {
+			o.sender.SendConfirmed(d.CallbackURL, d.BearerToken, d.Body, func(err error) {
+				if settled.CompareAndSwap(false, true) {
+					o.confirmed(ctx, callbackURL, d, rest, err)
+				}
+			})
 		})
+		if !sent && settled.CompareAndSwap(false, true) {
+			o.release(callbackURL)
+		}
 		return
 	}
+}
+
+// confirmed is what the sender said of d: forgotten when it was delivered
+// or refused for good, and the next of the URL follows.
+func (o *outbox) confirmed(ctx context.Context, callbackURL string, d storage.Delivery, rest []storage.Delivery, err error) {
+	var refused interface{ Permanent() bool }
+	final := errors.As(err, &refused) && refused.Permanent()
+	if err != nil && !final {
+		// It stays recorded, and so does what comes after it: the loop
+		// takes the URL up again.
+		o.release(callbackURL)
+		return
+	}
+	if err != nil {
+		o.warn("openadr: a notification was refused for good and is given up", d, err)
+	}
+	var rerr error
+	if !o.call("Outbox.RemoveDelivery", func() { rerr = o.store.RemoveDelivery(ctx, d.ID) }) {
+		o.release(callbackURL)
+		return
+	}
+	if rerr != nil {
+		o.warn("openadr: a delivered notification could not be forgotten and may be sent again", d, rerr)
+		o.release(callbackURL)
+		return
+	}
+	o.next(callbackURL, rest)
 }
 
 // run takes up what is recorded and not being delivered: at once, for what
@@ -218,8 +266,10 @@ func (o *outbox) run() {
 			return
 		case <-timer.C:
 		}
-		pending, err := o.store.Deliveries(context.Background())
-		if err != nil && o.s.logger != nil {
+		var pending []storage.Delivery
+		var err error
+		o.call("Outbox.Deliveries", func() { pending, err = o.store.Deliveries(context.Background()) })
+		if err != nil {
 			o.s.logger.Warn("openadr: the recorded notifications could not be read", slog.Any("error", err))
 		}
 		seen := map[string]bool{}
@@ -233,11 +283,9 @@ func (o *outbox) run() {
 	}
 }
 
+// close stops the loop and waits for it. It may be called more than once
+// and from several goroutines at the same time.
 func (o *outbox) close() {
-	select {
-	case <-o.stop:
-	default:
-		close(o.stop)
-	}
+	o.stopOnce.Do(func() { close(o.stop) })
 	<-o.done
 }

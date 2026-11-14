@@ -25,12 +25,14 @@ type Metrics interface {
 	OnConnected()
 	// OnDisconnected is called when it has ended, with the reason.
 	OnDisconnected(err error)
-	// OnReceived is called for every notification handed to Notify.
+	// OnReceived is called for every notification handed to Notify,
+	// before it is. A notification is not handed to Notify when the
+	// Subscriber was closed meanwhile, by OnReceived for one.
 	OnReceived()
 }
 ```
 
-Metrics receives a callback for what a Subscriber does. The callbacks run on the Subscriber's goroutine and must not block.
+Metrics receives a callback for what a Subscriber does. The callbacks run on the Subscriber's goroutine and must not block. They run without a lock of the Subscriber held, but OnReceived, which runs as Notify does: a Close on another goroutine waits for it. A callback that does not return normally is logged as Notify is, and the Subscriber goes on as if it had returned. So is the handler of the Logger, which loses that entry.
 
 ### type Subscriber
 
@@ -40,6 +42,9 @@ type Subscriber struct {
 	// closed while connected
 
 	// calling is held while Notify runs, so that Close can wait for it.
+
+	// runner is the goroutine of run, on which every callback runs: a
+	// Close called there does not wait for it.
 
 }
 ```
@@ -62,7 +67,7 @@ NewSubscriber returns a running Subscriber. It does not wait for the VTN; use Re
 func (s *Subscriber) Close() error
 ```
 
-Close disconnects and stops the Subscriber. Notify is not called after Close has returned.
+Close disconnects and stops the Subscriber, and returns when it has stopped and a Notify in progress has returned. Notify is not called after Close has returned. Close may be called more than once, from several goroutines at the same time, and from Notify, Dial, the Metrics callbacks and the Logger's handler: from there it does not wait for the callback it is called from, which goes on until it returns, nor for what the Subscriber's goroutine still has to do to stop. A goroutine that Notify waits for is not Notify: a Close there waits for Notify, which must not wait for it.
 
 #### func (Subscriber) Ready
 
@@ -85,11 +90,16 @@ Sessions is the number of times the Subscriber has connected. It grows by one wi
 ```go
 type SubscriberConfig struct {
 	// Dial opens the WebSocket: the NotificationStream method of a VEN or
-	// BL client. Required.
+	// BL client. Required. A Dial that does not return normally counts as
+	// one that failed, and is logged as Notify below.
 	Dial func(ctx context.Context) (*client.NotificationStream, error)
 	// Notify is called for each notification, one at a time, in the order
 	// the VTN sends them. Required. It should return soon: nothing else is
 	// received meanwhile, and a VTN disconnects a client that falls behind.
+	// It may call Close (see Close). A Notify that does not return
+	// normally is logged at error level, as "websocket: callback did not
+	// return normally" with the fields callback, value and stack, and the
+	// Subscriber goes on with the next notification.
 	Notify func(ctx context.Context, n openadr.Notification)
 	// KeepAlive is how often the VTN is pinged; a connection on which
 	// nothing is heard for two and a half times as long is given up and

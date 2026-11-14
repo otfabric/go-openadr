@@ -86,26 +86,30 @@ func TestSenderMetrics(t *testing.T) {
 }
 
 func TestSenderMetricsDroppedAndClosed(t *testing.T) {
+	arrived := make(chan struct{}, 1)
 	release := make(chan struct{})
 	hook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		arrived <- struct{}{}
 		<-release
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer hook.Close()
+	answered := make(chan struct{})
+	client := &http.Client{Transport: roundTripped{next: hook.Client().Transport, done: answered, once: &sync.Once{}}}
 	m := &outcomes{}
-	s := NewSender(SenderConfig{AllowInsecure: true, Backoff: time.Hour, Workers: 1, Queue: 1, Metrics: m})
+	s := NewSender(SenderConfig{AllowInsecure: true, HTTPClient: client, Backoff: time.Hour, Workers: 1, Queue: 1, Metrics: m})
 	// One is with the webhook, one waits, and there is no room for a third.
 	s.Send(hook.URL, "", []byte(`1`))
-	time.Sleep(50 * time.Millisecond)
+	<-arrived
 	s.Send(hook.URL, "", []byte(`2`))
 	s.Send(hook.URL, "", []byte(`3`))
 	if got := m.wait(t, 1); got[0] != "dropped" {
 		t.Errorf("got %v", got)
 	}
-	// Closed while the first waits for its second attempt: it is given up
-	// on, and says why.
+	// Closed once the first attempt was answered, while the first waits
+	// for its second: it is given up on, and says why.
 	close(release)
-	time.Sleep(50 * time.Millisecond)
+	<-answered
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_ = s.Close(ctx)
@@ -113,6 +117,19 @@ func TestSenderMetricsDroppedAndClosed(t *testing.T) {
 	if got[1] != "failed after 1" || !errors.Is(m.last, openadr.ErrClosed) {
 		t.Errorf("got %v, last error %v", got, m.last)
 	}
+}
+
+// roundTripped closes done when the first request has been answered.
+type roundTripped struct {
+	next http.RoundTripper
+	done chan struct{}
+	once *sync.Once
+}
+
+func (r roundTripped) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := r.next.RoundTrip(req)
+	r.once.Do(func() { close(r.done) })
+	return resp, err
 }
 
 // A webhook that says when to come back is taken at its word.
