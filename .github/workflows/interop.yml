@@ -1,3 +1,5 @@
+# Called by pr.yml on every pull request that is not documentation only;
+# dispatch it to run it on a branch without a pull request.
 name: Interop
 run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ github.actor }}"
 
@@ -7,14 +9,26 @@ run-name: "Interop (${{ github.event_name }}) on ${{ github.ref_name }} by @${{ 
 # openadr-interop is cloned or built here.
 
 on:
-  push:
-    branches: ["**"]
-    paths-ignore: ["**/*.md"]
-  pull_request:
-    paths-ignore: ["**/*.md"]
-    branches: ["**"]
   schedule:
     - cron: "11 3 * * *"
+  workflow_call:
+    inputs:
+      openleadr_image:
+        description: "OpenLEADR reference image (default: the pinned release)"
+        type: string
+        default: ""
+      elaadnl_image:
+        description: "ElaadNL reference image (default: the pinned release)"
+        type: string
+        default: ""
+      cbsigma_image:
+        description: "cB-Sigma openadr reference image (default: the pinned release)"
+        type: string
+        default: ""
+      openleadr301_image:
+        description: "OpenLEADR v0.1.4 (OpenADR 3.0.1) reference image (default: the pinned release)"
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       openleadr_image:
