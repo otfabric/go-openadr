@@ -84,7 +84,7 @@ Run `make` (or `make help`) for the full list of targets.
 - A change to `storage.Store`, or to what a store must do, changes `storagetest`, which every store has to pass: those of this module, and those in `examples/storage` (`make storage`)
 - A parser of bytes from elsewhere (a network packet, a file) gets a fuzz target, listed in the `fuzz` target of the Makefile
 - What is not part of OpenADR 3.1.0 stays off by default, is named as an extension wherever it appears, and is tested against the implementation it is shared with
-- A change to the client, the VTN or the wire format must keep `make interop` green (the Interop workflow runs it on every push). The `interop` package holds this repository's scenarios and assertions; the reference implementations belong to [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop) and are consumed as images only
+- A change to the client, the VTN or the wire format must keep `make interop` green (the Interop workflow runs it on every pull request). The `interop` package holds this repository's scenarios and assertions; the reference implementations belong to [otfabric/openadr-interop](https://github.com/otfabric/openadr-interop) and are consumed as images only
 - Where the specification leaves room and the VTN makes a choice, the choice is written down in [docs/CONFORMANCE.md](docs/CONFORMANCE.md) with the test that pins it
 
 ### Documentation
