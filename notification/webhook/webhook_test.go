@@ -49,6 +49,31 @@ func TestPublic(t *testing.T) {
 		"::ffff:127.0.0.1":     false,
 		"::ffff:10.0.0.1":      false,
 		"::ffff:93.184.216.34": true,
+		// IPv6 that stands for IPv4 is judged by the IPv4 address.
+		"64:ff9b::5db8:d822":                   true, // NAT64 of 93.184.216.34
+		"64:ff9b::a00:1":                       false,
+		"64:ff9b::7f00:1":                      false,
+		"64:ff9b::a9fe:a9fe":                   false,
+		"64:ff9b::6440:1":                      false,
+		"64:ff9b:1::a00:1":                     false, // local-use NAT64
+		"64:ff9b:1::5db8:d822":                 false,
+		"2002:5db8:d822::1":                    true, // 6to4 of 93.184.216.34
+		"2002:a00:1::1":                        false,
+		"2002:7f00:1::1":                       false,
+		"2001:0:4136:e378:8000:63bf:f5ff:fffe": false, // Teredo
+		"::a00:1":                              false, // IPv4-compatible
+		"::5db8:d822":                          false,
+		"::ffff:0:a00:1":                       false, // IPv4-translated
+		"fec0::1":                              false, // site-local
+		// Special-purpose IPv4.
+		"0.1.2.3":         false,
+		"192.0.0.1":       false,
+		"198.18.0.1":      false,
+		"198.19.255.255":  false,
+		"240.0.0.1":       false,
+		"255.255.255.255": false,
+		"192.0.1.1":       true,
+		"198.20.0.1":      true,
 	} {
 		if got := public(netip.MustParseAddr(addr)); got != want {
 			t.Errorf("public(%s) = %v, want %v", addr, got, want)

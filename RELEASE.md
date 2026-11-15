@@ -1,5 +1,64 @@
 # go-openadr Releases
 
+## v0.8.0
+
+**Date:** 2026-11-15
+**Previous release:** v0.7.3
+
+### Fixed
+
+- **An update of a VEN's ven or resource no longer writes back what Business Logic changed meanwhile.** The VTN read the stored object, then the body, then wrote: an update whose body was slow to arrive could restore targets that Business Logic had removed, or a ven that Business Logic had given to another client. Creates, updates and deletes are now serialised from the look-up of the stored object to the write, and the body of an update is read first, so an update applies to the object as stored when its body has arrived. A VEN's delete of a ven that Business Logic has just given to another client is answered 404.
+- **`storage.File` opens a journal that holds a subscription whose program was deleted.** Deleting a program that subscriptions name is allowed, as before; the journal written after it could not be opened again. Such a subscription is now replayed as it was, also from a snapshot, and both `storage.Memory` and `storage.File` accept an update of it that keeps its `programID`; one that moves it to a program that does not exist is still a `*ConstraintError`. The SQLite and PostgreSQL stores of `examples/storage` do the same.
+- **`storage.File` refuses a change longer than a journal line holds (64 MiB)**, with an error and without applying it, instead of writing a journal it cannot read back. The store goes on accepting changes. A line too long found while a journal is replayed is `ErrCorrupt`.
+- **The key set of a `JWTValidator` is fetched independently of the request that asked for it.** A client that went away cancelled the fetch, and its error held back the next fetch for a minute. The fetch now runs on its own, bounded by the timeout of the HTTP client (10 s when it has none); requests that wait at the same time share it, a token with a known key never waits for it, and a request whose context ends while it waits gets an error that wraps its context's error, not `ErrInvalidToken`.
+- **`mqtt.Publisher.Close` with a context that ends gives up on a notification the broker has not acknowledged**, instead of waiting up to 30 seconds for it.
+- **`mqtt.Publisher` drops a notification MQTT cannot carry, and goes on.** A topic with a wildcard or NUL, or a topic or body too long, failed on every connection and was sent again for ever, holding up the queue. It is now dropped, logged and given to `Metrics.OnDropped`, and the connection is kept. The VTN does not publish such topics: every part of its topics is an object ID.
+- **The MQTT client returns an error when every packet identifier is in use**, instead of searching for a free one without end.
+- **A token endpoint that sends `expires_in` as a string of digits is understood** by the clients.
+- **`timeline.OfEvent` refuses a table of too many rows before it lays out any repetition**, so an event that would repeat into millions of rows costs an error and not the memory of all of them; the boundary (about a million rows) is unchanged.
+- **`NewRateLimiter` with a NaN rate takes no request**, as a rate of 0 does, and one with +Inf takes every request.
+
+### Changed
+
+- **A webhook that is slow, down or asks to wait holds up only its own notifications.** `webhook.Sender` had one queue per worker, and a callback URL that waited for its next attempt held its worker and the URLs that shared it. Now each callback URL has a lane of its own (only its head is attempted, so the order per URL holds across retries), each webhook host (the host name of the callback URL) has one request on its way at a time and the hosts take turns, and a retry waits on a timer, not on a worker. `SenderConfig.Queue` is now per webhook host, retries included, and `Queue` times `max(Workers, 2)` may wait in all, so a `Sender` with one worker holds twice `Queue`. Callback URLs on one host are delivered one after another, and outcomes across URLs no longer come in the order the notifications were sent.
+- **The webhook notifications the subscriptions of one client keep recorded in an `Outbox` are bounded.** `server.Limits.Deliveries` (10000 when zero) and `Limits.DeliveryBytes` (64 MiB when zero: bodies, callback URLs and tokens) apply with `Config.Outbox`; a negative value is no limit. A notification past either is neither recorded nor sent, and a warning is logged once until one is recorded again. The count is kept in memory and set right against `Outbox.Deliveries` on each round, so what a previous VTN left counts too.
+- **A recorded webhook notification is sent with the subscription's current bearer token**, and given up, with a warning, once the subscription no longer names its callback URL. Before, it went with the token and to the URL of the moment it was decided.
+- **A present but empty `Authorization` header is answered 401** on a VTN with `AllowAnonymous`; only a request without the header is anonymous.
+- **A `Validator` identity without a `ClientID` is answered 500 and logged.** Every object and target of a client is found by its client ID.
+- **For `PUT`, a body error (400, 413, 415) is answered before a 404 of the ID in the path**, since the body is now read first.
+- **Answers about subscriptions are never compressed.** `/subscriptions` and `/subscriptions/{id}`, every method: they carry bearer tokens, and a list of them holds the tokens of several clients next to text other clients chose.
+- **A well-formed WebSocket close is answered with the peer's own code** (RFC 6455 section 5.5.1), and an empty one still with 1000. A close frame with a body of one byte, a code that may not be sent, or a reason that is not UTF-8 is answered 1002 and ends the stream with a plain error. A handshake answer that names a subprotocol that was not offered is refused.
+- **`discovery.Browse` reads only responses from port 5353 whose source is on the link**: in a subnet of the interface, or IPv4 link-local (169.254/16, RFC 3927), as RFC 6762 section 11 has it; the Advertiser also counts a link-local source as on the link. `Browse` keeps at most 64 instances and 8 addresses per host, asks again about at most 16 records at a time, and takes a PTR record only for a name of one label under `_openadr3._tcp.local.`.
+- **The DNS parser of `discovery` bounds what the names of a packet may expand to** (about four times the packet) and requires a compression pointer to point back, before the name that uses it (RFC 1035 section 4.1.4); a name of 255 bytes, root included, is the longest read. A reply of the Advertiser to a one-shot resolver repeats only the questions it answers (RFC 6762 section 6.7).
+- **The default client of `webhook.Sender` refuses more address ranges**: the special-purpose IPv4 ranges 0.0.0.0/8, 192.0.0.0/24, 198.18.0.0/15 and 240.0.0.0/4, IPv4-compatible and IPv4-translated IPv6, site-local (fec0::/10), Teredo (2001::/32) and local-use NAT64 (64:ff9b:1::/48). A NAT64 (64:ff9b::/96) or 6to4 (2002::/16) address is judged by the IPv4 address it carries.
+- **`Retry-After` is read as whole seconds (digits only, RFC 9110 section 10.2.3) or an HTTP date**, by the clients and by the webhook sender. A value such as `1.5` or `5m` is ignored, where the client read `1.5` as one and a half seconds and the sender read `1m` as one millisecond; a number of seconds beyond what a `time.Duration` holds is the longest wait.
+- **A JSON body with a `\u` escape of a surrogate that is not one of a pair is refused** (RFC 8259 section 8.2), as a body that is not UTF-8 already was.
+- **A 3.1.0 notification whose `operation` is not `CREATE`, `READ`, `UPDATE` or `DELETE` is refused** as a `*ValidationError`, which does not repeat the value. **A notification whose object carries an `objectType` naming another kind of object** than the notification's `objectType` is refused, in both revisions; an object without one, or with a value that names no kind, is read as before.
+- **The MQTT client accepts an acknowledgement only of the type, flags and length that answer its request** (MQTT 3.1.1 sections 2.2.2, 3.4, 3.9 and 3.11); anything else ends the connection as malformed. An acknowledgement of an ID that is not waited for is still dropped.
+- **The webhook sender takes the query of a callback URL out of the error of a failed request**, before it is logged, given to `Metrics.OnFailed` or to the done function of `SendConfirmed`. MQTT log entries cut topics and decoding errors from the broker to 256 bytes.
+- **The targets granted to a client through its resources are found with at most one search of resources**, not one per ven of the client.
+- **`storagetest.Run` checks a subscription whose program is gone** (`ProgramGone`): the delete is allowed, the subscription stays, may be updated keeping its `programID`, and survives a reopen. A store of your own that refuses such an update fails it until it skips the program check when `programID` does not change. It also checks `DeliveriesTo` of an outbox that has it.
+
+### Added
+
+- **`server.Limits.Deliveries` and `server.Limits.DeliveryBytes`**, above.
+- **`storage.URLOutbox`**, an optional extension of `storage.Outbox` with `DeliveriesTo(ctx, callbackURL)`: the deliveries of one callback URL, oldest first. `storage.Memory` and `storage.File` implement it, with indexes by ID and by URL, and the VTN uses it when its `Outbox` has it; otherwise it reads all deliveries, as before.
+- The exported API changes only by these additions. `gorelease` against v0.7.3 is checked by CI on release.
+
+### Tests
+
+- Regression tests for each change above: a slow update or a delete against a concurrent change by Business Logic; answers about subscriptions without compression; an empty `Authorization` header; an identity without a client ID; webhooks that ask to wait and one host that would fill the queue of another; a failed request whose URL has a query; the address table of the default webhook client; an outbox bounded per client by count and by bytes, also across a restart, a delivery that follows its subscription's token and URL; `storagetest` `ProgramGone`, old journals with such a subscription in order and as a snapshot, and the journal line limit; the key set fetched apart from the request that asked for it, and its timeout; close frame bodies and offered subprotocols; MQTT acknowledgements of the wrong kind, every packet identifier in use, a `Close` that gives up an unacknowledged publish, notifications MQTT cannot carry, and bounded log entries; `Browse` bounded and reading only from the link, link-local sources, names that point at each other, name length limits and legacy replies; `OfEvent` refusing a large repetition under 8 MiB; `Retry-After` and `expires_in` tables; lone surrogates, the notification operation enum and the object discriminator.
+- `TestNotificationAllocationBudget`: decoding values maps and intervals allocates less (numeric values about half as much), and the budgets are lowered to match (intervals 20 to 15, points 52 to 45, numbers 310 to 140 bytes per byte). Error field paths are unchanged.
+- The `objectjson` fuzz target fails on an error of `Marshal`, except for the known 3.0.1 gap of a report or subscription without `programID`.
+- The nightly fuzz workflow passes its `fuzztime` input through the environment and checks it is a Go duration or a count before it runs.
+
+### Documentation
+
+- API.md: concurrency of creates, updates and deletes; `Retry-After`; an empty `Authorization` header; compression of answers about subscriptions; `NewRateLimiter` with NaN and +Inf; `Limits.Deliveries` and `DeliveryBytes`, also in the limits table; the Outbox and its tokens and URLs; `storage.URLOutbox`; the Store contract for a subscription whose program is gone; the journal line limit; `SenderConfig.Queue` and `Workers` and the order of webhook deliveries; the MQTT publisher's drops and `Close`; `Browse` and its limits; the key set fetch; an identity without a client ID.
+- SECURITY.md, LIMITATIONS.md, OBSERVABILITY.md, ERRORS.md: the same changes where each document covers them, the new warnings of the VTN and the MQTT publisher, and the address ranges of the webhook client. TESTING.md: the new tests in the lifecycle matrix and the allocation budgets. ARCHITECTURE.md: the scheduling of `webhook.Sender` and the outbox bounds. docs/CONFORMANCE.md: deleting a program that subscriptions name, the notification discriminator and operation enum, lone surrogates, and compression. README.md: compression and the outbox bound.
+
+---
+
 ## v0.7.3
 
 **Date:** 2026-11-14

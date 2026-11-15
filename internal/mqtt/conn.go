@@ -44,13 +44,20 @@ type Conn struct {
 
 	mu      sync.Mutex
 	nextID  uint16
-	waiting map[uint16]chan Packet
+	waiting map[uint16]pending
 	err     error
 	closing bool
 	done    chan struct{}
 	// seen is closed and replaced whenever a packet arrives: the proof of
 	// life the keep-alive looks for.
 	lastSeen time.Time
+}
+
+// pending is a request waiting for its acknowledgement: the packet type
+// that answers it, and where the answer goes.
+type pending struct {
+	want byte
+	ch   chan Packet
 }
 
 // ConnectError is a broker refusing a connection (CONNACK return code).
@@ -141,7 +148,7 @@ func Dial(ctx context.Context, uri string, o Options) (*Conn, error) {
 
 	c := &Conn{
 		conn: nc, keepAlive: time.Duration(seconds) * time.Second, onMessage: o.OnMessage,
-		waiting: map[uint16]chan Packet{}, done: make(chan struct{}), lastSeen: time.Now(),
+		waiting: map[uint16]pending{}, done: make(chan struct{}), lastSeen: time.Now(),
 	}
 	go c.read()
 	go c.ping()
@@ -276,17 +283,22 @@ func (c *Conn) read() {
 				}
 			}
 		case TypePuback, TypeSuback, TypeUnsuback:
-			id, _, err := Uint16(p.Body)
+			id, err := ackID(p)
 			if err != nil {
-				c.shut(fmt.Errorf("%w: acknowledgement", ErrMalformed))
+				c.shut(err)
 				return
 			}
 			c.mu.Lock()
-			ch := c.waiting[id]
+			w, ok := c.waiting[id]
+			if ok && w.want != p.Type {
+				c.mu.Unlock()
+				c.shut(fmt.Errorf("%w: packet type %d answers a request of type %d", ErrMalformed, p.Type, w.want))
+				return
+			}
 			delete(c.waiting, id)
 			c.mu.Unlock()
-			if ch != nil {
-				ch <- p
+			if ok {
+				w.ch <- p
 			}
 		case TypePingresp:
 		default:
@@ -294,6 +306,19 @@ func (c *Conn) read() {
 			return
 		}
 	}
+}
+
+// ackID checks the fixed header and length of an acknowledgement (MQTT
+// 3.1.1 sections 2.2.2, 3.4.1, 3.9.1, 3.11.1: reserved flags 0, a PUBACK
+// and an UNSUBACK of exactly the packet identifier, a SUBACK with at
+// least one return code) and returns its packet identifier.
+func ackID(p Packet) (uint16, error) {
+	n := len(p.Body)
+	if p.Flags != 0 || (p.Type == TypeSuback && n < 3) || (p.Type != TypeSuback && n != 2) {
+		return 0, fmt.Errorf("%w: acknowledgement", ErrMalformed)
+	}
+	id, _, err := Uint16(p.Body)
+	return id, err
 }
 
 // ping keeps the connection alive, and ends it when the broker has been
@@ -321,9 +346,31 @@ func (c *Conn) ping() {
 	}
 }
 
-// request sends a packet that is answered by one with the same packet
-// identifier, and waits for the answer.
-func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error)) (Packet, error) {
+// errNoID is a request while every packet identifier is waiting for an
+// answer.
+var errNoID = errors.New("mqtt: every packet identifier is in use")
+
+// ErrTopic reports a topic that cannot be published to.
+var ErrTopic = errors.New("mqtt: not a topic to publish to")
+
+// freeID returns the next packet identifier that is not waiting for an
+// answer, and false when there is none. c.mu is held.
+func (c *Conn) freeID() (uint16, bool) {
+	// Packet identifiers are 1..65535; skip those still waiting.
+	for range 65535 {
+		if c.nextID++; c.nextID == 0 {
+			c.nextID = 1
+		}
+		if _, busy := c.waiting[c.nextID]; !busy {
+			return c.nextID, true
+		}
+	}
+	return 0, false
+}
+
+// request sends a packet that is answered by one of type want with the
+// same packet identifier, and waits for the answer.
+func (c *Conn) request(ctx context.Context, want byte, build func(id uint16) (Packet, error)) (Packet, error) {
 	c.mu.Lock()
 	select {
 	case <-c.done:
@@ -335,18 +382,13 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error
 		return Packet{}, err
 	default:
 	}
-	// Packet identifiers are 1..65535; skip those still waiting.
-	for {
-		if c.nextID++; c.nextID == 0 {
-			c.nextID = 1
-		}
-		if _, busy := c.waiting[c.nextID]; !busy {
-			break
-		}
+	id, ok := c.freeID()
+	if !ok {
+		c.mu.Unlock()
+		return Packet{}, errNoID
 	}
-	id := c.nextID
 	ch := make(chan Packet, 1)
-	c.waiting[id] = ch
+	c.waiting[id] = pending{want: want, ch: ch}
 	c.mu.Unlock()
 	forget := func() {
 		c.mu.Lock()
@@ -380,12 +422,15 @@ func (c *Conn) request(ctx context.Context, build func(id uint16) (Packet, error
 
 // Publish sends a message at QoS 1 and returns when the broker has
 // acknowledged it. When it returns an error the broker may or may not have
-// the message: sending it again is the at-least-once of QoS 1.
+// the message: sending it again is the at-least-once of QoS 1. A topic that
+// cannot be published to is ErrTopic, a topic or payload too long for MQTT
+// ErrTooLong: the connection is not affected, and sending again fails
+// again.
 func (c *Conn) Publish(ctx context.Context, topic string, payload []byte) error {
 	if !ValidTopic(topic) {
-		return fmt.Errorf("mqtt: %q is not a topic to publish to", topic)
+		return fmt.Errorf("%w: %q", ErrTopic, topic)
 	}
-	_, err := c.request(ctx, func(id uint16) (Packet, error) { return Publish(topic, payload, 1, id, false) })
+	_, err := c.request(ctx, TypePuback, func(id uint16) (Packet, error) { return Publish(topic, payload, 1, id, false) })
 	return err
 }
 
@@ -398,7 +443,7 @@ func (c *Conn) Subscribe(ctx context.Context, filters ...string) error {
 	if slices.Contains(filters, "") {
 		return errors.New("mqtt: an empty topic filter")
 	}
-	ack, err := c.request(ctx, func(id uint16) (Packet, error) { return Subscribe(id, filters) })
+	ack, err := c.request(ctx, TypeSuback, func(id uint16) (Packet, error) { return Subscribe(id, filters) })
 	if err != nil {
 		return err
 	}

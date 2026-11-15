@@ -24,7 +24,7 @@ func TestQuotaAdmit(t *testing.T) {
 	if err := q.admit(context.Background(), "c"); err != nil || counted != 1 {
 		t.Errorf("no limit: %v, %d counts", err, counted)
 	}
-	if l := newLimits(Limits{Subscriptions: -1, CallbackURLs: 3, Reports: 7}); l != (limits{callbackURLs: 3, reports: 7}) {
+	if l := newLimits(Limits{Subscriptions: -1, CallbackURLs: 3, Reports: 7}); l != (limits{callbackURLs: 3, reports: 7, deliveries: defaultMaxDeliveries, deliveryBytes: defaultMaxDeliveryBytes}) {
 		t.Errorf("newLimits = %+v", l)
 	}
 }

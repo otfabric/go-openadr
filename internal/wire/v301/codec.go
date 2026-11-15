@@ -607,5 +607,19 @@ func unmarshalNotification(data []byte) (openadr.Notification, error) {
 	if err != nil {
 		return openadr.Notification{}, fmt.Errorf("object: %w", err)
 	}
+	if err := common.NotifiedObject(n.ObjectType, w.Object, objectKinds); err != nil {
+		return openadr.Notification{}, err
+	}
 	return n, nil
+}
+
+// objectKinds maps the discriminators an object of OpenADR 3.0.1 can carry
+// in its objectType to the kind of object each names.
+var objectKinds = map[string]openadr.ObjectType{
+	string(openadr.ObjectProgram):      openadr.ObjectProgram,
+	string(openadr.ObjectEvent):        openadr.ObjectEvent,
+	string(openadr.ObjectReport):       openadr.ObjectReport,
+	string(openadr.ObjectSubscription): openadr.ObjectSubscription,
+	string(openadr.ObjectVEN):          openadr.ObjectVEN,
+	string(openadr.ObjectResource):     openadr.ObjectResource,
 }

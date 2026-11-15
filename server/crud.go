@@ -105,26 +105,36 @@ func readPage[T interface{ Validate() error }, F any](s *Server, r *http.Request
 func create[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) handler {
 	return func(w http.ResponseWriter, r *http.Request, id auth.Identity) {
 		v, form, err := readObject(s, w, r, k.codec)
-		if err == nil && k.admit != nil {
-			v, err = k.admit(r.Context(), id, v, form, nil)
+		if err == nil {
+			v, err = k.admitNew(r.Context(), s, id, v, form)
 		}
 		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		meta, err := s.created()
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		*k.meta(&v) = meta
-		if err := k.store(r.Context(), s, v); err != nil {
 			s.fail(w, r, err)
 			return
 		}
 		k.notify(s, r, openadr.OperationCreate, v)
 		writeObject(s, w, r, http.StatusCreated, k.codec, v)
 	}
+}
+
+// admitNew admits and stores a new object. It holds s.writing, so that
+// what admit looked up (the ven of a resource) is still so when the object
+// is stored.
+func (k kind[T, F]) admitNew(ctx context.Context, s *Server, id auth.Identity, v T, form wire.Form) (T, error) {
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	var err error
+	if k.admit != nil {
+		if v, err = k.admit(ctx, id, v, form, nil); err != nil {
+			return v, err
+		}
+	}
+	meta, err := s.created()
+	if err != nil {
+		return v, err
+	}
+	*k.meta(&v) = meta
+	return v, k.store(ctx, s, v)
 }
 
 // store creates v, within the quota of the client that keeps it.
@@ -142,21 +152,15 @@ func (k kind[T, F]) store(ctx context.Context, s *Server, v T) error {
 
 func update[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) handler {
 	return func(w http.ResponseWriter, r *http.Request, id auth.Identity) {
-		old, err := k.find(r, id)
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
+		// The body is read before the stored object is looked at: what
+		// the update keeps of the stored object (the targets of a VEN's
+		// ven, say) is then what is stored when it is replaced, however
+		// long the client takes to send the body.
 		v, form, err := readObject(s, w, r, k.codec)
-		if err == nil && k.admit != nil {
-			v, err = k.admit(r.Context(), id, v, form, &old)
+		if err == nil {
+			v, err = k.replace(r, s, id, v, form)
 		}
 		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		*k.meta(&v) = s.modified(*k.meta(&old))
-		if err := k.coll.Update(r.Context(), v); err != nil {
 			s.fail(w, r, err)
 			return
 		}
@@ -165,12 +169,29 @@ func update[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) han
 	}
 }
 
+// replace finds the object named in the path, admits v in its place and
+// stores it. It holds s.writing throughout, so that no other write comes
+// between what admit read and the update: of two clients that replace the
+// same object, the one that comes last wins.
+func (k kind[T, F]) replace(r *http.Request, s *Server, id auth.Identity, v T, form wire.Form) (T, error) {
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	old, err := k.find(r, id)
+	if err != nil {
+		return v, err
+	}
+	if k.admit != nil {
+		if v, err = k.admit(r.Context(), id, v, form, &old); err != nil {
+			return v, err
+		}
+	}
+	*k.meta(&v) = s.modified(*k.meta(&old))
+	return v, k.coll.Update(r.Context(), v)
+}
+
 func remove[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) handler {
 	return func(w http.ResponseWriter, r *http.Request, id auth.Identity) {
-		v, err := k.find(r, id)
-		if err == nil {
-			v, err = k.coll.Delete(r.Context(), k.meta(&v).ID)
-		}
+		v, err := k.delete(r, s, id)
 		if err != nil {
 			s.fail(w, r, err)
 			return
@@ -178,4 +199,17 @@ func remove[T interface{ Validate() error }, F any](s *Server, k kind[T, F]) han
 		k.notify(s, r, openadr.OperationDelete, v)
 		writeObject(s, w, r, http.StatusOK, k.codec, v)
 	}
+}
+
+// delete deletes the object named in the path if the client may see it,
+// under s.writing like replace: a VEN cannot delete a ven that Business
+// Logic has just given to another client.
+func (k kind[T, F]) delete(r *http.Request, s *Server, id auth.Identity) (T, error) {
+	s.writing.Lock()
+	defer s.writing.Unlock()
+	v, err := k.find(r, id)
+	if err != nil {
+		return v, err
+	}
+	return k.coll.Delete(r.Context(), k.meta(&v).ID)
 }

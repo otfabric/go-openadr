@@ -79,8 +79,10 @@ func TestSenderMetrics(t *testing.T) {
 	s.Send(hook.URL+"/flaky", "", []byte(`{}`))
 	s.Send(hook.URL+"/down", "", []byte(`{}`))
 	s.Send(hook.URL+"/gone", "", []byte(`{}`))
-	want := []string{"delivered after 1", "delivered after 3", "failed after 3", "failed after 1"}
-	if got := m.wait(t, 4); !slices.Equal(got, want) {
+	// A notification that waits for its next attempt does not hold up
+	// the others: the order of the outcomes is not that of the sends.
+	want := []string{"delivered after 1", "delivered after 3", "failed after 1", "failed after 3"}
+	if got := slices.Sorted(slices.Values(m.wait(t, 4))); !slices.Equal(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }

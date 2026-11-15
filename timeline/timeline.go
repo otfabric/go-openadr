@@ -258,11 +258,18 @@ func OfEvent(e openadr.Event, o Options) (Table, error) {
 		// Each repetition is the one before moved by the span of the
 		// intervals, which may be too long for a time.Duration.
 		shift := shifter(start, end)
-		prev := rows
+		// Count the repetitions first: a table that would be too large is
+		// refused before any of it is made, and one that is not grows once.
+		n, repeats := len(rows), 0
 		for first := shift(start); first.Before(limit); first = shift(first) {
-			if len(rows)+len(prev) > maxRows {
+			if (repeats+2)*n > maxRows {
 				return nil, ErrTooLarge
 			}
+			repeats++
+		}
+		rows = slices.Grow(rows, repeats*n)
+		prev := rows
+		for range repeats {
 			from := len(rows)
 			for _, row := range prev {
 				row.Start, row.End = shift(row.Start), shift(row.End)
@@ -271,7 +278,8 @@ func OfEvent(e openadr.Event, o Options) (Table, error) {
 			prev = rows[from:]
 		}
 	}
-	out := rows[:0:0]
+	// Filtered in place: the rows are this call's own.
+	out := rows[:0]
 	for _, row := range rows {
 		if !row.Start.Before(limit) {
 			continue

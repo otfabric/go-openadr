@@ -5,6 +5,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -197,7 +198,11 @@ func TestRetryAfter(t *testing.T) {
 
 	now := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
 	for value, want := range map[string]time.Duration{
-		"": 0, "120": 2 * time.Minute, "0": 0, "-5": 0, "soon": 0, "1.5": 1500 * time.Millisecond,
+		"": 0, "120": 2 * time.Minute, "0": 0, "007": 7 * time.Second, "-5": 0, "soon": 0,
+		// Delay-seconds are digits only (RFC 9110 section 10.2.3).
+		"1.5": 0, "+7": 0, "5m": 0, "1e3": 0, " 5": 0, "5 ": 0,
+		// More than a Duration holds is the longest wait there is.
+		"9223372037": math.MaxInt64, "99999999999999999999999": math.MaxInt64,
 		"Tue, 01 Jan 2030 12:00:30 GMT": 30 * time.Second, "Tue, 01 Jan 2030 11:00:00 GMT": 0,
 	} {
 		if got := parseRetryAfter(http.Header{"Retry-After": {value}}, now); got != want {
@@ -446,5 +451,48 @@ func TestRetryOfTheTokenRequest(t *testing.T) {
 	}
 	if _, err := bl.CreateProgram(context.Background(), openadr.Program{Name: "n"}); err != nil || created != 1 {
 		t.Errorf("with a policy: %v, %d programs", err, created)
+	}
+}
+
+// Some identity providers send expires_in as a string of digits: the token
+// is then kept for as long as it says, like with a number.
+func TestExpiresInAsString(t *testing.T) {
+	var issued atomic.Int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /token", func(w http.ResponseWriter, _ *http.Request) {
+		issued.Add(1)
+		_, _ = fmt.Fprint(w, `{"access_token":"t","token_type":"Bearer","expires_in":"3600"}`)
+	})
+	mux.HandleFunc("GET /programs", func(w http.ResponseWriter, _ *http.Request) { _, _ = fmt.Fprint(w, `[]`) })
+	vtn := httptest.NewServer(mux)
+	defer vtn.Close()
+	ven, err := NewVEN(Config{BaseURL: vtn.URL, Credentials: &Credentials{ClientID: "id", ClientSecret: "s", TokenURL: vtn.URL + "/token"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := ven.Programs(context.Background(), ProgramQuery{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := issued.Load(); n != 1 {
+		t.Errorf("%d tokens for 3 calls, want 1", n)
+	}
+
+	for raw, want := range map[string]float64{`3600`: 3600, `"3600"`: 3600, `"0"`: 0, `1.5`: 1.5, `null`: 0} {
+		var got expiresIn
+		if err := json.Unmarshal([]byte(raw), &got); err != nil || float64(got) != want {
+			t.Errorf("expires_in %s: %v, %v; want %v", raw, float64(got), err, want)
+		}
+	}
+	for _, raw := range []string{`""`, `"1.5"`, `"+7"`, `"-1"`, `"1h"`, `"1"x`, `true`} {
+		var got expiresIn
+		if err := json.Unmarshal([]byte(raw), &got); err == nil {
+			t.Errorf("expires_in %s: accepted as %v", raw, float64(got))
+		}
+	}
+	var got expiresIn
+	if err := got.UnmarshalJSON([]byte(`"36`)); err == nil {
+		t.Error("an unterminated string was accepted")
 	}
 }

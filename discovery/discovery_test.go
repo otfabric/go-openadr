@@ -5,6 +5,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"os"
@@ -629,5 +630,137 @@ func TestBrowseHearsMulticastAnswers(t *testing.T) {
 	vtns := browse(t, n.host(1), Options{Timeout: 5 * time.Second, First: true})
 	if len(vtns) != 1 || vtns[0].Instance != "Loud" || vtns[0].Port != 3000 || vtns[0].URL() != "http://loud.local.:3000/" || !vtns[0].RequiresAuth {
 		t.Errorf("found %+v", vtns)
+	}
+}
+
+// What a Browse keeps is bounded, whatever is announced to it.
+func TestFoundIsBounded(t *testing.T) {
+	f := &found{instances: map[string]name{}, srv: map[string]record{}, txt: map[string][]string{}, addrs: map[string][]netip.Addr{}}
+	instance := func(i int) name { return append(name{fmt.Sprintf("VTN %d", i)}, serviceName...) }
+	host := name{"h", "local"}
+	var many []record
+	for i := range 3 * maxInstances {
+		many = append(many,
+			// The SRV record before the PTR record: one message is taken
+			// in whole, in any order.
+			record{name: instance(i), rtype: typeSRV, ttl: 120, target: host, port: 443},
+			record{name: serviceName, rtype: typePTR, ttl: 4500, target: instance(i)},
+		)
+	}
+	for i := range 4 * maxAddrs {
+		many = append(many, record{name: host, rtype: typeA, ttl: 120, addr: netip.AddrFrom4([4]byte{10, 0, 1, byte(i)})})
+	}
+	other := name{"other", "local"}
+	many = append(many,
+		// Not an instance of the service, though of as many labels.
+		record{name: serviceName, rtype: typePTR, ttl: 4500, target: name{"x", "_http", "_tcp", "local"}},
+		// Of an instance that was not kept, and of a host nothing names.
+		record{name: instance(3*maxInstances + 1), rtype: typeTXT, ttl: 4500, text: []string{"a=b"}},
+		record{name: other, rtype: typeA, ttl: 120, addr: netip.MustParseAddr("10.0.2.1")},
+	)
+	f.add(many)
+	if len(f.instances) != maxInstances || len(f.srv) != maxInstances || len(f.txt) != 0 {
+		t.Errorf("%d instances, %d SRV, %d TXT", len(f.instances), len(f.srv), len(f.txt))
+	}
+	if len(f.addrs) != 1 || len(f.addrs[key(host)]) != maxAddrs {
+		t.Errorf("addresses %v", f.addrs)
+	}
+	if _, ok := f.instances[key(name{"x", "_http", "_tcp", "local"})]; ok {
+		t.Error("kept an instance of another service")
+	}
+	// What is kept is still told more, but nothing new is kept.
+	var kept name
+	for _, n := range f.instances {
+		kept = n
+		break
+	}
+	f.add([]record{
+		{name: serviceName, rtype: typePTR, ttl: 4500, target: kept},
+		{name: serviceName, rtype: typePTR, ttl: 4500, target: instance(-1)},
+	})
+	if len(f.instances) != maxInstances || f.instances[key(instance(-1))] != nil {
+		t.Errorf("%d instances", len(f.instances))
+	}
+	vtns, open := f.vtns()
+	if len(vtns) != 0 || len(open) != maxOpen {
+		t.Errorf("%d VTNs, %d questions", len(vtns), len(open))
+	}
+	// A host that no SRV record names any more is forgotten.
+	for k, srv := range f.srv {
+		srv.target = other
+		f.srv[k] = srv
+	}
+	f.add(nil)
+	if len(f.addrs) != 0 {
+		t.Errorf("addresses %v", f.addrs)
+	}
+}
+
+// Responses that do not come from the Multicast DNS port, or from the
+// link, are not read (RFC 6762, sections 6 and 11).
+func TestBrowseReadsOnlyResponsesFromTheLink(t *testing.T) {
+	n := newFakeNet("10.0.0.1", "10.0.0.2", "172.16.0.9")
+	respond := func(sock *fakeSock) {
+		instance := append(name{"Elsewhere"}, serviceName...)
+		host := name{"elsewhere", "local"}
+		buf := make([]byte, maxMessage)
+		for {
+			k, from, err := sock.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			if q, err := parseMessage(buf[:k]); err != nil || q.response {
+				continue
+			}
+			b, _ := message{response: true, answers: []record{
+				{name: serviceName, rtype: typePTR, ttl: 4500, target: instance},
+				{name: instance, rtype: typeSRV, ttl: 120, target: host, port: 443},
+				{name: instance, rtype: typeTXT, ttl: 4500, text: []string{"version=3.1.0"}},
+				{name: host, rtype: typeA, ttl: 120, addr: netip.MustParseAddr("10.0.0.1")},
+			}}.marshal()
+			_, _ = sock.WriteTo(b, group)
+			_, _ = sock.WriteTo(b, from)
+		}
+	}
+	for what, sock := range map[string]*fakeSock{
+		"another port":    n.open(n.hosts[0], 5354, true),
+		"another network": n.open(n.hosts[2], 5353, true),
+	} {
+		t.Run(what, func(t *testing.T) {
+			done := make(chan struct{})
+			go func() { defer close(done); respond(sock) }()
+			defer func() { _ = sock.Close(); <-done }()
+			if vtns := browse(t, n.host(1), Options{Timeout: 200 * time.Millisecond}); len(vtns) != 0 {
+				t.Errorf("found %+v", vtns)
+			}
+		})
+	}
+}
+
+// A reply to a one-shot resolver repeats the questions that it answers,
+// not every question of the query.
+func TestLegacyReplyRepeatsWhatItAnswers(t *testing.T) {
+	n := newFakeNet("10.0.0.1", "10.0.0.2")
+	ad := advertise(t, n.host(0), Advertisement{Instance: "Gate", Host: "gate", Port: 8443})
+	browseQ := question{name: serviceName, qtype: typePTR}
+	var questions []question
+	for range 100 {
+		questions = append(questions, browseQ, question{name: ad.host, qtype: typeAAAA}, question{name: name{"x", "local"}, qtype: typeA})
+	}
+	q := message{id: 7, questions: questions}
+	b, err := q.marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := n.open(n.hosts[1], 41010, false)
+	reply, ok := query(t, sock, q, time.Second)
+	if !ok {
+		t.Fatal("no answer")
+	}
+	if reply.id != 7 || len(reply.questions) != 1 || !reply.questions[0].name.equal(serviceName) {
+		t.Errorf("id %d, %d questions", reply.id, len(reply.questions))
+	}
+	if r, _ := reply.marshal(); len(r) > len(b) {
+		t.Errorf("a reply of %d bytes to a query of %d", len(r), len(b))
 	}
 }

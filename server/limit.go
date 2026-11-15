@@ -67,7 +67,8 @@ type bucket struct {
 
 // NewRateLimiter returns a Limiter that lets each client make perSecond
 // requests a second on average, and burst at once after a quiet time. A
-// burst below 1 is 1.
+// burst below 1 is 1. A perSecond of 0 or less, or NaN, takes no request;
+// +Inf takes every request.
 //
 // It is a guard against a client that has gone wrong, a loop without a
 // pause, not a defence against an attack: it counts requests of clients it
@@ -77,6 +78,9 @@ func NewRateLimiter(perSecond float64, burst int) *RateLimiter {
 	if burst < 1 {
 		burst = 1
 	}
+	if math.IsNaN(perSecond) {
+		perSecond = 0
+	}
 	return &RateLimiter{rate: perSecond, burst: float64(burst), buckets: map[string]*bucket{}, now: time.Now}
 }
 
@@ -84,6 +88,9 @@ func NewRateLimiter(perSecond float64, burst int) *RateLimiter {
 func (l *RateLimiter) Allow(clientID, _ string) (bool, time.Duration) {
 	if l.rate <= 0 {
 		return false, 0
+	}
+	if math.IsInf(l.rate, 1) {
+		return true, 0
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

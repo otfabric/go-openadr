@@ -474,8 +474,10 @@ func (s *Store) Subscriptions() storage.Collection[storage.SubscriptionRecord, s
 		columns: func(r storage.SubscriptionRecord) []column {
 			return []column{{"program_id", r.ProgramID}, {"client_id", r.ClientID}, {"client_name", r.ClientName}}
 		},
-		check: func(ctx context.Context, tx *sql.Tx, r storage.SubscriptionRecord, _ *storage.SubscriptionRecord) error {
-			if r.ProgramID == "" {
+		check: func(ctx context.Context, tx *sql.Tx, r storage.SubscriptionRecord, old *storage.SubscriptionRecord) error {
+			// A subscription keeps naming a program that was deleted after it
+			// subscribed; it may be updated as long as it keeps that name.
+			if r.ProgramID == "" || (old != nil && old.ProgramID == r.ProgramID) {
 				return nil
 			}
 			return s.mustExist(ctx, tx, "programs", "program", r.ProgramID)

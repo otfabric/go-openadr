@@ -12,7 +12,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash/fnv"
 	"io"
 	"log/slog"
 	"math"
@@ -20,6 +19,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,10 +51,13 @@ type SenderConfig struct {
 	// MaxBackoff is the longest wait between two attempts; 1 minute when
 	// zero.
 	MaxBackoff time.Duration
-	// Queue is the number of notifications that may wait per worker; 256
-	// when zero. A notification for a full queue is dropped.
+	// Queue is the number of notifications that may wait per webhook host
+	// (the host name of the callback URL), retries included; 256 when
+	// zero. Queue times Workers may wait in all, and no less than twice
+	// Queue. A notification for a full queue is dropped.
 	Queue int
-	// Workers is the number of deliveries that run at once; 4 when zero.
+	// Workers is the number of deliveries that run at once, each to a
+	// host of its own; 4 when zero.
 	Workers int
 	// Logger receives failed and dropped deliveries. Nil disables logging.
 	Logger *slog.Logger
@@ -88,8 +91,11 @@ type Metrics interface {
 }
 
 // Sender delivers notifications to webhooks. Notifications for one callback
-// URL are delivered in the order they were sent, one at a time; a webhook
-// that is slow or down delays those that share its worker, and nothing else.
+// URL are delivered in the order they were sent, one at a time. A webhook
+// host has at most one request on its way and at most Queue notifications
+// waiting, and a notification that waits for its next attempt holds no
+// worker: a webhook that is slow, down or asks to wait delays its own
+// notifications and fills its own share of the queue, and nothing else.
 //
 // Delivery is at least once while the Sender runs: a notification is sent
 // again when the webhook did not confirm it, so a webhook may see one twice.
@@ -101,17 +107,26 @@ type Sender struct {
 	cfg    SenderConfig
 	client *http.Client
 	logger guard.Logger
+	// perHost and total bound the notifications that wait: for one
+	// webhook host, and for all of them.
+	perHost, total int
 
-	mu     sync.Mutex
-	closed bool
-	queues []chan delivery
-	wg     sync.WaitGroup
-	// stop ends the waits between attempts when Close runs out of time;
-	// stopped is cancelled with it, and ends the requests on their way.
-	stop     chan struct{}
-	stopOnce sync.Once
-	stopped  context.Context
-	abort    context.CancelFunc
+	mu   sync.Mutex
+	cond *sync.Cond // signalled when there is work, or nothing left
+	// closed: no more notifications are accepted. stopping: Close ran out
+	// of time, and what waits is given up on.
+	closed, stopping bool
+	lanes            map[string]*lane // by callback URL
+	hosts            map[string]*host // by host name
+	ready            []*host          // hosts with a lane ready and nothing on its way, in turn
+	waiting          int              // notifications not on their way
+	pending          int              // notifications not finished
+	wg               sync.WaitGroup
+	stopOnce         sync.Once
+	// stopped is cancelled when Close returns or runs out of time, and
+	// ends the requests on their way.
+	stopped context.Context
+	abort   context.CancelFunc
 }
 
 type delivery struct {
@@ -119,10 +134,41 @@ type delivery struct {
 	body       []byte
 	// done, when not nil, is told what became of the delivery.
 	done func(error)
+
+	// Kept between attempts, under the lock of the Sender.
+	attempts int
+	start    time.Time
+	wait     time.Duration
+	last     error
 }
 
+// lane is the notifications for one callback URL, in order. Only its head
+// is attempted.
+type lane struct {
+	url   string
+	host  *host
+	queue []*delivery
+	// inFlight: the head is on its way. timer: the head waits for its
+	// next attempt.
+	inFlight bool
+	timer    *time.Timer
+}
+
+// host is what the Sender keeps for one webhook host.
+type host struct {
+	name     string
+	count    int  // notifications not finished
+	waiting  int  // notifications not on their way
+	inFlight bool // one is on its way
+	ready    []*lane
+}
+
+// afterFunc schedules the next attempt of a notification; tests may
+// replace it.
+var afterFunc = time.AfterFunc
+
 // finish tells done what became of the delivery.
-func (s *Sender) finish(d delivery, err error) {
+func (s *Sender) finish(d *delivery, err error) {
 	if d.done != nil {
 		s.logger.Call("SendConfirmed done", func() { d.done(err) })
 	}
@@ -168,16 +214,19 @@ func NewSender(cfg SenderConfig) *Sender {
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}
-	s := &Sender{cfg: cfg, client: cfg.HTTPClient, logger: guard.NewLogger(cfg.Logger, "webhook"), stop: make(chan struct{})}
+	s := &Sender{
+		cfg: cfg, client: cfg.HTTPClient, logger: guard.NewLogger(cfg.Logger, "webhook"),
+		perHost: cfg.Queue, total: capacity(cfg.Queue, cfg.Workers),
+		lanes: make(map[string]*lane), hosts: make(map[string]*host),
+	}
+	s.cond = sync.NewCond(&s.mu)
 	s.stopped, s.abort = context.WithCancel(context.Background())
 	if s.client == nil {
 		s.client = defaultClient(cfg.AllowInsecure)
 	}
-	s.queues = make([]chan delivery, cfg.Workers)
-	for i := range s.queues {
-		s.queues[i] = make(chan delivery, cfg.Queue)
+	for range cfg.Workers {
 		s.wg.Add(1)
-		go s.work(s.queues[i])
+		go s.work()
 	}
 	return s
 }
@@ -217,15 +266,54 @@ func defaultClient(allowInsecure bool) *http.Client {
 	}
 }
 
-// shared is 100.64.0.0/10, the shared address space of RFC 6598.
-var shared = netip.MustParsePrefix("100.64.0.0/10")
+// refused are address ranges a webhook on the Internet does not have, that
+// the classes of netip.Addr do not cover: the shared address space of RFC
+// 6598, special-purpose IPv4 (RFC 6890, RFC 2544, RFC 1112), IPv4-compatible
+// and IPv4-translated IPv6, deprecated site-local IPv6 (RFC 3879), the
+// local-use NAT64 prefix of RFC 8215 and Teredo (RFC 4380), whose IPv4 part
+// is not where the connection ends up.
+var refused = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("::ffff:0:0:0/96"),
+	netip.MustParsePrefix("fec0::/10"),
+	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2001::/32"),
+}
+
+var (
+	// nat64 is the well-known NAT64 prefix of RFC 6052: the IPv4 address
+	// is in the last 32 bits.
+	nat64 = netip.MustParsePrefix("64:ff9b::/96")
+	// sixToFour is 6to4 (RFC 3056): the IPv4 address follows the prefix.
+	sixToFour = netip.MustParsePrefix("2002::/16")
+)
 
 // public reports whether an address is one a webhook on the Internet can
-// have.
+// have. An IPv6 address that stands for an IPv4 address is judged by that
+// one.
 func public(addr netip.Addr) bool {
 	addr = addr.Unmap()
-	return addr.IsValid() && addr.IsGlobalUnicast() && !addr.IsPrivate() && !addr.IsLoopback() &&
-		!addr.IsLinkLocalUnicast() && !shared.Contains(addr)
+	if !addr.IsValid() || !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() {
+		return false
+	}
+	for _, p := range refused {
+		if p.Contains(addr) {
+			return false
+		}
+	}
+	b := addr.As16()
+	switch {
+	case nat64.Contains(addr):
+		return public(netip.AddrFrom4([4]byte(b[12:16])))
+	case sixToFour.Contains(addr):
+		return public(netip.AddrFrom4([4]byte(b[2:6])))
+	}
+	return true
 }
 
 // checkURL applies the rules for a callback URL that need no request.
@@ -304,24 +392,139 @@ func (s *Sender) Send(callbackURL, bearerToken string, body []byte) {
 // uses it to keep a notification until it is delivered. done must not
 // call Close: Close waits for the goroutines it runs on.
 func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, done func(error)) {
-	d := delivery{url: callbackURL, token: bearerToken, body: body, done: done}
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(callbackURL))
+	d := &delivery{url: callbackURL, token: bearerToken, body: body, done: done}
+	name := hostOf(callbackURL)
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		s.finish(d, fmt.Errorf("%w: the sender", openadr.ErrClosed))
 		return
 	}
-	select {
-	case s.queues[queueOf(h.Sum32(), len(s.queues))] <- d:
-		s.mu.Unlock()
-	default:
+	h := s.hosts[name]
+	if (h != nil && h.waiting >= s.perHost) || s.waiting >= s.total {
 		s.mu.Unlock()
 		s.log("webhook: queue full, notification dropped", callbackURL, nil)
 		s.metric("Metrics.OnDropped", Metrics.OnDropped)
 		s.finish(d, errors.New("webhook: the queue is full"))
+		return
 	}
+	if h == nil {
+		h = &host{name: name}
+		s.hosts[name] = h
+	}
+	l := s.lanes[callbackURL]
+	if l == nil {
+		l = &lane{url: callbackURL, host: h}
+		s.lanes[callbackURL] = l
+	}
+	l.queue = append(l.queue, d)
+	h.count++
+	h.waiting++
+	s.waiting++
+	s.pending++
+	if len(l.queue) == 1 {
+		s.readied(l)
+	}
+	s.mu.Unlock()
+}
+
+// capacity is how many notifications may wait in all: Queue per host slot,
+// and room for two hosts at least, so that one host never fills it.
+func capacity(queue, workers int) int {
+	n := max(workers, 2)
+	if queue > math.MaxInt/n {
+		return math.MaxInt
+	}
+	return queue * n
+}
+
+// hostOf is the host a callback URL names, the key of its share.
+func hostOf(callbackURL string) string {
+	u, err := url.Parse(callbackURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
+}
+
+// readied makes the head of a lane one that may be attempted. Called with
+// s.mu held.
+func (s *Sender) readied(l *lane) {
+	h := l.host
+	h.ready = append(h.ready, l)
+	if !h.inFlight && len(h.ready) == 1 {
+		s.ready = append(s.ready, h)
+		s.cond.Signal()
+	}
+}
+
+// released ends the request a host had on its way. Called with s.mu held.
+func (s *Sender) released(h *host) {
+	h.inFlight = false
+	if len(h.ready) > 0 {
+		s.ready = append(s.ready, h)
+		s.cond.Signal()
+	}
+}
+
+// next takes the head of the next lane that may be attempted, the hosts in
+// turn. Called with s.mu held.
+func (s *Sender) next() (*lane, *delivery) {
+	if len(s.ready) == 0 {
+		return nil, nil
+	}
+	h := s.ready[0]
+	s.ready[0] = nil
+	s.ready = s.ready[1:]
+	l := h.ready[0]
+	h.ready[0] = nil
+	h.ready = h.ready[1:]
+	h.inFlight, l.inFlight = true, true
+	h.waiting--
+	s.waiting--
+	return l, l.queue[0]
+}
+
+// removed accounts for a notification that is finished and no longer in
+// its lane. Called with s.mu held.
+func (s *Sender) removed(l *lane) {
+	h := l.host
+	h.count--
+	s.pending--
+	if len(l.queue) == 0 && s.lanes[l.url] == l {
+		delete(s.lanes, l.url)
+	}
+	if h.count == 0 && s.hosts[h.name] == h {
+		delete(s.hosts, h.name)
+	}
+	if s.pending == 0 {
+		s.cond.Broadcast()
+	}
+}
+
+// takeWaiting takes a notification that is not on its way, to be given up
+// on. Called with s.mu held, once Close ran out of time.
+func (s *Sender) takeWaiting() *delivery {
+	for _, l := range s.lanes {
+		i := 0
+		if l.inFlight {
+			i = 1
+		}
+		if len(l.queue) <= i {
+			continue
+		}
+		d := l.queue[i]
+		l.queue = append(l.queue[:i], l.queue[i+1:]...)
+		if i == 0 && l.timer != nil {
+			l.timer.Stop()
+			l.timer = nil
+		}
+		l.host.waiting--
+		s.waiting--
+		s.removed(l)
+		return d
+	}
+	return nil
 }
 
 // Close stops accepting notifications and waits until those that are queued
@@ -336,9 +539,7 @@ func (s *Sender) Close(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.closed {
 		s.closed = true
-		for _, q := range s.queues {
-			close(q)
-		}
+		s.cond.Broadcast()
 	}
 	s.mu.Unlock()
 	done := make(chan struct{})
@@ -348,69 +549,135 @@ func (s *Sender) Close(ctx context.Context) error {
 		s.abort()
 		return nil
 	case <-ctx.Done():
-		// Give up on what is still waiting between attempts.
-		s.stopOnce.Do(func() { close(s.stop) })
+		// Give up on what is still waiting, and on the requests on their
+		// way.
+		s.stopOnce.Do(func() {
+			s.mu.Lock()
+			s.stopping = true
+			s.cond.Broadcast()
+			s.mu.Unlock()
+		})
 		s.abort()
 		<-done
 		return ctx.Err()
 	}
 }
 
-func (s *Sender) work(queue chan delivery) {
+// work attempts notifications until the Sender is closed and nothing is
+// left, or Close ran out of time and nothing is left to give up on.
+func (s *Sender) work() {
 	defer s.wg.Done()
-	for d := range queue {
-		s.deliver(d)
+	s.mu.Lock()
+	for {
+		if s.stopping {
+			if d := s.takeWaiting(); d != nil {
+				s.mu.Unlock()
+				s.failed(d, d.attempts, s.closedError(d.last))
+				s.mu.Lock()
+				continue
+			}
+		} else if l, d := s.next(); l != nil {
+			s.mu.Unlock()
+			s.attempt(l, d)
+			s.mu.Lock()
+			continue
+		}
+		if s.closed && (s.pending == 0 || s.stopping) {
+			s.mu.Unlock()
+			return
+		}
+		s.cond.Wait()
 	}
 }
 
-func (s *Sender) deliver(d delivery) {
-	start := time.Now()
-	failed := func(attempts int, err error) {
-		s.log("webhook: notification not delivered", d.url, err)
-		s.metric("Metrics.OnFailed", func(m Metrics) { m.OnFailed(attempts, time.Since(start), err) })
-		s.finish(d, err)
+// closedError is why a notification is given up on when the Sender is
+// closed: after the error of its last attempt, if it had one.
+func (s *Sender) closedError(last error) error {
+	if last == nil {
+		return fmt.Errorf("%w: the sender", openadr.ErrClosed)
 	}
-	select {
-	case <-s.stop:
-		// Close ran out of time: what is still queued is not sent.
-		failed(0, fmt.Errorf("%w: the sender", openadr.ErrClosed))
-		return
-	default:
+	return fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, last)
+}
+
+// failed reports a notification that is given up on.
+func (s *Sender) failed(d *delivery, attempts int, err error) {
+	var took time.Duration
+	if !d.start.IsZero() {
+		took = time.Since(d.start)
 	}
-	wait := s.cfg.Backoff
-	for attempt := 1; ; attempt++ {
-		retry, after, err := s.post(d)
-		if err == nil {
-			s.metric("Metrics.OnDelivered", func(m Metrics) { m.OnDelivered(attempt, time.Since(start)) })
-			s.finish(d, nil)
-			return
-		}
-		if !retry {
-			err = &RefusedError{Err: err}
-		}
-		if !retry || attempt >= s.cfg.Attempts {
-			failed(attempt, err)
-			return
-		}
-		if s.stopped.Err() != nil {
-			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
-			return
-		}
+	s.log("webhook: notification not delivered", d.url, err)
+	s.metric("Metrics.OnFailed", func(m Metrics) { m.OnFailed(attempts, took, err) })
+	s.finish(d, err)
+}
+
+// attempt makes one attempt of the head of a lane, and then either
+// finishes it or schedules its next attempt, without waiting for it.
+func (s *Sender) attempt(l *lane, d *delivery) {
+	if d.attempts == 0 {
+		d.start, d.wait = time.Now(), s.cfg.Backoff
+	}
+	d.attempts++
+	retry, after, err := s.post(d)
+	if err != nil && !retry {
+		err = &RefusedError{Err: err}
+	}
+	again := err != nil && retry && d.attempts < s.cfg.Attempts
+	if again && s.stopped.Err() != nil {
+		again, err = false, s.closedError(err)
+	}
+
+	s.mu.Lock()
+	h := l.host
+	l.inFlight = false
+	if again && s.stopping {
+		again, err = false, s.closedError(err)
+	}
+	if again {
 		// A webhook that says when to come back is taken at its word, up
-		// to the longest wait there is.
-		select {
-		case <-time.After(min(max(wait, after), s.cfg.MaxBackoff)):
-		case <-s.stop:
-			failed(attempt, fmt.Errorf("%w: the sender, after: %w", openadr.ErrClosed, err))
-			return
-		}
-		wait = backoff.Double(wait, s.cfg.MaxBackoff)
+		// to the longest wait there is. The notification waits in its
+		// lane, and holds no worker.
+		delay := min(max(d.wait, after), s.cfg.MaxBackoff)
+		d.wait = backoff.Double(d.wait, s.cfg.MaxBackoff)
+		d.last = err
+		h.waiting++
+		s.waiting++
+		l.timer = afterFunc(delay, func() { s.retry(l) })
+		s.released(h)
+		s.mu.Unlock()
+		return
 	}
+	l.queue[0] = nil
+	l.queue = l.queue[1:]
+	if len(l.queue) > 0 {
+		s.readied(l)
+	}
+	s.released(h)
+	s.removed(l)
+	s.mu.Unlock()
+
+	if err == nil {
+		s.metric("Metrics.OnDelivered", func(m Metrics) { m.OnDelivered(d.attempts, time.Since(d.start)) })
+		s.finish(d, nil)
+		return
+	}
+	s.failed(d, d.attempts, err)
+}
+
+// retry makes the head of a lane ready for its next attempt, when its wait
+// is over.
+func (s *Sender) retry(l *lane) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if l.timer == nil || s.stopping {
+		return
+	}
+	l.timer = nil
+	s.readied(l)
 }
 
 // post sends one request. retry says whether another attempt can help, and
 // after how long the webhook asked to wait first, if it did.
-func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
+func (s *Sender) post(d *delivery) (retry bool, after time.Duration, err error) {
 	if _, err := s.checkURL(d.url); err != nil {
 		return false, 0, err
 	}
@@ -418,7 +685,7 @@ func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.url, bytes.NewReader(d.body))
 	if err != nil {
-		return false, 0, err
+		return false, 0, redactError(err, d.url)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if d.token != "" {
@@ -426,7 +693,7 @@ func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return true, 0, err
+		return true, 0, redactError(err, d.url)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
@@ -434,15 +701,82 @@ func (s *Sender) post(d delivery) (retry bool, after time.Duration, err error) {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
 		return false, 0, nil
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout:
-		if seconds, err := time.ParseDuration(resp.Header.Get("Retry-After") + "s"); err == nil && seconds > 0 {
-			after = seconds
-		}
-		return true, after, fmt.Errorf("the webhook answered %d", resp.StatusCode)
+		return true, retryAfter(resp.Header.Get("Retry-After"), time.Now()), fmt.Errorf("the webhook answered %d", resp.StatusCode)
 	default:
 		// A redirect, or a refusal that will not change by asking again.
 		return false, 0, fmt.Errorf("the webhook answered %d", resp.StatusCode)
 	}
 }
+
+// retryAfter is the wait a Retry-After field asks for (RFC 9110, section
+// 10.2.3): delay-seconds, digits only, or an HTTP-date; zero when there is
+// none or it cannot be read. A number too large for a Duration is the
+// largest one; the caller caps it.
+func retryAfter(value string, now time.Time) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if strings.Trim(value, "0123456789") == "" {
+		seconds, err := strconv.ParseUint(value, 10, 64)
+		if err != nil || seconds > uint64(math.MaxInt64/int64(time.Second)) {
+			return math.MaxInt64
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	if at, err := http.ParseTime(value); err == nil && at.After(now) {
+		return at.Sub(now)
+	}
+	return 0
+}
+
+// redacted is a callback URL without its query, fragment and credentials,
+// which may hold a secret of the subscriber.
+func redacted(callbackURL string) string {
+	if u, err := url.Parse(callbackURL); err == nil {
+		u.RawQuery, u.ForceQuery, u.Fragment, u.RawFragment, u.User = "", false, "", "", nil
+		return u.String()
+	}
+	if i := strings.IndexAny(callbackURL, "?#"); i >= 0 {
+		callbackURL = callbackURL[:i]
+	}
+	if i := strings.LastIndex(callbackURL, "@"); i >= 0 {
+		if j := strings.Index(callbackURL, "//"); j >= 0 && j < i {
+			callbackURL = callbackURL[:j+2] + callbackURL[i+1:]
+		}
+	}
+	return callbackURL
+}
+
+// redactError is err without the query of the callback URL: the URL of a
+// *url.Error, which net/http reports in full, is redacted, and an error
+// whose text still holds the query reads without it.
+func redactError(err error, callbackURL string) error {
+	var ue *url.Error
+	if errors.As(err, &ue) && ue.URL != "" {
+		err = &url.Error{Op: ue.Op, URL: redacted(ue.URL), Err: ue.Err}
+	}
+	secret := callbackURL
+	if u, perr := url.Parse(callbackURL); perr == nil {
+		secret = u.RawQuery
+	} else if i := strings.IndexByte(callbackURL, '?'); i >= 0 {
+		secret = callbackURL[i+1:]
+	}
+	if secret != "" && strings.Contains(err.Error(), secret) {
+		return &redactedError{text: strings.ReplaceAll(err.Error(), secret, "…"), err: err}
+	}
+	return err
+}
+
+// redactedError reads as an error with a secret taken out of its text, and
+// unwraps to it.
+type redactedError struct {
+	text string
+	err  error
+}
+
+func (e *redactedError) Error() string { return e.text }
+func (e *redactedError) Unwrap() error { return e.err }
 
 // log reports a failure without the query of the URL, which may hold a
 // secret of the subscriber.
@@ -450,28 +784,9 @@ func (s *Sender) log(msg, callbackURL string, err error) {
 	if !s.logger.Active() {
 		return
 	}
-	where := callbackURL
-	if u, perr := url.Parse(callbackURL); perr == nil {
-		u.RawQuery, u.User = "", nil
-		where = u.String()
-	}
-	attrs := []any{slog.String("callback", where)}
+	attrs := []any{slog.String("callback", redacted(callbackURL))}
 	if err != nil {
-		attrs = append(attrs, slog.Any("error", err))
+		attrs = append(attrs, slog.String("error", redactError(err, callbackURL).Error()))
 	}
 	s.logger.Warn(msg, attrs...)
-}
-
-// queueOf is the queue of the hash among n, the same for a callback URL on
-// any platform: the remainder is taken in uint32, never in an int that is
-// 32 bits wide and would go negative.
-func queueOf(hash uint32, n int) int {
-	if n <= 1 {
-		return 0
-	}
-	m := uint32(math.MaxInt32)
-	if n < math.MaxInt32 {
-		m = uint32(n)
-	}
-	return int(hash % m)
 }

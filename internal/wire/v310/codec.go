@@ -427,8 +427,14 @@ func unmarshalNotification(data []byte) (openadr.Notification, error) {
 	if err := decode(data, &w); err != nil {
 		return openadr.Notification{}, err
 	}
-	if w.Operation == "" {
+	switch openadr.Operation(w.Operation) {
+	case openadr.OperationCreate, openadr.OperationRead, openadr.OperationUpdate, openadr.OperationDelete:
+	case "":
 		return openadr.Notification{}, invalid("operation", "is required")
+	default:
+		// The notification schema's enum. The value is not repeated: the
+		// error may be logged, and the value is the sender's to choose.
+		return openadr.Notification{}, invalid("operation", "is not CREATE, READ, UPDATE or DELETE")
 	}
 	if len(w.Object) == 0 || string(w.Object) == "null" {
 		return openadr.Notification{}, invalid("object", "is required")
@@ -438,8 +444,9 @@ func unmarshalNotification(data []byte) (openadr.Notification, error) {
 		ObjectType: openadr.ObjectType(w.ObjectType), Operation: openadr.Operation(w.Operation), Targets: w.Targets,
 	}
 	var err error
-	// The schema discriminates the object on its own objectType; the one
-	// of the notification says the same and is always there.
+	// The schema discriminates the object on its own objectType, which
+	// VTNs do not all write; the one of the notification is required, so
+	// it decides, and common.NotifiedObject checks that the two agree.
 	switch n.ObjectType {
 	case openadr.ObjectProgram:
 		n.Object, _, err = unmarshalProgram(w.Object)
@@ -463,7 +470,26 @@ func unmarshalNotification(data []byte) (openadr.Notification, error) {
 	if err != nil {
 		return openadr.Notification{}, fmt.Errorf("object: %w", err)
 	}
+	if err := common.NotifiedObject(n.ObjectType, w.Object, objectKinds); err != nil {
+		return openadr.Notification{}, err
+	}
 	return n, nil
+}
+
+// objectKinds maps the discriminators an object of OpenADR 3.1.0 can carry
+// in its objectType to the kind of object each names.
+var objectKinds = map[string]openadr.ObjectType{
+	string(openadr.ObjectProgram):       openadr.ObjectProgram,
+	string(openadr.ObjectEvent):         openadr.ObjectEvent,
+	string(openadr.ObjectReport):        openadr.ObjectReport,
+	string(openadr.ObjectSubscription):  openadr.ObjectSubscription,
+	string(openadr.ObjectVEN):           openadr.ObjectVEN,
+	string(openadr.ObjectResource):      openadr.ObjectResource,
+	string(openadr.ObjectResourceGroup): openadr.ObjectResourceGroup,
+	typeBLVENRequest:                    openadr.ObjectVEN,
+	typeVENVENRequest:                   openadr.ObjectVEN,
+	typeBLResourceRequest:               openadr.ObjectResource,
+	typeVENResourceRequest:              openadr.ObjectResource,
 }
 
 // --- notifiers

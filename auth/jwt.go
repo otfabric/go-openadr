@@ -91,7 +91,13 @@ type JWTValidator struct {
 	lastFetch time.Time
 	// fetchErr is why the last fetch failed, while no key set was had.
 	fetchErr error
+	// fetching is closed when the fetch in flight ends; nil when none is.
+	fetching chan struct{}
 }
+
+// defaultFetchTimeout bounds a fetch of the key set when the HTTP client
+// has no timeout of its own.
+var defaultFetchTimeout = 10 * time.Second
 
 // refetchAfter is the least time between two fetches of the key set, so
 // that tokens with made-up key IDs cannot be used to flood the provider.
@@ -363,22 +369,29 @@ func (v *JWTValidator) keysFor(ctx context.Context, kid string) ([]any, error) {
 		return keys, nil
 	}
 	v.mu.Lock()
-	defer v.mu.Unlock()
+	_, known := v.fetched[kid]
 	// The interval holds while the key set has never been had too:
 	// otherwise every request would wait on a provider that is down.
-	if _, known := v.fetched[kid]; !known && (v.lastFetch.IsZero() || v.cfg.Now().Sub(v.lastFetch) >= refetchAfter) {
-		fetched, err := v.fetch(ctx)
-		if err != nil {
-			// Keep verifying with what is known; the provider may be back
-			// by the time a new key is really needed.
-			if v.fetched == nil {
-				v.fetchErr = err
-			}
-		} else {
-			v.fetched, v.fetchErr = fetched, nil
-		}
-		v.lastFetch = v.cfg.Now()
+	if !known && v.fetching == nil && (v.lastFetch.IsZero() || v.cfg.Now().Sub(v.lastFetch) >= refetchAfter) {
+		v.fetching = make(chan struct{})
+		// The fetch is not tied to the request that asked for it: a client
+		// that goes away must not decide whether, or when, the key set is
+		// had. No lock is held while it runs, so tokens with known keys do
+		// not wait for it.
+		go v.refresh(context.WithoutCancel(ctx), v.fetching)
 	}
+	wait := v.fetching
+	v.mu.Unlock()
+	if !known && wait != nil {
+		select {
+		case <-wait:
+		case <-ctx.Done():
+			return nil, fmt.Errorf("auth: waiting for the key set: %w", context.Cause(ctx))
+		}
+	}
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	if v.fetched == nil && len(keys) == 0 && v.fetchErr != nil {
 		return nil, fmt.Errorf("auth: fetching the key set: %w", v.fetchErr)
 	}
@@ -391,6 +404,33 @@ func (v *JWTValidator) keysFor(ctx context.Context, kid string) ([]any, error) {
 		}
 	}
 	return keys, nil
+}
+
+// refresh fetches the key set once and closes done when it is had or the
+// fetch failed.
+func (v *JWTValidator) refresh(ctx context.Context, done chan struct{}) {
+	timeout := v.cfg.HTTPClient.Timeout
+	if timeout <= 0 {
+		timeout = defaultFetchTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	fetched, err := v.fetch(ctx)
+	cancel()
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err != nil {
+		// Keep verifying with what is known; the provider may be back by
+		// the time a new key is really needed.
+		if v.fetched == nil {
+			v.fetchErr = err
+		}
+	} else {
+		v.fetched, v.fetchErr = fetched, nil
+	}
+	v.lastFetch = v.cfg.Now()
+	v.fetching = nil
+	close(done)
 }
 
 // fetch reads the key set. Keys it cannot use are skipped: a provider may

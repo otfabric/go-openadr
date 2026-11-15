@@ -24,8 +24,12 @@ type Memory struct {
 	subscriptions table[SubscriptionRecord]
 	groups        table[openadr.ResourceGroup]
 
-	// The Outbox.
-	deliveries []Delivery
+	// The Outbox: the deliveries oldest first, and indexes of them by ID
+	// and by callback URL, so that neither a write nor the queue of one
+	// URL has to look through all of them.
+	deliveries   []Delivery
+	deliveryURLs map[string]string
+	byURL        map[string][]Delivery
 }
 
 // NewMemory returns an empty Memory store.
@@ -39,6 +43,9 @@ func NewMemory() *Memory {
 
 		subscriptions: newTable[SubscriptionRecord](),
 		groups:        newTable[openadr.ResourceGroup](),
+
+		deliveryURLs: make(map[string]string),
+		byURL:        make(map[string][]Delivery),
 	}
 }
 
@@ -291,8 +298,11 @@ func (m *Memory) Subscriptions() Collection[SubscriptionRecord, SubscriptionFilt
 	return collection[SubscriptionRecord, SubscriptionFilter]{
 		mu: &m.mu, table: &m.subscriptions,
 		id: func(s SubscriptionRecord) string { return s.ID },
-		check: func(s SubscriptionRecord, _ *SubscriptionRecord) error {
-			if s.ProgramID == "" {
+		check: func(s SubscriptionRecord, old *SubscriptionRecord) error {
+			// A subscription that keeps its program may be updated when
+			// the program is gone: deleting a program leaves the
+			// subscriptions that name it.
+			if s.ProgramID == "" || old != nil && old.ProgramID == s.ProgramID {
 				return nil
 			}
 			if _, ok := m.programs.byID[s.ProgramID]; !ok {
@@ -306,6 +316,21 @@ func (m *Memory) Subscriptions() Collection[SubscriptionRecord, SubscriptionFilt
 				(f.ClientID == "" || s.ClientID == f.ClientID)
 		},
 	}
+}
+
+// restoreSubscription adds a subscription without checking its program,
+// for a store that rebuilds its state from a record of it: the program it
+// names existed when the subscription was taken, and may have been deleted
+// since.
+func (m *Memory) restoreSubscription(s SubscriptionRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, exists := m.subscriptions.byID[s.ID]; exists {
+		return conflict("ID %s is in use", s.ID)
+	}
+	m.subscriptions.byID[s.ID] = s
+	m.subscriptions.order = append(m.subscriptions.order, s.ID)
+	return nil
 }
 
 // ResourceGroups implements Store.
@@ -371,10 +396,12 @@ func (m *Memory) restoreResourceGroup(g openadr.ResourceGroup) error {
 func (m *Memory) AddDelivery(_ context.Context, d Delivery) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if slices.ContainsFunc(m.deliveries, func(o Delivery) bool { return o.ID == d.ID }) {
+	if _, exists := m.deliveryURLs[d.ID]; exists {
 		return conflict("ID %s is in use", d.ID)
 	}
 	m.deliveries = append(m.deliveries, d)
+	m.deliveryURLs[d.ID] = d.CallbackURL
+	m.byURL[d.CallbackURL] = append(m.byURL[d.CallbackURL], d)
 	return nil
 }
 
@@ -382,8 +409,18 @@ func (m *Memory) AddDelivery(_ context.Context, d Delivery) error {
 func (m *Memory) RemoveDelivery(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	// A new slice: the old one may be in the hands of a reader.
-	m.deliveries = slices.DeleteFunc(slices.Clone(m.deliveries), func(d Delivery) bool { return d.ID == id })
+	url, ok := m.deliveryURLs[id]
+	if !ok {
+		return nil
+	}
+	delete(m.deliveryURLs, id)
+	// Readers are given copies, so the slices are changed in place.
+	m.deliveries = slices.DeleteFunc(m.deliveries, func(d Delivery) bool { return d.ID == id })
+	if rest := slices.DeleteFunc(m.byURL[url], func(d Delivery) bool { return d.ID == id }); len(rest) > 0 {
+		m.byURL[url] = rest
+	} else {
+		delete(m.byURL, url)
+	}
 	return nil
 }
 
@@ -392,4 +429,11 @@ func (m *Memory) Deliveries(context.Context) ([]Delivery, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return slices.Clone(m.deliveries), nil
+}
+
+// DeliveriesTo implements URLOutbox.
+func (m *Memory) DeliveriesTo(_ context.Context, callbackURL string) ([]Delivery, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return slices.Clone(m.byURL[callbackURL]), nil
 }

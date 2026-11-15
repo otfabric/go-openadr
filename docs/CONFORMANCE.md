@@ -101,7 +101,10 @@ limit on what a client keeps, nor on the callback URLs of a subscription
 distinct callback URLs). A create past one is answered 409 Conflict, a status
 the document lists for creates. The conflict is with what the client already
 keeps, and deleting some resolves it. Too many callback URLs is a fault of the
-request, and is answered 400 on the field.
+request, and is answered 400 on the field. With an outbox, the notifications the subscriptions of
+one client have recorded and not yet delivered are bounded too (10000 and
+64 MiB by default); past that, a notification for that client is dropped and
+logged.
 
 **A request body must be JSON, or say nothing.** Every requestBody of the
 document is `application/json`. A body declared otherwise (`text/plain`, a
@@ -138,6 +141,13 @@ report an existing event, a resource an existing VEN. A violation answers
 foreign key constraint"). A program with events and a VEN with resources
 cannot be deleted (409). Reports are not deleted with their event.
 
+**A program may be deleted while subscriptions name it.** OpenADR 3.1.0
+says nothing of it, and other VTNs (cB-Sigma's) allow it. The subscriptions
+stay and keep the `programID`; they are told of nothing more of that
+program, may still be updated as long as they keep the `programID` (moving
+one to a program that does not exist is 409), and are kept across a restart.
+A subscription created with a `programID` needs that program to exist.
+
 **`createVen` can answer 409.** The Definition requires `venName` to be
 unique; the OpenAPI document defines no 409 for this one create operation.
 
@@ -148,6 +158,15 @@ The VTN follows `objectMetadata`. The clients accept whatever a VTN sends
 there, including nothing: OpenLEADR v0.2.7 leaves `objectType` out of `ven`
 objects. In a request the VTN requires the discriminator, as the request
 schemas do.
+
+**A notification's object must not say it is another kind of object.** The
+notification schema discriminates its `object` on the object's own
+`objectType`, which VTNs do not all write. The notification's `objectType` is
+required, so it decides how the object is read; an object whose own
+`objectType` names another known kind is refused as a `ValidationError`, and
+one without it, or with a value that names no kind, is read as the
+notification says. In 3.1.0, `operation` must be one of the schema's enum,
+`CREATE`, `READ`, `UPDATE` or `DELETE`.
 
 **A Business Logic request from a VEN is refused (403).** A `BL_VEN_REQUEST`
 or `BL_RESOURCE_REQUEST` carries a client ID and targets, which only
@@ -207,7 +226,8 @@ first start to last end.
 
 **Answers are compressed with gzip or deflate on request.** The specification does not
 mention it; it is plain HTTP content negotiation, and a client that does
-not ask gets none.
+not ask gets none. Answers about subscriptions, which carry bearer tokens,
+are never compressed.
 
 **`/auth/token` errors carry both forms.** The OpenAPI document gives the
 `problem` schema for errors of `/auth/token`, while its unreferenced
@@ -219,6 +239,8 @@ JSON exchanged between systems to be UTF-8. `encoding/json` would read the
 bytes of a string that is not as U+FFFD, so that two different names would
 look alike and be written back as neither; the codecs of both revisions
 refuse such a body as a `ValidationError` on `body` (the VTN answers 400).
+So is a `\u` escape of a surrogate that is not one of a pair, which no
+UTF-8 can carry (RFC 8259 section 8.2, RFC 7493 section 2.1).
 A problem in an error answer is read as best it can be.
 
 **`/auth/token` reads Basic credentials both ways.** RFC 6749 section
@@ -263,7 +285,8 @@ when the VTN has an outbox.** The Definition leaves retries to the VTN.
 Without `Config.Outbox`, a notification is lost when the sender has used up
 its attempts or the VTN stops; with it, it is sent again, after a restart
 too, until the webhook confirms it, refuses it for good, its subscription
-is deleted or `NotificationTTL` has passed. Either way a notification is
+is deleted or no longer names the callback URL, or `NotificationTTL` has
+passed; it is sent with the subscription's bearer token as it is then. Either way a notification is
 lost when the VTN cannot read its subscriptions at the moment it would
 send it.
 

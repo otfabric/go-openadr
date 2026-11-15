@@ -369,3 +369,38 @@ func TestRefuses301(t *testing.T) {
 		}
 	}
 }
+
+// TestNotificationEnumAndDiscriminator checks that a notification is read
+// only with an operation of the schema's enum, and only when the objectType
+// of its object, where it names a kind of object, names the kind the
+// notification says.
+func TestNotificationEnumAndDiscriminator(t *testing.T) {
+	c := Codec()
+	for body, field := range map[string]string{
+		`{"objectType":"EVENT","operation":"BOGUS","object":{"programID":"p"}}`:                                       "operation",
+		`{"objectType":"EVENT","operation":"POST","object":{"programID":"p"}}`:                                        "operation",
+		`{"objectType":"EVENT","operation":"create","object":{"programID":"p"}}`:                                      "operation",
+		`{"objectType":"EVENT","operation":"CREATE","object":{"objectType":"PROGRAM","programID":"p"}}`:               "object.objectType",
+		`{"objectType":"VEN","operation":"UPDATE","object":{"objectType":"BL_RESOURCE_REQUEST","venName":"v"}}`:       "object.objectType",
+		`{"objectType":"RESOURCE","operation":"DELETE","object":{"objectType":"VEN","resourceName":"r","venID":"v"}}`: "object.objectType",
+		`{"objectType":"PROGRAM","operation":"READ","object":{"objectType":"RESOURCE_GROUP","programName":"p"}}`:      "object.objectType",
+	} {
+		var ve *openadr.ValidationError
+		if n, err := c.UnmarshalNotification([]byte(body)); !errors.As(err, &ve) || ve.Field != field {
+			t.Errorf("%s = %+v, %v; want a ValidationError for %s", body, n, err, field)
+		}
+	}
+	for body, kind := range map[string]openadr.ObjectType{
+		`{"objectType":"EVENT","operation":"READ","object":{"programID":"p"}}`:                                                         openadr.ObjectEvent,
+		`{"objectType":"EVENT","operation":"UPDATE","object":{"objectType":"EVENT","programID":"p"}}`:                                  openadr.ObjectEvent,
+		`{"objectType":"EVENT","operation":"UPDATE","object":{"objectType":"SOMETHING_ELSE","programID":"p"}}`:                         openadr.ObjectEvent,
+		`{"objectType":"VEN","operation":"CREATE","object":{"objectType":"BL_VEN_REQUEST","venName":"v"}}`:                             openadr.ObjectVEN,
+		`{"objectType":"VEN","operation":"CREATE","object":{"objectType":"VEN_VEN_REQUEST","venName":"v"}}`:                            openadr.ObjectVEN,
+		`{"objectType":"RESOURCE","operation":"CREATE","object":{"objectType":"VEN_RESOURCE_REQUEST","resourceName":"r","venID":"v"}}`: openadr.ObjectResource,
+		`{"objectType":"RESOURCE_GROUP","operation":"DELETE","object":{"objectType":"RESOURCE_GROUP","resourceGroupName":"g"}}`:        openadr.ObjectResourceGroup,
+	} {
+		if n, err := c.UnmarshalNotification([]byte(body)); err != nil || n.ObjectType != kind {
+			t.Errorf("%s = %+v, %v; want a %s notification", body, n, err, kind)
+		}
+	}
+}

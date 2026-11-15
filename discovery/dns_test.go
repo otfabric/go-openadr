@@ -3,9 +3,11 @@
 package discovery
 
 import (
+	"encoding/binary"
 	"errors"
 	"net/netip"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -126,6 +128,7 @@ func TestParseMalformed(t *testing.T) {
 		"a reserved label type":           append(header(1), 0x80, 0, 0, 1, 0, 1),
 		"a question without type":         append(header(1), 1, 'a', 0, 0),
 		"a record without header":         append(header(0, 1), 1, 'a', 0, 0, 1),
+		"a record name past the end":      append(header(0, 1), 5, 'a'),
 		"data past the end":               append(header(0, 1), 1, 'a', 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 9, 1),
 		"an A record of 3 bytes":          append(header(0, 1), 1, 'a', 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 3, 1, 2, 3),
 		"an AAAA record of 4 bytes":       append(header(0, 1), 1, 'a', 0, 0, 28, 0, 1, 0, 0, 0, 1, 0, 4, 1, 2, 3, 4),
@@ -157,6 +160,7 @@ func FuzzParseMessage(f *testing.F) {
 	}.marshal()
 	f.Add(seed)
 	f.Add([]byte{0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0xC0, 12, 0, 1, 0, 1})
+	f.Add(pointerQuestions(maxMessage))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		m, err := parseMessage(data)
 		if err != nil {
@@ -169,4 +173,95 @@ func FuzzParseMessage(f *testing.F) {
 			t.Fatalf("parsed but not written: %v", err)
 		}
 	})
+}
+
+// pointerQuestions is a query of at most size bytes: one name of 127
+// one-byte labels, and then as many questions as fit that point at it.
+func pointerQuestions(size int) []byte {
+	msg := make([]byte, 12, size)
+	msg = append(msg, []byte(strings.Repeat("\x01a", 127))...)
+	msg = append(msg, 0, 0, 1, 0, 1)
+	count := 1
+	for len(msg)+6 <= size && count < 0xFFFF {
+		msg = append(msg, 0xC0, 12, 0, 1, 0, 1)
+		count++
+	}
+	binary.BigEndian.PutUint16(msg[4:], uint16(count))
+	return msg
+}
+
+// Pointers to one long name do not make a message into many long names:
+// the names of a message take a few times its size, in all.
+func TestParseBoundsNames(t *testing.T) {
+	msg := pointerQuestions(maxMessage)
+	if _, err := parseMessage(msg); !errors.Is(err, errMalformed) {
+		t.Errorf("a message of %d bytes of pointers: %v", len(msg), err)
+	}
+	allocs := testing.AllocsPerRun(10, func() { _, _ = parseMessage(msg) })
+	// A name is a slice and its labels, one-byte ones without allocating;
+	// before the bound, each of the 1478 questions was one.
+	if max := float64(nameBudget(msg)/255 + 16); allocs > max {
+		t.Errorf("%.0f allocations, want at most %.0f", allocs, max)
+	}
+	// About 2 KiB per name of 127 labels: the bound allows some 145. The
+	// fewest bytes of three runs on one processor, so that what other
+	// goroutines allocate meanwhile is not counted.
+	prev := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(prev)
+	got := uint64(1 << 62)
+	for range 3 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		_, _ = parseMessage(msg)
+		runtime.ReadMemStats(&after)
+		got = min(got, after.TotalAlloc-before.TotalAlloc)
+	}
+	if got > 1<<20 {
+		t.Errorf("parsing allocated %d bytes", got)
+	}
+
+	// A few pointers to it are read.
+	small := pointerQuestions(290)
+	m, err := parseMessage(small)
+	if err != nil || len(m.questions) != int(binary.BigEndian.Uint16(small[4:])) {
+		t.Errorf("%d questions, %v", len(m.questions), err)
+	}
+}
+
+func TestParseNameLimits(t *testing.T) {
+	header := func(questions byte) []byte { return []byte{0, 0, 0, 0, 0, questions, 0, 0, 0, 0, 0, 0} }
+	// 3 labels of 63 bytes and one of 61: 254 bytes, 255 with the root.
+	longest := []byte(strings.Repeat("\x3f"+strings.Repeat("a", 63), 3) + "\x3d" + strings.Repeat("a", 61))
+	m, err := parseMessage(append(append(header(1), longest...), 0, 0, 1, 0, 1))
+	if err != nil || len(m.questions) != 1 || len(m.questions[0].name) != 4 {
+		t.Fatalf("a name of 255 bytes: %+v, %v", m, err)
+	}
+	if _, err := m.marshal(); err != nil {
+		t.Errorf("a name of 255 bytes is not written: %v", err)
+	}
+	longer := append(append([]byte{}, longest...), 1, 'a')
+	if _, err := parseMessage(append(append(header(1), longer...), 0, 0, 1, 0, 1)); !errors.Is(err, errMalformed) {
+		t.Errorf("a name of 257 bytes: %v", err)
+	}
+
+	bad := map[string][]byte{
+		// The second question points at the first one's end, a name yet to
+		// be read when the pointer is.
+		"a pointer forward": append(header(2), 0xC0, 18, 0, 1, 0, 1, 1, 'a', 0, 0, 1, 0, 1),
+		// A pointer into the labels that led to it.
+		"a pointer into its own name": append(header(1), 1, 'a', 1, 'b', 0xC0, 14, 0, 1, 0, 1),
+		// Back to a name that points ahead again.
+		"a loop of two pointers": append(header(2), 1, 'a', 0xC0, 20, 0, 1, 0, 1, 0xC0, 12, 0, 1, 0, 1),
+	}
+	for what, msg := range bad {
+		if _, err := parseMessage(msg); !errors.Is(err, errMalformed) {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+	// A pointer back, through a pointer further back, is read.
+	chain := append(header(3), 1, 'a', 0, 0, 1, 0, 1, 1, 'b', 0xC0, 12, 0, 1, 0, 1, 1, 'c', 0xC0, 19, 0, 1, 0, 1)
+	m, err = parseMessage(chain)
+	if err != nil || len(m.questions) != 3 || m.questions[2].name.String() != "c.b.a." {
+		t.Errorf("a chain of pointers back: %+v, %v", m.questions, err)
+	}
 }

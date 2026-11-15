@@ -222,6 +222,8 @@ type JWTValidator struct {
 
 	// fetchErr is why the last fetch failed, while no key set was had.
 
+	// fetching is closed when the fetch in flight ends; nil when none is.
+
 }
 ```
 

@@ -488,7 +488,9 @@ Delivery is at least once. By default it is not durable: what is on its
 way when the VTN stops is lost. A VTN with an outbox records each
 notification before it sends it, and sends again after a restart what no
 webhook confirmed, in the order it happened, for as long as
-`NotificationTTL` says:
+`NotificationTTL` says. What the subscriptions of one client keep recorded
+there is bounded (`server.Config.Limits`: 10000 notifications and 64 MiB by
+default):
 
 ```go
 store, err := storage.OpenFile("vtn.journal", storage.FileOptions{}) // a Store and an Outbox
@@ -637,7 +639,8 @@ start,end,type,values
   strings and are not restricted, so private values work.
 - **Compression.** The VTN compresses answers of 1 KiB and more with gzip
   or deflate for a client that accepts one, which the clients of this
-  module do (gzip).
+  module do (gzip). Answers about subscriptions, which carry bearer
+  tokens, are never compressed.
 - **Revisions.** The clients speak 3.1.0 unless `Config.Version` says
   3.0.1; the VTN speaks 3.1.0. See [OpenADR 3.0.1](#openadr-301).
 - **Extensions.** Resource groups and WebSocket notifications are not part
