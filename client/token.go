@@ -133,6 +133,24 @@ func tokenLifetime(expiresIn float64) time.Duration {
 	return life - expirySlack
 }
 
+// expiresIn is the expires_in of a token response: a number (RFC 6749
+// section 5.1), or a string of digits, as some identity providers send it.
+type expiresIn float64
+
+func (e *expiresIn) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		if s == "" || strings.Trim(s, "0123456789") != "" {
+			return fmt.Errorf("expires_in %q is not a number of seconds", s)
+		}
+		b = []byte(s)
+	}
+	return json.Unmarshal(b, (*float64)(e))
+}
+
 func (s *credentialSource) Token(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -160,11 +178,11 @@ func (s *credentialSource) Token(ctx context.Context) (string, error) {
 		return "", err
 	}
 	var resp struct {
-		AccessToken      string  `json:"access_token"`
-		TokenType        string  `json:"token_type"`
-		ExpiresIn        float64 `json:"expires_in"`
-		Error            string  `json:"error"`
-		ErrorDescription string  `json:"error_description"`
+		AccessToken      string    `json:"access_token"`
+		TokenType        string    `json:"token_type"`
+		ExpiresIn        expiresIn `json:"expires_in"`
+		Error            string    `json:"error"`
+		ErrorDescription string    `json:"error_description"`
 	}
 	// The body of an error response is not always JSON; the status decides.
 	decodeErr := json.Unmarshal(body, &resp)
@@ -179,7 +197,7 @@ func (s *credentialSource) Token(ctx context.Context) (string, error) {
 	}
 	s.token, s.expires = resp.AccessToken, time.Time{}
 	if resp.ExpiresIn > 0 {
-		s.expires = time.Now().Add(tokenLifetime(resp.ExpiresIn))
+		s.expires = time.Now().Add(tokenLifetime(float64(resp.ExpiresIn)))
 	}
 	return s.token, nil
 }

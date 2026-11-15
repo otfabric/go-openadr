@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -282,6 +283,47 @@ func TestOfEventDuration(t *testing.T) {
 			t.Errorf("got %v, want ErrTooLarge", err)
 		}
 	})
+
+	// The refusal comes before the rows: the repetitions are counted, not
+	// made. Made, they were about a million rows (hundreds of MiB).
+	for _, length := range []string{"P50Y", "P13D"} {
+		t.Run("refused without making the rows "+length, func(t *testing.T) {
+			e := openadr.Event{
+				Duration:       duration(length),
+				IntervalPeriod: period(midnight, "PT1S"),
+				Intervals:      []openadr.Interval{prices(0, nil, 1)},
+			}
+			if _, err := timeline.OfEvent(e, timeline.Options{}); !errors.Is(err, timeline.ErrTooLarge) {
+				t.Fatalf("got %v, want ErrTooLarge", err)
+			}
+			// Generous for the race detector and coverage; one row is
+			// about 100 bytes, and a million of them were made before.
+			got := allocated(func() { _, _ = timeline.OfEvent(e, timeline.Options{}) })
+			if got > 8<<20 {
+				t.Errorf("allocated %d bytes before refusing", got)
+			}
+		})
+	}
+
+	t.Run("a table that just fits is made", func(t *testing.T) {
+		// 2^20 rows of one second: the most a table may hold.
+		e := openadr.Event{
+			Duration:       duration("PT1048576S"),
+			IntervalPeriod: period(midnight, "PT1S"),
+			Intervals:      []openadr.Interval{prices(0, nil, 1)},
+		}
+		rows, err := timeline.OfEvent(e, timeline.Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1<<20 || !rows[len(rows)-1].Start.Equal(midnight.Add((1<<20-1)*time.Second)) {
+			t.Errorf("%d rows, the last at %v", len(rows), rows[len(rows)-1].Start)
+		}
+		e.Duration = duration("PT1048577S")
+		if _, err := timeline.OfEvent(e, timeline.Options{}); !errors.Is(err, timeline.ErrTooLarge) {
+			t.Errorf("one row more: got %v, want ErrTooLarge", err)
+		}
+	})
 }
 
 func TestAt(t *testing.T) {
@@ -521,4 +563,20 @@ func ExampleOfEvent() {
 	// 00:00 01:00 PRICE 0.17
 	// 01:00 01:30 PRICE 0.21
 	// 01:30 02:00 PRICE 0.09
+}
+
+// allocated returns the bytes f allocates: the fewest of three runs on one
+// processor, so that what other goroutines allocate meanwhile is not
+// counted.
+func allocated(f func()) uint64 {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	least := uint64(math.MaxUint64)
+	for range 3 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		least = min(least, after.TotalAlloc-before.TotalAlloc)
+	}
+	return least
 }

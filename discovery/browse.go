@@ -25,44 +25,92 @@ type Options struct {
 	net network
 }
 
-// found collects the records of the answers.
+// What one Browse keeps of the answers, and asks again about: far more
+// than a site has VTNs, and little enough that a sender on the link that
+// announces names without end cannot grow it.
+const (
+	maxInstances = 64
+	// maxAddrs is the most addresses kept of one host.
+	maxAddrs = 8
+	// maxOpen is the most questions asked again at a time, besides the
+	// browse itself.
+	maxOpen = 16
+)
+
+// found collects the records of the answers, of at most maxInstances
+// instances.
 type found struct {
 	// By the lower case name of the instance.
 	instances map[string]name
 	srv       map[string]record
 	txt       map[string][]string
-	// By the lower case name of the host.
+	// By the lower case name of the host, for hosts that a SRV record
+	// kept names.
 	addrs map[string][]netip.Addr
 }
 
 func key(n name) string { return strings.ToLower(n.String()) }
 
-func (f *found) add(records []record) {
-	for _, r := range records {
-		if r.ttl == 0 {
-			// A goodbye, of something that is leaving.
-			continue
-		}
-		switch r.rtype {
-		case typePTR:
-			if r.name.equal(serviceName) && len(r.target) == len(serviceName)+1 {
-				f.instances[key(r.target)] = r.target
+// isInstance reports whether a name is that of an instance of the service:
+// one label before the name of the service.
+func isInstance(n name) bool { return len(n) == len(serviceName)+1 && n[1:].equal(serviceName) }
+
+// add takes in the records of a message. The instances come first, then
+// what is known of them, then the addresses of their hosts, so that one
+// message can tell everything in any order.
+func (f *found) add(lists ...[]record) {
+	for _, list := range lists {
+		for _, r := range list {
+			if r.ttl == 0 || r.rtype != typePTR || !r.name.equal(serviceName) || !isInstance(r.target) {
+				// A goodbye is of something that is leaving.
+				continue
 			}
-		case typeSRV:
-			f.srv[key(r.name)] = r
-		case typeTXT:
-			f.txt[key(r.name)] = r.text
-		case typeA, typeAAAA:
+			if k := key(r.target); f.instances[k] != nil || len(f.instances) < maxInstances {
+				f.instances[k] = r.target
+			}
+		}
+	}
+	for _, list := range lists {
+		for _, r := range list {
+			if r.ttl == 0 || r.rtype != typeSRV && r.rtype != typeTXT {
+				continue
+			}
 			k := key(r.name)
-			if !slices.Contains(f.addrs[k], r.addr) {
+			if f.instances[k] == nil {
+				continue
+			}
+			if r.rtype == typeSRV {
+				f.srv[k] = r
+			} else {
+				f.txt[k] = r.text
+			}
+		}
+	}
+	hosts := map[string]bool{}
+	for _, srv := range f.srv {
+		hosts[key(srv.target)] = true
+	}
+	for _, list := range lists {
+		for _, r := range list {
+			if r.ttl == 0 || r.rtype != typeA && r.rtype != typeAAAA {
+				continue
+			}
+			k := key(r.name)
+			if hosts[k] && len(f.addrs[k]) < maxAddrs && !slices.Contains(f.addrs[k], r.addr) {
 				f.addrs[k] = append(f.addrs[k], r.addr)
 			}
 		}
 	}
+	// A host that no SRV record names any more is forgotten.
+	for k := range f.addrs {
+		if !hosts[k] {
+			delete(f.addrs, k)
+		}
+	}
 }
 
-// vtns returns the VTNs of which enough is known, and the questions that
-// would complete the others.
+// vtns returns the VTNs of which enough is known, and up to maxOpen of the
+// questions that would complete the others.
 func (f *found) vtns() ([]VTN, []question) {
 	var (
 		out  []VTN
@@ -77,17 +125,17 @@ func (f *found) vtns() ([]VTN, []question) {
 		instance := f.instances[k]
 		srv, hasSRV := f.srv[k]
 		text, hasTXT := f.txt[k]
-		if !hasSRV {
+		if !hasSRV && len(open) < maxOpen {
 			open = append(open, question{name: instance, qtype: typeSRV})
 		}
-		if !hasTXT {
+		if !hasTXT && len(open) < maxOpen {
 			open = append(open, question{name: instance, qtype: typeTXT})
 		}
 		if !hasSRV || !hasTXT {
 			continue
 		}
 		addrs := f.addrs[key(srv.target)]
-		if len(addrs) == 0 {
+		if len(addrs) == 0 && len(open) < maxOpen {
 			// Wanted, not needed: a VEN is to use the name.
 			open = append(open, question{name: srv.target, qtype: typeA})
 		}
@@ -124,6 +172,7 @@ func Browse(ctx context.Context, o Options) ([]VTN, error) {
 
 	var (
 		conns  []net.PacketConn
+		on     []link
 		failed error
 	)
 	for _, l := range links {
@@ -132,10 +181,10 @@ func Browse(ctx context.Context, o Options) ([]VTN, error) {
 			failed = err
 			continue
 		}
-		conns = append(conns, conn)
+		conns, on = append(conns, conn), append(on, l)
 		// The Multicast DNS port as well, where it can be had.
 		if member, err := network.member(l); err == nil {
-			conns = append(conns, member)
+			conns, on = append(conns, member), append(on, l)
 		}
 	}
 	if len(conns) == 0 {
@@ -143,13 +192,19 @@ func Browse(ctx context.Context, o Options) ([]VTN, error) {
 	}
 	answers := make(chan message)
 	var readers sync.WaitGroup
-	for _, conn := range conns {
+	for i, conn := range conns {
 		readers.Go(func() {
 			buf := make([]byte, maxMessage)
 			for {
-				n, _, err := conn.ReadFrom(buf)
+				n, from, err := conn.ReadFrom(buf)
 				if err != nil {
 					return
+				}
+				// A response comes from the Multicast DNS port (RFC 6762,
+				// section 6) and from the link (section 11); the others
+				// are not read.
+				if udp, ok := from.(*net.UDPAddr); !ok || udp.Port != group.Port || !on[i].onLink(from) {
+					continue
 				}
 				if m, err := parseMessage(buf[:n]); err == nil && m.response {
 					select {
@@ -192,9 +247,11 @@ func Browse(ctx context.Context, o Options) ([]VTN, error) {
 	for {
 		select {
 		case m := <-answers:
-			f.add(m.answers)
-			f.add(m.additional)
-			if vtns, open := f.vtns(); o.First && len(vtns) > 0 && len(open) == 0 {
+			f.add(m.answers, m.additional)
+			if !o.First {
+				continue
+			}
+			if vtns, open := f.vtns(); len(vtns) > 0 && len(open) == 0 {
 				return vtns, nil
 			}
 		case <-again.C:

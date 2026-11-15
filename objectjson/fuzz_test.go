@@ -29,11 +29,10 @@ func roundTrip[T objectjson.Object](t *testing.T, v openadr.Version, data []byte
 	}
 	out, err := objectjson.Marshal(v, obj)
 	if err != nil {
-		var ve *openadr.ValidationError
-		if !errors.As(err, &ve) {
-			t.Fatalf("Marshal(%s, %+v): %v", v, obj, err)
+		if knownGap(v, any(obj), err) {
+			return
 		}
-		return
+		t.Fatalf("Marshal(%s, %+v): %v", v, obj, err)
 	}
 	again, err := objectjson.Unmarshal[T](v, out)
 	if err != nil {
@@ -42,6 +41,29 @@ func roundTrip[T objectjson.Object](t *testing.T, v openadr.Version, data []byte
 	if out2, err := objectjson.Marshal(v, again); err != nil || !bytes.Equal(out, out2) {
 		t.Fatalf("encoding is not stable (%v):\n%s\n%s", err, out, out2)
 	}
+}
+
+// knownGap reports whether err is Marshal refusing, in revision v, what
+// the same revision decodes and Validate accepts, for a reason known and
+// kept on purpose: OpenADR 3.0.1 requires programID on a report and a
+// subscription; the decoder reads one without it, and Validate does not
+// require it (3.1.0 has none), while the encoder writes only what the
+// 3.0.1 schema allows. Any other error fails.
+func knownGap(v openadr.Version, obj any, err error) bool {
+	var ve *openadr.ValidationError
+	if v != openadr.Version301 || !errors.As(err, &ve) || ve.Field != "programID" {
+		return false
+	}
+	if n, ok := obj.(openadr.Notification); ok {
+		obj = n.Object
+	}
+	switch o := obj.(type) {
+	case openadr.Report:
+		return o.ProgramID == ""
+	case openadr.Subscription:
+		return o.ProgramID == ""
+	}
+	return false
 }
 
 func FuzzUnmarshal(f *testing.F) {

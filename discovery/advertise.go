@@ -301,7 +301,12 @@ func (ad *Advertiser) answer(p advertisedOn, query message, from net.Addr) {
 	}
 	wants := func(q question, rtype uint16) bool { return q.qtype == rtype || q.qtype == typeANY }
 	unicast := false
+	// The questions that added to the reply: what a reply to a one-shot
+	// resolver repeats. There are no more of them than records in the
+	// reply, however many questions the query holds.
+	var answered []question
 	for _, q := range query.questions {
+		had := len(reply.answers) + len(reply.additional)
 		switch {
 		case q.name.equal(serviceName) && wants(q, typePTR):
 			// Who says it knows us already is not told again.
@@ -330,6 +335,9 @@ func (ad *Advertiser) answer(p advertisedOn, query message, from net.Addr) {
 			continue
 		}
 		unicast = unicast || q.unicast
+		if len(reply.answers)+len(reply.additional) > had {
+			answered = append(answered, q)
+		}
 	}
 	if len(reply.answers) == 0 {
 		return
@@ -339,8 +347,9 @@ func (ad *Advertiser) answer(p advertisedOn, query message, from net.Addr) {
 		// A resolver that is not Multicast DNS proper: it is answered as
 		// an ordinary DNS server would, directly, with its ID and its
 		// questions, and without the bits and the long lives it would
-		// not understand.
-		to, reply.id, reply.questions = from, query.id, query.questions
+		// not understand. RFC 6762, section 6.7, has it repeat the
+		// question; only those that were answered are.
+		to, reply.id, reply.questions = from, query.id, answered
 		for _, list := range [][]record{reply.answers, reply.additional} {
 			for i := range list {
 				list[i].unique = false

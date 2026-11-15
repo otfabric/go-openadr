@@ -277,6 +277,13 @@ func TestDialRefused(t *testing.T) {
 			w.Header().Set("Upgrade", "websocket")
 			w.Header().Set("Sec-WebSocket-Accept", "bm90IHRoZSBhbnN3ZXI=")
 			w.WriteHeader(http.StatusSwitchingProtocols)
+		case "/subprotocol":
+			// Switches properly, but to a subprotocol nobody asked for.
+			w.Header().Set("Connection", "Upgrade")
+			w.Header().Set("Upgrade", "websocket")
+			w.Header().Set("Sec-WebSocket-Accept", accept(r.Header.Get("Sec-WebSocket-Key")))
+			w.Header().Set("Sec-WebSocket-Protocol", "chat")
+			w.WriteHeader(http.StatusSwitchingProtocols)
 		case "/plain":
 			_, _ = io.WriteString(w, "hello")
 		}
@@ -292,6 +299,12 @@ func TestDialRefused(t *testing.T) {
 	}
 	if _, err := Dial(context.Background(), nil, ts.URL+"/liar", nil); err == nil || errors.As(err, &refused) {
 		t.Errorf("liar: %v", err)
+	}
+	if _, err := Dial(context.Background(), nil, ts.URL+"/subprotocol", nil); err == nil || !strings.Contains(err.Error(), "subprotocol") {
+		t.Errorf("subprotocol not offered: %v", err)
+	}
+	if _, err := Dial(context.Background(), nil, ts.URL+"/subprotocol", http.Header{"Sec-WebSocket-Protocol": {"other"}}); err == nil || !strings.Contains(err.Error(), "subprotocol") {
+		t.Errorf("subprotocol not among those offered: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -457,6 +470,57 @@ func TestCloseWithoutStatus(t *testing.T) {
 	// The close is answered.
 	if code := closeCode(t, conn); code != CloseNormal {
 		t.Errorf("answered with %d", code)
+	}
+}
+
+// A close frame with a body RFC 6455 does not allow (5.5.1, 7.4) fails
+// the connection with 1002; one that is well formed is answered with its
+// own code.
+func TestCloseFrameBodies(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		payload []byte
+		want    int // the code of the CloseError; 0 when refused
+	}{
+		{"one byte", []byte{0x03}, 0},
+		{"code 0", []byte{0x00, 0x00}, 0},
+		{"code 999", []byte{0x03, 0xE7}, 0},
+		{"code 1004", []byte{0x03, 0xEC}, 0},
+		{"code 1005", []byte{0x03, 0xED}, 0},
+		{"code 1006", []byte{0x03, 0xEE}, 0},
+		{"code 1015", []byte{0x03, 0xF7}, 0},
+		{"code 1016", []byte{0x03, 0xF8}, 0},
+		{"code 2999", []byte{0x0B, 0xB7}, 0},
+		{"code 5000", []byte{0x13, 0x88}, 0},
+		{"a reason that is not UTF-8", []byte{0x03, 0xE8, 0xff, 0xfe}, 0},
+		{"code 1000", []byte{0x03, 0xE8}, 1000},
+		{"code 1003 with a reason", append([]byte{0x03, 0xEB}, "bye"...), 1003},
+		{"code 1007", []byte{0x03, 0xEF}, 1007},
+		{"code 1014", []byte{0x03, 0xF6}, 1014},
+		{"code 3000", []byte{0x0B, 0xB8}, 3000},
+		{"code 4999", []byte{0x13, 0x87}, 4999},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := make(chan error, 1)
+			ts := serve(t, false, func(c *Conn) {
+				_, err := c.ReadMessage()
+				got <- err
+			})
+			conn := raw(t, ts)
+			_, _ = conn.Write(frame(0x80|opClose, tc.payload))
+			err := <-got
+			var closed *CloseError
+			answer := closeCode(t, conn)
+			if tc.want == 0 {
+				if err == nil || errors.As(err, &closed) || answer != CloseProtocolError {
+					t.Errorf("got %v, answered with %d; want a failure answered with 1002", err, answer)
+				}
+				return
+			}
+			if !errors.As(err, &closed) || closed.Code != tc.want || closed.Reason != string(tc.payload[2:]) || answer != tc.want {
+				t.Errorf("got %v, answered with %d; want %d", err, answer, tc.want)
+			}
+		})
 	}
 }
 

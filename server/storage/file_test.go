@@ -4,6 +4,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
+	"github.com/otfabric/go-openadr/internal/wire"
 )
 
 func openFile(t *testing.T, path string) *File {
@@ -231,4 +233,130 @@ func TestFileClosed(t *testing.T) {
 	}
 	start.Done()
 	all.Wait()
+}
+
+// A journal may hold a subscription whose program is gone: in the order
+// it happened, or as a snapshot of it, as earlier versions wrote it.
+// Either opens, again and again, and the subscription can still be
+// updated and deleted.
+func TestFileSubscriptionOfAProgramThatIsGone(t *testing.T) {
+	ctx := context.Background()
+	sub := SubscriptionRecord{Subscription: openadr.Subscription{Metadata: meta("s1"), ProgramID: "p1", ClientID: "c1", ClientName: "n1",
+		ObjectOperations: []openadr.ObjectOperation{{Objects: []openadr.ObjectType{openadr.ObjectEvent},
+			Operations: []openadr.Operation{openadr.OperationCreate}, CallbackURL: "https://example.com/hook"}}}}
+	line := func(rec record) string {
+		t.Helper()
+		b, err := json.Marshal(rec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b) + "\n"
+	}
+	program, err := fileCodec.Programs.Marshal(openadr.Program{Metadata: meta("p1"), Name: "one"}, wire.Object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, err := fileCodec.Subscriptions.Marshal(sub.Subscription, wire.Object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same subscription twice is not a journal File writes.
+	twice := line(record{Op: "create", Kind: "subscription", Object: object})
+	path := filepath.Join(t.TempDir(), "twice.journal")
+	if err := os.WriteFile(path, []byte(twice+twice), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenFile(path, FileOptions{NoSync: true}); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("a subscription created twice: %v", err)
+	}
+	for name, journal := range map[string]string{
+		"in order": line(record{Op: "create", Kind: "program", Object: program}) +
+			line(record{Op: "create", Kind: "subscription", Object: object}) +
+			line(record{Op: "delete", Kind: "program", ID: "p1"}),
+		"as a snapshot": line(record{Op: "create", Kind: "subscription", Object: object}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "vtn.journal")
+			if err := os.WriteFile(path, []byte(journal), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for i := range 3 {
+				f, err := OpenFile(path, FileOptions{NoSync: true})
+				if err != nil {
+					t.Fatalf("opening %d: %v", i+1, err)
+				}
+				got, err := f.Subscriptions().Get(ctx, "s1")
+				if err != nil || got.ProgramID != "p1" {
+					t.Errorf("opening %d: the subscription is %+v, %v", i+1, got, err)
+				}
+				if i == 1 {
+					// Its owner updates it, keeping its program.
+					got.ClientName = "n2"
+					if err := f.Subscriptions().Update(ctx, got); err != nil {
+						t.Errorf("updating it: %v", err)
+					}
+					moved := got
+					moved.ProgramID = "p9"
+					var ce *ConstraintError
+					if err := f.Subscriptions().Update(ctx, moved); !errors.As(err, &ce) {
+						t.Errorf("pointing it at a program that is not there: %v", err)
+					}
+				}
+				if i == 2 && got.ClientName != "n2" {
+					t.Errorf("the update is lost: %+v", got)
+				}
+				if err := f.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f := openFile(t, path)
+			if _, err := f.Subscriptions().Delete(ctx, "s1"); err != nil {
+				t.Errorf("deleting it: %v", err)
+			}
+		})
+	}
+}
+
+// A change longer than a line of the journal holds is refused, and
+// nothing of it is kept: what is written is what replay reads. A line that
+// is longer all the same makes the journal corrupt.
+func TestFileLineLimit(t *testing.T) {
+	ctx := context.Background()
+	defer func(n int) { maxLine = n }(maxLine)
+	maxLine = 1024
+	path := filepath.Join(t.TempDir(), "vtn.journal")
+	f := openFile(t, path)
+	long := strings.Repeat("x", maxLine)
+	if err := f.Programs().Create(ctx, openadr.Program{Metadata: meta("p1"), Name: long}); !errors.Is(err, errTooLong) {
+		t.Errorf("a program longer than a line: %v", err)
+	}
+	if _, err := f.Programs().Get(ctx, "p1"); !errors.Is(err, openadr.ErrNotFound) {
+		t.Errorf("the refused program is kept: %v", err)
+	}
+	if err := f.AddDelivery(ctx, Delivery{ID: "d1", Body: []byte(`"` + long + `"`)}); !errors.Is(err, errTooLong) {
+		t.Errorf("a delivery longer than a line: %v", err)
+	}
+	if list, _ := f.Deliveries(ctx); len(list) != 0 {
+		t.Errorf("the refused delivery is kept: %+v", list)
+	}
+	// The store goes on.
+	if err := f.Programs().Create(ctx, openadr.Program{Metadata: meta("p2"), Name: "two"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := openFile(t, path); dump(t, got)[0].([]openadr.Program)[0].ID != "p2" {
+		t.Errorf("after a restart: %+v", dump(t, got))
+	}
+	object, err := fileCodec.Programs.Marshal(openadr.Program{Metadata: meta("p3"), Name: long}, wire.Object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"op":"create","kind":"program","object":`+string(object)+`}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenFile(path, FileOptions{NoSync: true}); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("a journal with a line too long: %v", err)
+	}
 }

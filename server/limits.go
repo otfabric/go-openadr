@@ -30,17 +30,28 @@ type Limits struct {
 	// makes ever more reports, so a limit on them needs the application to
 	// delete old ones.
 	VENs, Resources, Reports int
+	// Deliveries is the most webhook notifications the subscriptions of
+	// one client have recorded in the Outbox and not yet delivered, and
+	// DeliveryBytes the most bytes they take (bodies, callback URLs and
+	// tokens); 10000 and 64 MiB when zero. They apply with Config.Outbox
+	// only. A notification past either is not recorded and not sent, and
+	// a warning is logged: what one client's subscriptions cost the store
+	// stays bounded while their webhooks do not take what they are sent.
+	Deliveries, DeliveryBytes int
 }
 
 // Defaults of Limits.
 const (
 	defaultMaxSubscriptions = 100
 	defaultMaxCallbackURLs  = 16
+	defaultMaxDeliveries    = 10000
+	defaultMaxDeliveryBytes = 64 << 20
 )
 
 // limits are the Limits of a Server, each zero when there is none.
 type limits struct {
 	subscriptions, callbackURLs, vens, resources, reports int
+	deliveries, deliveryBytes                             int
 }
 
 func newLimits(l Limits) limits {
@@ -59,6 +70,8 @@ func newLimits(l Limits) limits {
 		vens:          pick(l.VENs, 0),
 		resources:     pick(l.Resources, 0),
 		reports:       pick(l.Reports, 0),
+		deliveries:    pick(l.Deliveries, defaultMaxDeliveries),
+		deliveryBytes: pick(l.DeliveryBytes, defaultMaxDeliveryBytes),
 	}
 }
 

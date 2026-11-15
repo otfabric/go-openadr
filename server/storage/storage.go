@@ -22,15 +22,17 @@ import (
 //   - program names and VEN names are unique, and so is a resource name
 //     within its VEN;
 //   - an event refers to an existing program, a report to an existing event,
-//     a resource to an existing VEN, and a subscription that names a program
-//     to an existing one;
+//     a resource to an existing VEN, and a subscription that is created
+//     with, or updated to, a program to an existing one;
 //   - a program that has events and a VEN that has resources cannot be
 //     deleted;
 //   - the children of a resource group exist, and a resource or resource
 //     group that is deleted leaves the groups it was a child of.
 //
 // A violation is reported as a *ConstraintError. Reports outlive the event
-// they refer to.
+// they refer to, and subscriptions the program they name: such a
+// subscription may still be updated as long as it keeps its programID, and
+// a store that is reopened holds it as it was.
 type Store interface {
 	Programs() Collection[openadr.Program, ProgramFilter]
 	Events() Collection[openadr.Event, EventFilter]
@@ -128,6 +130,18 @@ type Outbox interface {
 	RemoveDelivery(ctx context.Context, id string) error
 	// Deliveries returns those that are recorded, oldest first.
 	Deliveries(ctx context.Context) ([]Delivery, error)
+}
+
+// URLOutbox is an optional extension of Outbox for an outbox that can find
+// the deliveries of one callback URL without going through all of them.
+// The VTN uses it, when its Outbox has it, to take up the next
+// notification of a URL. Memory and File implement it.
+type URLOutbox interface {
+	Outbox
+	// DeliveriesTo returns the deliveries recorded for a callback URL,
+	// oldest first: those Deliveries returns whose CallbackURL is
+	// callbackURL.
+	DeliveriesTo(ctx context.Context, callbackURL string) ([]Delivery, error)
 }
 
 // Delivery is one notification on its way to one webhook.

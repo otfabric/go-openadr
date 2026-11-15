@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
@@ -34,15 +35,84 @@ func Invalid(field, format string, args ...any) error {
 // JSON is UTF-8 (RFC 8259 section 8.1). encoding/json would read a string
 // that is not as U+FFFD, so that two different names could read as one,
 // and what is written back would not be what was sent: such a body is
-// refused.
+// refused. The same goes for an escaped surrogate that is not one of a
+// pair, such as "\ud800": it is no character (RFC 8259 section 8.2,
+// RFC 7493 section 2.1), and encoding/json reads it as U+FFFD too.
 func Decode(data []byte, v any) error {
 	if !utf8.Valid(data) {
 		return &openadr.ValidationError{Field: "body", Reason: "is not UTF-8"}
+	}
+	if loneSurrogate(data) {
+		return &openadr.ValidationError{Field: "body", Reason: "has an escaped surrogate that is not one of a pair"}
 	}
 	if err := json.Unmarshal(data, v); err != nil {
 		return &openadr.ValidationError{Field: "body", Reason: err.Error()}
 	}
 	return nil
+}
+
+// loneSurrogate reports whether data has a \u escape of a surrogate
+// (U+D800 to U+DFFF) that is not a high one followed by an escaped low one.
+// A backslash is only valid JSON inside a string, where it starts an escape
+// of two bytes or, for \u, six: the scan steps over whole escapes, so that
+// an escaped backslash followed by "ud800" is no escape of a surrogate.
+// What is not valid JSON is left to the decoder to refuse.
+func loneSurrogate(data []byte) bool {
+	for i := 0; ; {
+		j := bytes.IndexByte(data[i:], '\\')
+		if j < 0 {
+			return false
+		}
+		i += j
+		if i+1 >= len(data) {
+			return false
+		}
+		if data[i+1] != 'u' {
+			i += 2
+			continue
+		}
+		r, ok := hex4(data[i+2:])
+		if !ok {
+			return false
+		}
+		i += 6
+		switch {
+		case r < 0xd800 || r > 0xdfff:
+		case r >= 0xdc00:
+			return true
+		default:
+			if len(data) < i+2 || data[i] != '\\' || data[i+1] != 'u' {
+				return true
+			}
+			low, ok := hex4(data[i+2:])
+			if !ok || low < 0xdc00 || low > 0xdfff {
+				return true
+			}
+			i += 6
+		}
+	}
+}
+
+// hex4 reads the four hexadecimal digits at the start of b.
+func hex4(b []byte) (rune, bool) {
+	if len(b) < 4 {
+		return 0, false
+	}
+	var r rune
+	for _, c := range b[:4] {
+		switch {
+		case '0' <= c && c <= '9':
+			c -= '0'
+		case 'a' <= c && c <= 'f':
+			c -= 'a' - 10
+		case 'A' <= c && c <= 'F':
+			c -= 'A' - 10
+		default:
+			return 0, false
+		}
+		r = r<<4 | rune(c)
+	}
+	return r, true
 }
 
 // MapSlice applies f to every element of in; nil stays nil.
@@ -218,17 +288,22 @@ func valueFrom(field string, raw json.RawMessage) (openadr.Value, error) {
 	}
 	switch raw[0] {
 	case '"':
+		if s, ok := plainString(raw); ok {
+			return openadr.String(s), nil
+		}
 		var s string
 		if err := json.Unmarshal(raw, &s); err != nil {
 			return openadr.Value{}, Invalid(field, "%v", err)
 		}
 		return openadr.String(s), nil
 	case 't', 'f':
-		var b bool
-		if err := json.Unmarshal(raw, &b); err != nil {
-			return openadr.Value{}, Invalid(field, "%v", err)
+		switch string(raw) {
+		case "true":
+			return openadr.Bool(true), nil
+		case "false":
+			return openadr.Bool(false), nil
 		}
-		return openadr.Bool(b), nil
+		return openadr.Value{}, Invalid(field, "is not true or false")
 	case '{':
 		var p point
 		if err := json.Unmarshal(raw, &p); err != nil {
@@ -241,13 +316,92 @@ func valueFrom(field string, raw json.RawMessage) (openadr.Value, error) {
 	case 'n', '[':
 		return openadr.Value{}, Invalid(field, "must be a number, string, boolean or point")
 	default:
-		var n float64
-		if err := json.Unmarshal(raw, &n); err != nil {
-			return openadr.Value{}, Invalid(field, "%v", err)
+		// strconv reads more than JSON numbers (hexadecimal, "Inf", a
+		// leading "+"), so the JSON grammar is checked first. encoding/json
+		// reads a float64 with strconv.ParseFloat too.
+		if !jsonNumber(raw) {
+			return openadr.Value{}, Invalid(field, "is not a JSON number")
+		}
+		n, err := strconv.ParseFloat(string(raw), 64)
+		if err != nil {
+			return openadr.Value{}, Invalid(field, "is a number out of the range of a float64")
 		}
 		return openadr.Number(n), nil
 	}
 }
+
+// plainString reads a JSON string without escapes, which is its bytes
+// between the quotes. Anything else is left to encoding/json.
+func plainString(raw []byte) (string, bool) {
+	if len(raw) < 2 || raw[len(raw)-1] != '"' {
+		return "", false
+	}
+	in := raw[1 : len(raw)-1]
+	for _, c := range in {
+		if c < 0x20 || c == '"' || c == '\\' {
+			return "", false
+		}
+	}
+	if !utf8.Valid(in) {
+		return "", false
+	}
+	return string(in), true
+}
+
+// jsonNumber reports whether b is a number of the JSON grammar
+// (RFC 8259 section 6).
+func jsonNumber(b []byte) bool {
+	i := 0
+	if i < len(b) && b[i] == '-' {
+		i++
+	}
+	switch {
+	case i < len(b) && b[i] == '0':
+		i++
+	case i < len(b) && '1' <= b[i] && b[i] <= '9':
+		for i < len(b) && '0' <= b[i] && b[i] <= '9' {
+			i++
+		}
+	default:
+		return false
+	}
+	if i < len(b) && b[i] == '.' {
+		i++
+		start := i
+		for i < len(b) && '0' <= b[i] && b[i] <= '9' {
+			i++
+		}
+		if i == start {
+			return false
+		}
+	}
+	if i < len(b) && (b[i] == 'e' || b[i] == 'E') {
+		i++
+		if i < len(b) && (b[i] == '+' || b[i] == '-') {
+			i++
+		}
+		start := i
+		for i < len(b) && '0' <= b[i] && b[i] <= '9' {
+			i++
+		}
+		if i == start {
+			return false
+		}
+	}
+	return i == len(b)
+}
+
+// within puts prefix before the field of a *openadr.ValidationError, so
+// that a path is built only for an error, not for every element read.
+func within(prefix string, err error) error {
+	if ve, ok := err.(*openadr.ValidationError); ok {
+		return &openadr.ValidationError{Field: prefix + ve.Field, Reason: ve.Reason}
+	}
+	return err
+}
+
+// index is "[i]".
+func index(i int) string { return "[" + strconv.Itoa(i) + "]" }
 
 // ValuesMapsTo writes values maps; nil stays nil.
 func ValuesMapsTo(vms []openadr.ValuesMap) ([]ValuesMap, error) {
@@ -270,20 +424,29 @@ func ValuesMapsTo(vms []openadr.ValuesMap) ([]ValuesMap, error) {
 
 // ValuesMapsFrom reads values maps; nil stays nil.
 func ValuesMapsFrom(field string, vms []ValuesMap) ([]openadr.ValuesMap, error) {
+	out, err := valuesMapsFrom(vms)
+	if err != nil {
+		return nil, within(field, err)
+	}
+	return out, nil
+}
+
+// valuesMapsFrom reads values maps; the field of an error starts at the
+// index of the map.
+func valuesMapsFrom(vms []ValuesMap) ([]openadr.ValuesMap, error) {
 	if vms == nil {
 		return nil, nil
 	}
 	out := make([]openadr.ValuesMap, len(vms))
 	for i, vm := range vms {
-		f := fmt.Sprintf("%s[%d]", field, i)
 		if vm.Values == nil {
-			return nil, Invalid(f+".values", "is required")
+			return nil, Invalid(index(i)+".values", "is required")
 		}
 		out[i] = openadr.ValuesMap{Type: vm.Type, Values: make([]openadr.Value, len(vm.Values))}
 		for j, raw := range vm.Values {
-			v, err := valueFrom(fmt.Sprintf("%s.values[%d]", f, j), raw)
+			v, err := valueFrom("", raw)
 			if err != nil {
-				return nil, err
+				return nil, within(index(i)+".values"+index(j), err)
 			}
 			out[i].Values[j] = v
 		}
@@ -331,20 +494,19 @@ func IntervalsFrom(field string, ivs []Interval) ([]openadr.Interval, error) {
 	}
 	out := make([]openadr.Interval, len(ivs))
 	for i, iv := range ivs {
-		f := fmt.Sprintf("%s[%d]", field, i)
 		if iv.ID == nil {
-			return nil, Invalid(f+".id", "is required")
+			return nil, Invalid(field+index(i)+".id", "is required")
 		}
 		if iv.Payloads == nil {
-			return nil, Invalid(f+".payloads", "is required")
+			return nil, Invalid(field+index(i)+".payloads", "is required")
 		}
-		period, err := PeriodFrom(f+".intervalPeriod", iv.IntervalPeriod)
+		period, err := PeriodFrom("", iv.IntervalPeriod)
 		if err != nil {
-			return nil, err
+			return nil, within(field+index(i)+".intervalPeriod", err)
 		}
-		payloads, err := ValuesMapsFrom(f+".payloads", iv.Payloads)
+		payloads, err := valuesMapsFrom(iv.Payloads)
 		if err != nil {
-			return nil, err
+			return nil, within(field+index(i)+".payloads", err)
 		}
 		out[i] = openadr.Interval{ID: *iv.ID, IntervalPeriod: period, Payloads: payloads}
 	}
@@ -544,17 +706,16 @@ func ReportResourcesFrom(rs []ReportResource) ([]openadr.ReportResource, error) 
 	}
 	out := make([]openadr.ReportResource, len(rs))
 	for i, res := range rs {
-		f := fmt.Sprintf("resources[%d]", i)
 		if res.Intervals == nil {
-			return nil, Invalid(f+".intervals", "is required")
+			return nil, Invalid("resources"+index(i)+".intervals", "is required")
 		}
-		period, err := PeriodFrom(f+".intervalPeriod", res.IntervalPeriod)
+		period, err := PeriodFrom("", res.IntervalPeriod)
 		if err != nil {
-			return nil, err
+			return nil, within("resources"+index(i)+".intervalPeriod", err)
 		}
-		ivs, err := IntervalsFrom(f+".intervals", res.Intervals)
+		ivs, err := IntervalsFrom("", res.Intervals)
 		if err != nil {
-			return nil, err
+			return nil, within("resources"+index(i)+".intervals", err)
 		}
 		out[i] = openadr.ReportResource{ResourceName: res.ResourceName, IntervalPeriod: period, Intervals: ivs}
 	}
@@ -581,4 +742,26 @@ func UnmarshalProblem(data []byte) (openadr.Problem, error) {
 	// Diagnostics only: read whatever the peer sent, as best can be.
 	err := json.Unmarshal(data, &p)
 	return openadr.Problem(p), err
+}
+
+// --- notifications
+
+// NotifiedObject refuses the object of a notification whose own objectType
+// names another kind of object than the objectType of the notification:
+// the schema discriminates the object on its objectType (the notification
+// schema's oneOf), so the two must agree. kinds maps the discriminators of
+// a revision to the kind of object each names. An objectType that is
+// absent or not in kinds says nothing, as VTNs differ in what they write
+// there.
+func NotifiedObject(objectType openadr.ObjectType, object json.RawMessage, kinds map[string]openadr.ObjectType) error {
+	var head struct {
+		ObjectType string `json:"objectType"`
+	}
+	if err := json.Unmarshal(object, &head); err != nil {
+		return Invalid("object", "%v", err)
+	}
+	if kind, ok := kinds[head.ObjectType]; ok && kind != objectType {
+		return Invalid("object.objectType", "names a %s, the notification a %s", kind, objectType)
+	}
+	return nil
 }

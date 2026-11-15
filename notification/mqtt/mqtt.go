@@ -19,6 +19,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/backoff"
@@ -142,7 +143,10 @@ type Metrics interface {
 	// OnPublished is called when the broker has confirmed a notification.
 	OnPublished()
 	// OnDropped is called when a notification is not queued, because the
-	// queue is full: the broker has been away for too long.
+	// queue is full: the broker has been away for too long. It is also
+	// called for a notification that MQTT cannot carry, a topic with a
+	// wildcard or NUL or a topic or body too long, which is dropped
+	// instead of sent again.
 	OnDropped()
 	// OnReceived is called for every notification a Subscriber hands to
 	// its Notify function, before it does. A notification is not handed
@@ -183,6 +187,9 @@ type Publisher struct {
 	stop     chan struct{}
 	stopOnce sync.Once
 	done     chan struct{}
+	// runCtx bounds what run waits for; cancelRun ends it, with stop.
+	runCtx    context.Context
+	cancelRun context.CancelFunc
 
 	mu     sync.Mutex
 	closed bool
@@ -203,6 +210,7 @@ func NewPublisher(cfg PublisherConfig) (*Publisher, error) {
 		cfg.Queue = 1024
 	}
 	p := &Publisher{cfg: cfg, log: guard.NewLogger(cfg.Logger, "mqtt"), queue: make(chan message, cfg.Queue), stop: make(chan struct{}), done: make(chan struct{})}
+	p.runCtx, p.cancelRun = context.WithCancel(context.Background())
 	go p.run()
 	return p, nil
 }
@@ -253,7 +261,11 @@ func (p *Publisher) Close(ctx context.Context) error {
 	case <-p.done:
 		return nil
 	case <-ctx.Done():
-		p.stopOnce.Do(func() { close(p.stop) })
+		// A PUBLISH waiting for its acknowledgement is given up too.
+		p.stopOnce.Do(func() {
+			close(p.stop)
+			p.cancelRun()
+		})
 		<-p.done
 		return ctx.Err()
 	}
@@ -272,6 +284,7 @@ func metric(log guard.Logger, m Metrics, callback string, f func(Metrics)) {
 
 func (p *Publisher) run() {
 	defer close(p.done)
+	defer p.cancelRun()
 	var conn *imqtt.Conn
 	defer func() {
 		if conn != nil {
@@ -295,13 +308,23 @@ func (p *Publisher) run() {
 				}
 				metric(p.log, p.cfg.Metrics, "Metrics.OnConnected", Metrics.OnConnected)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			ctx, cancel := context.WithTimeout(p.runCtx, 30*time.Second)
 			err := conn.Publish(ctx, m.topic, m.body)
 			cancel()
 			if err == nil {
 				metric(p.log, p.cfg.Metrics, "Metrics.OnPublished", Metrics.OnPublished)
 				wait = p.cfg.firstWait()
 				break
+			}
+			if errors.Is(err, imqtt.ErrTopic) || errors.Is(err, imqtt.ErrTooLong) {
+				// Fails on every connection: sending it again would hold
+				// up the queue for ever. The connection is not affected.
+				p.warn("mqtt: notification cannot be published, dropped", slog.String("topic", clip(m.topic)), slog.String("error", clip(err.Error())))
+				metric(p.log, p.cfg.Metrics, "Metrics.OnDropped", Metrics.OnDropped)
+				break
+			}
+			if p.runCtx.Err() != nil {
+				return // Close gave up on it; the connection is closed on the way out
 			}
 			metric(p.log, p.cfg.Metrics, "Metrics.OnDisconnected", func(m Metrics) { m.OnDisconnected(err) })
 			p.warn("mqtt: publishing failed, reconnecting", slog.String("topic", m.topic), slog.Any("error", err))
@@ -313,6 +336,23 @@ func (p *Publisher) run() {
 			wait = nextWait(wait)
 		}
 	}
+}
+
+// maxLogged is the most bytes of a string from the broker, or of an error
+// that quotes one, that goes into a log entry.
+const maxLogged = 256
+
+// clip shortens s to maxLogged bytes, at a character boundary, and says
+// how long it was.
+func clip(s string) string {
+	if len(s) <= maxLogged {
+		return s
+	}
+	n := maxLogged
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return fmt.Sprintf("%s... (%d bytes)", s[:n], len(s))
 }
 
 // SubscriberConfig configures a Subscriber.
@@ -487,7 +527,7 @@ func (s *Subscriber) run() {
 	o.OnMessage = func(topic string, payload []byte) {
 		n, err := codec.UnmarshalNotification(payload)
 		if err != nil {
-			s.warn("mqtt: a message that is not a notification", slog.String("topic", topic), slog.Any("error", err))
+			s.warn("mqtt: a message that is not a notification", slog.String("topic", clip(topic)), slog.String("error", clip(err.Error())))
 			return
 		}
 		// What does not return normally is reported once calling is

@@ -226,6 +226,10 @@ func Dial(ctx context.Context, hc *http.Client, target string, header http.Heade
 		err = errors.New("websocket: the server did not prove that it read the handshake")
 	case resp.Header.Get("Sec-WebSocket-Extensions") != "":
 		err = errors.New("websocket: the server chose an extension that was not offered")
+	case len(resp.Header.Values("Sec-WebSocket-Protocol")) > 0 && !hasToken(req.Header, "Sec-WebSocket-Protocol", resp.Header.Get("Sec-WebSocket-Protocol")):
+		// RFC 6455, 4.1: a subprotocol that was not offered fails the
+		// connection.
+		err = errors.New("websocket: the server chose a subprotocol that was not offered")
 	}
 	if err != nil {
 		_ = resp.Body.Close()
@@ -302,10 +306,18 @@ func (c *Conn) ReadMessage() ([]byte, error) {
 		case opPong:
 		case opClose:
 			closed := &CloseError{Code: 1005}
-			if len(payload) >= 2 {
+			answer := CloseNormal
+			if len(payload) > 0 {
+				// RFC 6455, 5.5.1: a body is a code, then a reason in UTF-8.
+				if len(payload) < 2 || !receivable(int(binary.BigEndian.Uint16(payload))) || !utf8.Valid(payload[2:]) {
+					_ = c.Close(CloseProtocolError, "a close frame that is not well formed")
+					return nil, errors.New("websocket: a close frame that is not well formed")
+				}
 				closed.Code, closed.Reason = int(binary.BigEndian.Uint16(payload)), string(payload[2:])
+				// The code is echoed, as endpoints usually do (5.5.1).
+				answer = closed.Code
 			}
-			_ = c.Close(CloseNormal, "")
+			_ = c.Close(answer, "")
 			return nil, closed
 		case opText, opContinuation:
 			if (opcode == opContinuation) != partial {
@@ -331,6 +343,19 @@ func (c *Conn) ReadMessage() ([]byte, error) {
 			_ = c.Close(CloseProtocolError, "an unknown kind of frame")
 			return nil, fmt.Errorf("websocket: a frame with the unknown opcode %#x", opcode)
 		}
+	}
+}
+
+// receivable reports whether a close code may come in a close frame (RFC
+// 6455, 7.4): one of those defined for the protocol that may be sent
+// (1000-1003, 1007-1014, the IANA registry), or one for libraries and
+// applications (3000-4999).
+func receivable(code int) bool {
+	switch {
+	case code >= 1000 && code <= 1003, code >= 1007 && code <= 1014:
+		return true
+	default:
+		return code >= 3000 && code <= 4999
 	}
 }
 

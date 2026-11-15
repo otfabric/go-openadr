@@ -358,3 +358,28 @@ func TestUnmarshal(t *testing.T) {
 		t.Errorf("MarshalProblem = %s, %v", b, err)
 	}
 }
+
+// TestNotificationDiscriminator checks that a notification is read only
+// when the objectType of its object, where it names a kind of object, names
+// the kind the notification says.
+func TestNotificationDiscriminator(t *testing.T) {
+	c := Codec()
+	for _, body := range []string{
+		`{"objectType":"EVENT","operation":"POST","object":{"objectType":"PROGRAM","programID":"p","intervals":[]}}`,
+		`{"objectType":"VEN","operation":"PUT","object":{"objectType":"RESOURCE","venName":"v"}}`,
+	} {
+		var ve *openadr.ValidationError
+		if n, err := c.UnmarshalNotification([]byte(body)); !errors.As(err, &ve) || ve.Field != "object.objectType" {
+			t.Errorf("%s = %+v, %v; want a ValidationError for object.objectType", body, n, err)
+		}
+	}
+	for _, body := range []string{
+		`{"objectType":"EVENT","operation":"POST","object":{"programID":"p","intervals":[]}}`,
+		`{"objectType":"EVENT","operation":"POST","object":{"objectType":"EVENT","programID":"p","intervals":[]}}`,
+		`{"objectType":"VEN","operation":"GET","object":{"objectType":"BL_VEN_REQUEST","venName":"v"}}`,
+	} {
+		if _, err := c.UnmarshalNotification([]byte(body)); err != nil {
+			t.Errorf("%s: %v", body, err)
+		}
+	}
+}

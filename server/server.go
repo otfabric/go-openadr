@@ -90,7 +90,8 @@ type Config struct {
 	AllowAnonymous bool
 	// DisableCompression turns off compression of responses. By default a
 	// response of 1 KiB or more is compressed, with gzip or deflate, for a
-	// client that accepts one of them.
+	// client that accepts one of them; answers about subscriptions, which
+	// carry their bearer tokens, never are.
 	DisableCompression bool
 	// Logger receives internal errors, with the method and the path of the
 	// request and never its body or token; and at debug level one line
@@ -207,8 +208,12 @@ type Server struct {
 	// creating is held while a create that is limited by Limits counts
 	// what the client keeps and stores the new object.
 	creating sync.Mutex
-	now      func() time.Time
-	mux      *http.ServeMux
+	// writing is held while an object is created, replaced or deleted
+	// through kind, from the first look at the store to the write, and is
+	// taken before creating.
+	writing sync.Mutex
+	now     func() time.Time
+	mux     *http.ServeMux
 }
 
 // New returns a Server for cfg.
@@ -409,7 +414,9 @@ func (s *Server) routes(cfg Config) {
 func (s *Server) authorized(scope string, h handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
-		if header == "" && s.anonymous {
+		// Only a request without the header is anonymous: one with an
+		// empty header carries a token that is not there, a 401.
+		if len(r.Header.Values("Authorization")) == 0 && s.anonymous {
 			// A client that does not authenticate, on a VTN that lets it.
 			// It has no client ID, and so no objects and no targets.
 			id := auth.Identity{Scopes: []string{auth.ScopeReadTargets}}
@@ -437,6 +444,12 @@ func (s *Server) authorized(scope string, h handler) http.Handler {
 			s.problem(w, r, http.StatusUnauthorized, "the bearer token is invalid or has expired")
 			return
 		}
+		if err == nil && id.ClientID == "" {
+			// Every object of a client, and every target it is granted,
+			// is found by its client ID; without one a VEN would be
+			// taken for all of them.
+			err = errNoClientID
+		}
 		if err != nil {
 			s.fail(w, r, err)
 			return
@@ -452,6 +465,10 @@ func (s *Server) authorized(scope string, h handler) http.Handler {
 	})
 }
 
+// errNoClientID is the error of a Validator that accepted a token and
+// named no client for it.
+var errNoClientID = errors.New("server: the Validator returned an identity without a client ID")
+
 // --- responses
 
 func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, body []byte, err error) {
@@ -462,7 +479,7 @@ func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, body 
 	w.Header().Set("Content-Type", "application/json")
 	// The answer depends on what the client can read.
 	w.Header().Add("Vary", "Accept-Encoding")
-	if coding := ""; s.compress && len(body) >= compressFrom {
+	if coding := ""; s.compress && len(body) >= compressFrom && !carriesTokens(r) {
 		if coding = contentCoding(r.Header.Get("Accept-Encoding")); coding != "" {
 			if packed, ok := compressBody(coding, body); ok {
 				w.Header().Set("Content-Encoding", coding)
@@ -472,6 +489,15 @@ func (s *Server) write(w http.ResponseWriter, r *http.Request, status int, body 
 	}
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
+}
+
+// carriesTokens reports whether the answer to r may carry the bearer tokens
+// of subscriptions. Such an answer is never compressed: a subscription
+// list of Business Logic holds the tokens of every client next to text
+// other clients chose, and the length of a compressed answer would tell
+// how much of that text matches a token.
+func carriesTokens(r *http.Request) bool {
+	return r.URL.Path == "/subscriptions" || strings.HasPrefix(r.URL.Path, "/subscriptions/")
 }
 
 // compressFrom is the size from which a response is worth compressing.

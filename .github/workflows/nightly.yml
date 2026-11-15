@@ -32,7 +32,14 @@ jobs:
         with:
           go-version: stable
       - name: Fuzz every target
-        run: make fuzz FUZZTIME=${{ inputs.fuzztime || '5m' }}
+        env:
+          FUZZTIME: ${{ inputs.fuzztime || '5m' }}
+        run: |
+          if ! [[ "$FUZZTIME" =~ ^[0-9]+(ns|us|ms|s|m|h|x)$ ]]; then
+            echo "::error::fuzztime must be a Go duration such as 5m or a count such as 1000x"
+            exit 1
+          fi
+          make fuzz FUZZTIME="$FUZZTIME"
       - name: Keep the failing inputs
         if: failure()
         uses: actions/upload-artifact@v7

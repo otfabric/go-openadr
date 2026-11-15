@@ -31,7 +31,7 @@ func allocated(f func()) uint64 {
 // that cost the most for their size: many small elements. The budgets are
 // about one and a half times what decoding takes with the Go releases the
 // module is tested with, 1.26 and 1.27, of which 1.26 takes more for
-// points and numbers: a change that costs more than that for the same
+// points: a change that costs more than that for the same
 // input fails here. A transport bounds the size
 // (a webhook's MaxBodyBytes, the MQTT packet, the WebSocket message), and
 // so, by these factors, what one notification can cost. The race detector
@@ -56,9 +56,9 @@ func TestNotificationAllocationBudget(t *testing.T) {
 		{"a long string", head + `"eventName":"` + strings.Repeat("a", size) + `"}}`, 4, false},
 		{"unknown members", head + `"x":[` + strings.Repeat(`{},`, size/3) + `{}]}}`, 2, false},
 		{"targets", head + `"targets":[` + strings.Repeat(`"a",`, size/4) + `"a"]}}`, 30, false},
-		{"intervals", head + `"intervals":[` + strings.Repeat(`{"id":0,"payloads":[]},`, size/23) + `{"id":0,"payloads":[]}]}}`, 20, true},
-		{"points", values(`{"x":0,"y":0}`), 52, true},
-		{"numbers", values("0"), 310, true},
+		{"intervals", head + `"intervals":[` + strings.Repeat(`{"id":0,"payloads":[]},`, size/23) + `{"id":0,"payloads":[]}]}}`, 15, true},
+		{"points", values(`{"x":0,"y":0}`), 45, true},
+		{"numbers", values("0"), 140, true},
 	} {
 		for _, v := range []openadr.Version{openadr.Version310, openadr.Version301} {
 			if v == openadr.Version301 && !tc.in301 {

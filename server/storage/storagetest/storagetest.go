@@ -52,6 +52,7 @@ func Run(t *testing.T, cfg Config) {
 	}
 	t.Run("Rules", func(t *testing.T) { rules(t, cfg.New(t)) })
 	t.Run("Subscriptions", func(t *testing.T) { subscriptions(t, cfg.New(t)) })
+	t.Run("ProgramGone", func(t *testing.T) { programGone(t, cfg) })
 	t.Run("ResourceGroups", func(t *testing.T) { resourceGroups(t, cfg.New(t)) })
 	t.Run("Order", func(t *testing.T) { order(t, cfg.New(t)) })
 	t.Run("Concurrency", func(t *testing.T) { concurrency(t, cfg.New(t)) })
@@ -101,6 +102,20 @@ func outbox(t *testing.T, cfg Config) {
 		}
 	}
 	check("as recorded", box)
+	// An outbox that finds the deliveries of one callback URL finds those
+	// Deliveries has, and no others.
+	if byURL, ok := box.(storage.URLOutbox); ok {
+		for _, id := range []string{"a", "b", "nope"} {
+			list, err := byURL.DeliveriesTo(ctx, delivery(id).CallbackURL)
+			want := 1
+			if id != "b" {
+				want = 0
+			}
+			if err != nil || len(list) != want || want == 1 && list[0].ID != id {
+				t.Errorf("deliveries to the URL of %s: %+v, %v; want %d", id, list, err, want)
+			}
+		}
+	}
 	// Many at once: all are kept, none twice.
 	var wg sync.WaitGroup
 	for i := range 20 {
@@ -313,6 +328,42 @@ func subscriptions(t *testing.T, s storage.Store) {
 	}
 	_, err = s.Subscriptions().Get(ctx, "s2")
 	notFound(t, "reading a deleted subscription", err)
+}
+
+// programGone checks a subscription whose program was deleted: the delete
+// is not refused, the subscription stays, can be updated while it keeps
+// its programID and deleted, and a store that is reopened (twice: once
+// from what was written, once from what that reopening wrote) holds it.
+func programGone(t *testing.T, cfg Config) {
+	ctx := context.Background()
+	s := cfg.New(t)
+	sub := storage.SubscriptionRecord{Subscription: openadr.Subscription{Metadata: meta("s1"), ProgramID: "p1", ClientID: "c1", ClientName: "n1"}}
+	must(t, "program", s.Programs().Create(ctx, openadr.Program{Metadata: meta("p1"), Name: "one"}))
+	must(t, "subscription", s.Subscriptions().Create(ctx, sub))
+	_, err := s.Programs().Delete(ctx, "p1")
+	must(t, "deleting a program that a subscription names", err)
+	check := func(when, name string) {
+		t.Helper()
+		got, err := s.Subscriptions().Get(ctx, "s1")
+		if err != nil || got.ProgramID != "p1" || got.ClientName != name {
+			t.Fatalf("%s: the subscription is %+v, %v", when, got, err)
+		}
+	}
+	check("after the delete", "n1")
+	sub.ClientName = "n2"
+	must(t, "updating a subscription that keeps its program", s.Subscriptions().Update(ctx, sub))
+	check("after an update", "n2")
+	moved := sub
+	moved.ProgramID = "p9"
+	conflict(t, "pointing it at a program that is not there", s.Subscriptions().Update(ctx, moved))
+	if cfg.Reopen != nil {
+		s = cfg.Reopen(t, s)
+		check("after a restart", "n2")
+		s = cfg.Reopen(t, s)
+		check("after a second restart", "n2")
+	}
+	_, err = s.Subscriptions().Delete(ctx, "s1")
+	must(t, "deleting it", err)
 }
 
 func resourceGroups(t *testing.T, s storage.Store) {

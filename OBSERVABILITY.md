@@ -19,9 +19,9 @@ to standard error.
 | Who | Configuration | Debug | Info | Warn | Error |
 |---|---|---|---|---|---|
 | Client | `client.Config.Logger` | every call: operation, duration, error | a token renewed because the VTN refused the old one | every retry: operation, attempt, wait, error | a callback that did not return normally |
-| VTN | `server.Config.Logger` | every request: operation, status, duration | | | a failure answered with 500: method, path, error; a notification that could not be decided; a callback that did not return normally |
+| VTN | `server.Config.Logger` | every request: operation, status, duration | | with an `Outbox`: a recorded notification given up (too old, its subscription gone or no longer naming its callback URL, refused for good), the notifications recorded for the subscriptions of a client at their limit (once, until one is recorded again) | a failure answered with 500: method, path, error; a notification that could not be decided; a callback that did not return normally |
 | Webhook sender | `webhook.SenderConfig.Logger` | | | a notification dropped or not delivered | a callback that did not return normally |
-| MQTT publisher, subscriber | `mqtt.PublisherConfig.Logger`, `mqtt.SubscriberConfig.Logger` | | | broker unreachable, connection lost, notification dropped, a message that is not a notification | a callback that did not return normally |
+| MQTT publisher, subscriber | `mqtt.PublisherConfig.Logger`, `mqtt.SubscriberConfig.Logger` | | | broker unreachable, connection lost, notification dropped, a notification MQTT cannot carry (dropped), a message that is not a notification (topic and error cut to 256 bytes) | a callback that did not return normally |
 | WebSocket subscriber | `websocket.SubscriberConfig.Logger` | | | VTN unreachable, connection lost | a callback that did not return normally |
 | Advertiser | `discovery.Advertisement.Logger` | | | a packet that could not be sent or received | a handler of the Logger that did not return normally |
 
@@ -32,7 +32,9 @@ ven, err := client.NewVEN(client.Config{BaseURL: url, Credentials: creds, Logger
 
 **What is never logged:** request and response bodies, bearer tokens, client
 secrets, and the query of a callback URL, which may hold a secret of its
-subscriber. The line of a call or a request names the *operation*
+subscriber; the webhook sender takes that query out of the error of a
+failed request, before it is logged or given to `Metrics.OnFailed` or the
+done function of `SendConfirmed`. The line of a call or a request names the *operation*
 (`GET /events/{id}`), not the path, so object IDs stay out of the debug log;
 an error names its path, as the error itself does.
 
@@ -112,12 +114,13 @@ for the sender to say:
 | Who | Configuration | Callbacks |
 |---|---|---|
 | Webhook sender | `webhook.SenderConfig.Metrics` | `OnDelivered(attempts, duration)`, `OnFailed(attempts, duration, err)`, `OnDropped()`: every notification ends in exactly one |
-| MQTT publisher | `mqtt.PublisherConfig.Metrics` | `OnPublished()`, `OnDropped()`, `OnConnected()`, `OnDisconnected(err)` |
+| MQTT publisher | `mqtt.PublisherConfig.Metrics` | `OnPublished()`, `OnDropped()` (a full queue, or a notification MQTT cannot carry: a topic with a wildcard or NUL, a topic or body too long), `OnConnected()`, `OnDisconnected(err)` |
 | MQTT subscriber | `mqtt.SubscriberConfig.Metrics` | `OnReceived()`, `OnConnected()`, `OnDisconnected(err)` |
 | WebSocket subscriber | `websocket.SubscriberConfig.Metrics` | `OnReceived()`, `OnConnected()`, `OnDisconnected(err)` |
 
 The ones to alert on: `OnDropped` anywhere (a queue was full: a webhook or
-the broker has been away too long, and notifications are being lost),
+the broker has been away too long, and notifications are being lost; for
+the webhook sender the queue is that of the webhook's host),
 `OnFailed` of the webhook sender, `slow` WebSockets, and a subscriber whose
 `OnDisconnected` keeps coming without an `OnConnected` between.
 

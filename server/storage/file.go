@@ -73,6 +73,14 @@ type storedDelivery struct {
 
 var fileCodec = v310.Codec()
 
+// maxLine is the longest line of the journal, newline included: a longer
+// change is refused when it is written, so that every line written is one
+// that replay reads. A variable for tests.
+var maxLine = 64 << 20
+
+// errTooLong is returned for a change too large to be kept.
+var errTooLong = errors.New("storage: the change is larger than a line of the journal holds")
+
 // ErrCorrupt reports a journal that cannot be replayed.
 var ErrCorrupt = errors.New("storage: the journal is corrupt")
 
@@ -106,7 +114,7 @@ func OpenFile(path string, opts FileOptions) (*File, error) {
 func (f *File) replay(data []byte) error {
 	ctx := context.Background()
 	scanner := bufio.NewScanner(bytes.NewReader(data))
-	scanner.Buffer(make([]byte, 0, 64<<10), 64<<20)
+	scanner.Buffer(make([]byte, 0, min(64<<10, maxLine)), maxLine)
 	complete := bytes.HasSuffix(data, []byte("\n"))
 	lines := bytes.Count(data, []byte("\n"))
 	for n := 1; scanner.Scan(); n++ {
@@ -127,7 +135,10 @@ func (f *File) replay(data []byte) error {
 			return fmt.Errorf("%w: line %d: %v", ErrCorrupt, n, err)
 		}
 	}
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("%w: %v", ErrCorrupt, err)
+	}
+	return nil
 }
 
 // apply replays one record into memory.
@@ -179,7 +190,9 @@ func (f *File) apply(ctx context.Context, rec record) error {
 		}
 		s := SubscriptionRecord{Subscription: sub, ReadsAll: rec.ReadsAll}
 		if rec.Op == "create" {
-			return f.mem.Subscriptions().Create(ctx, s)
+			// Its program existed when it was written, and may have been
+			// deleted since: a snapshot holds such a subscription.
+			return f.mem.restoreSubscription(s)
 		}
 		return f.mem.Subscriptions().Update(ctx, s)
 	}
@@ -321,13 +334,22 @@ func (f *File) compact() error {
 	return err
 }
 
-// write appends one record. The caller holds f.mu and has applied the change
-// to memory.
-func (f *File) write(rec record) error {
+// encode returns the line of the journal that holds rec, or errTooLong.
+func encode(rec record) ([]byte, error) {
 	line, err := json.Marshal(rec)
-	if err == nil {
-		_, err = f.file.Write(append(line, '\n'))
+	if err != nil {
+		return nil, err
 	}
+	if len(line)+1 > maxLine {
+		return nil, errTooLong
+	}
+	return append(line, '\n'), nil
+}
+
+// write appends one line from encode. The caller holds f.mu and has
+// applied the change to memory.
+func (f *File) write(line []byte) error {
+	_, err := f.file.Write(line)
 	if err == nil && f.sync {
 		err = f.file.Sync()
 	}
@@ -386,10 +408,14 @@ func (c journaled[T, F]) change(op string, id string, v *T, do func() error) err
 		rec.Kind = c.kind
 	}
 	rec.Op = op
+	line, err := encode(rec)
+	if err != nil {
+		return err
+	}
 	if err := do(); err != nil {
 		return err
 	}
-	return c.f.write(rec)
+	return c.f.write(line)
 }
 
 func (c journaled[T, F]) Create(ctx context.Context, v T) error {
@@ -474,10 +500,14 @@ func (f *File) outboxChange(rec record, do func() error) error {
 	if f.broken != nil {
 		return f.broken
 	}
+	line, err := encode(rec)
+	if err != nil {
+		return err
+	}
 	if err := do(); err != nil {
 		return err
 	}
-	return f.write(rec)
+	return f.write(line)
 }
 
 // AddDelivery implements Outbox: the notification is in the journal, and
@@ -498,3 +528,8 @@ func (f *File) RemoveDelivery(ctx context.Context, id string) error {
 
 // Deliveries implements Outbox.
 func (f *File) Deliveries(ctx context.Context) ([]Delivery, error) { return f.mem.Deliveries(ctx) }
+
+// DeliveriesTo implements URLOutbox.
+func (f *File) DeliveriesTo(ctx context.Context, callbackURL string) ([]Delivery, error) {
+	return f.mem.DeliveriesTo(ctx, callbackURL)
+}

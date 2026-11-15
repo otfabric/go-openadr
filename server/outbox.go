@@ -45,6 +45,10 @@ type ConfirmingSender interface {
 //
 // Delivery is at least once: a webhook may see a notification twice, when
 // its confirmation was lost with the process.
+//
+// What the subscriptions of one client keep recorded is bounded by
+// Limits.Deliveries and Limits.DeliveryBytes: a notification past either is
+// not recorded, and not sent.
 type outbox struct {
 	s      *Server
 	store  storage.Outbox
@@ -55,8 +59,14 @@ type outbox struct {
 	mu sync.Mutex
 	// busy holds the callback URLs that have a notification with the
 	// sender, and more says that one of them was given another meanwhile.
-	busy     map[string]bool
-	more     map[string]bool
+	busy map[string]bool
+	more map[string]bool
+	// recorded accounts for the deliveries in the store, by ID, and loads
+	// sums them up per client; tick counts the loop's readings of the
+	// store, to tell what was recorded before one of them.
+	recorded map[string]recorded
+	loads    map[string]*load
+	tick     uint64
 	stop     chan struct{}
 	stopOnce sync.Once
 	done     chan struct{}
@@ -70,9 +80,141 @@ func newOutbox(s *Server, store storage.Outbox, sender ConfirmingSender, ttl, ev
 		every = time.Minute
 	}
 	o := &outbox{s: s, store: store, sender: sender, ttl: ttl, every: every,
-		busy: map[string]bool{}, more: map[string]bool{}, stop: make(chan struct{}), done: make(chan struct{})}
+		busy: map[string]bool{}, more: map[string]bool{}, recorded: map[string]recorded{}, loads: map[string]*load{},
+		stop: make(chan struct{}), done: make(chan struct{})}
 	go o.run()
 	return o
+}
+
+// recorded is a delivery as the outbox accounts for it.
+type recorded struct {
+	// client is whose subscription it is for: the ID of the client, or of
+	// the subscription when that cannot be found.
+	client string
+	size   int
+	tick   uint64
+}
+
+// load is what the subscriptions of one client keep recorded.
+type load struct {
+	n, bytes int
+	// warned says that a notification past the limits has been logged,
+	// and no other is until one is recorded again.
+	warned bool
+}
+
+// size is what a delivery takes in the store, roughly.
+func size(d storage.Delivery) int { return len(d.Body) + len(d.CallbackURL) + len(d.BearerToken) }
+
+// clientOf returns the key that the deliveries of a subscription are
+// accounted under.
+func (o *outbox) clientOf(ctx context.Context, subscriptionID string) string {
+	var rec storage.SubscriptionRecord
+	var err error
+	if o.call("Store.Subscriptions", func() { rec, err = o.s.store.Subscriptions().Get(ctx, subscriptionID) }) && err == nil && rec.ClientID != "" {
+		return "client " + rec.ClientID
+	}
+	return "subscription " + subscriptionID
+}
+
+// admit accounts for d, which is about to be recorded, unless that would
+// pass the limits of its client.
+func (o *outbox) admit(client string, d storage.Delivery) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	l := o.loads[client]
+	if l == nil {
+		l = &load{}
+		o.loads[client] = l
+	}
+	n := size(d)
+	most, bytes := o.s.limits.deliveries, o.s.limits.deliveryBytes
+	if most > 0 && l.n+1 > most || bytes > 0 && l.bytes+n > bytes {
+		if !l.warned {
+			l.warned = true
+			o.s.logger.Warn("openadr: the notifications recorded for the subscriptions of a client are at the limit; more are dropped until some are delivered",
+				slog.String("subscription", d.SubscriptionID), slog.Int("deliveries", l.n), slog.Int("bytes", l.bytes))
+		}
+		if l.n == 0 {
+			delete(o.loads, client)
+		}
+		return false
+	}
+	l.warned = false
+	// Counted as of the loop's next reading: the store may be read before
+	// d is in it.
+	o.trackLocked(d.ID, recorded{client: client, size: n, tick: o.tick + 1})
+	return true
+}
+
+// trackLocked accounts for a recorded delivery. The caller holds o.mu.
+func (o *outbox) trackLocked(id string, r recorded) {
+	if _, ok := o.recorded[id]; ok {
+		return
+	}
+	o.recorded[id] = r
+	l := o.loads[r.client]
+	if l == nil {
+		l = &load{}
+		o.loads[r.client] = l
+	}
+	l.n++
+	l.bytes += r.size
+}
+
+// forget stops accounting for a delivery that is no longer recorded.
+func (o *outbox) forget(id string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.forgetLocked(id)
+}
+
+func (o *outbox) forgetLocked(id string) {
+	r, ok := o.recorded[id]
+	if !ok {
+		return
+	}
+	delete(o.recorded, id)
+	if l := o.loads[r.client]; l != nil {
+		l.n--
+		l.bytes -= r.size
+		if l.n <= 0 {
+			delete(o.loads, r.client)
+		}
+	}
+}
+
+// reconcile brings the accounting in line with what the store holds,
+// which is pending as read at tick: deliveries a VTN before this one left
+// behind are accounted for, and those the store no longer has are not.
+func (o *outbox) reconcile(pending []storage.Delivery, tick uint64) {
+	ids := make(map[string]bool, len(pending))
+	var unknown []storage.Delivery
+	o.mu.Lock()
+	for _, d := range pending {
+		ids[d.ID] = true
+		if _, ok := o.recorded[d.ID]; !ok {
+			unknown = append(unknown, d)
+		}
+	}
+	for id, r := range o.recorded {
+		// What was recorded after the store was read is not in pending.
+		if !ids[id] && r.tick < tick {
+			o.forgetLocked(id)
+		}
+	}
+	o.mu.Unlock()
+	clients := map[string]string{}
+	for _, d := range unknown {
+		client, ok := clients[d.SubscriptionID]
+		if !ok {
+			client = o.clientOf(context.Background(), d.SubscriptionID)
+			clients[d.SubscriptionID] = client
+		}
+		o.mu.Lock()
+		o.trackLocked(d.ID, recorded{client: client, size: size(d), tick: tick})
+		o.mu.Unlock()
+	}
 }
 
 func (o *outbox) warn(msg string, d storage.Delivery, err error) {
@@ -92,7 +234,13 @@ func (o *outbox) add(ctx context.Context, subscriptionID, callbackURL, bearerTok
 	meta, err := o.s.created()
 	d := storage.Delivery{ID: meta.ID, SubscriptionID: subscriptionID, CallbackURL: callbackURL, BearerToken: bearerToken, Body: body, Created: meta.Created}
 	if err == nil {
+		if !o.admit(o.clientOf(ctx, subscriptionID), d) {
+			return
+		}
 		err = o.store.AddDelivery(ctx, d)
+		if err != nil {
+			o.forget(d.ID)
+		}
 	}
 	if err != nil {
 		// It cannot be kept: it is sent all the same, once, as a VTN
@@ -154,9 +302,8 @@ func (o *outbox) next(callbackURL string, queue []storage.Delivery) {
 		default:
 		}
 		if len(queue) == 0 {
-			var all []storage.Delivery
 			var err error
-			if !o.call("Outbox.Deliveries", func() { all, err = o.store.Deliveries(ctx) }) {
+			if !o.call("Outbox.Deliveries", func() { queue, err = o.deliveriesTo(ctx, callbackURL) }) {
 				o.release(callbackURL)
 				return
 			}
@@ -164,11 +311,6 @@ func (o *outbox) next(callbackURL string, queue []storage.Delivery) {
 				o.s.logger.Warn("openadr: the recorded notifications could not be read", slog.Any("error", err))
 				o.release(callbackURL)
 				return
-			}
-			for _, d := range all {
-				if d.CallbackURL == callbackURL {
-					queue = append(queue, d)
-				}
 			}
 			if len(queue) == 0 {
 				if o.rest(callbackURL) {
@@ -189,14 +331,24 @@ func (o *outbox) next(callbackURL string, queue []storage.Delivery) {
 		if old {
 			give = "openadr: a notification is too old to be of use and is given up"
 		} else {
+			var rec storage.SubscriptionRecord
 			var err error
-			if !o.call("Store.Subscriptions", func() { _, err = o.s.store.Subscriptions().Get(ctx, d.SubscriptionID) }) {
+			if !o.call("Store.Subscriptions", func() { rec, err = o.s.store.Subscriptions().Get(ctx, d.SubscriptionID) }) {
 				o.release(callbackURL)
 				return
 			}
-			if errors.Is(err, openadr.ErrNotFound) {
+			switch {
+			case errors.Is(err, openadr.ErrNotFound):
 				// Nobody is waiting for it any more.
 				give = "openadr: the subscription of a notification is gone and it is given up"
+			case err == nil:
+				// The subscription as it is now says where to, and with
+				// what token.
+				if token, ok := webhookToken(rec, d.CallbackURL); ok {
+					d.BearerToken = token
+				} else {
+					give = "openadr: the subscription of a notification no longer names its callback URL and it is given up"
+				}
 			}
 		}
 		if give != "" {
@@ -205,6 +357,8 @@ func (o *outbox) next(callbackURL string, queue []storage.Delivery) {
 				o.release(callbackURL)
 				return
 			}
+			// Should it still be there, the loop accounts for it again.
+			o.forget(d.ID)
 			continue
 		}
 
@@ -251,7 +405,34 @@ func (o *outbox) confirmed(ctx context.Context, callbackURL string, d storage.De
 		o.release(callbackURL)
 		return
 	}
+	o.forget(d.ID)
 	o.next(callbackURL, rest)
+}
+
+// deliveriesTo returns what is recorded for a callback URL, oldest first.
+func (o *outbox) deliveriesTo(ctx context.Context, callbackURL string) ([]storage.Delivery, error) {
+	if byURL, ok := o.store.(storage.URLOutbox); ok {
+		return byURL.DeliveriesTo(ctx, callbackURL)
+	}
+	all, err := o.store.Deliveries(ctx)
+	var queue []storage.Delivery
+	for _, d := range all {
+		if d.CallbackURL == callbackURL {
+			queue = append(queue, d)
+		}
+	}
+	return queue, err
+}
+
+// webhookToken returns the bearer token a subscription gives a callback
+// URL, and whether it names that URL for a webhook at all.
+func webhookToken(rec storage.SubscriptionRecord, callbackURL string) (string, bool) {
+	for _, oo := range rec.ObjectOperations {
+		if oo.Mechanism != openadr.MechanismWebSocket && oo.CallbackURL == callbackURL {
+			return oo.BearerToken, true
+		}
+	}
+	return "", false
 }
 
 // run takes up what is recorded and not being delivered: at once, for what
@@ -268,9 +449,15 @@ func (o *outbox) run() {
 		}
 		var pending []storage.Delivery
 		var err error
-		o.call("Outbox.Deliveries", func() { pending, err = o.store.Deliveries(context.Background()) })
+		o.mu.Lock()
+		o.tick++
+		tick := o.tick
+		o.mu.Unlock()
+		read := o.call("Outbox.Deliveries", func() { pending, err = o.store.Deliveries(context.Background()) })
 		if err != nil {
 			o.s.logger.Warn("openadr: the recorded notifications could not be read", slog.Any("error", err))
+		} else if read {
+			o.reconcile(pending, tick)
 		}
 		seen := map[string]bool{}
 		for _, d := range pending {

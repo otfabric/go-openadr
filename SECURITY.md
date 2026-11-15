@@ -46,7 +46,7 @@ OpenADR 3.1 requires HTTPS. The library speaks HTTP over whatever it is given an
 - Every operation requires the scope the specification assigns it. A token with `read_all` is treated as Business Logic and may read everything
 - A VEN reads, changes and deletes only the reports, VENs and resources that carry its own client ID, which the VTN writes from the token and a VEN cannot set. Another client's object answers 404, so that IDs cannot be probed
 - Programs and events with targets are shown to a VEN only for targets Business Logic has granted it, and only those targets are shown. Only Business Logic can set targets on VENs and resources
-- The VTN trusts its `auth.Validator` completely: the client ID and scopes it returns decide everything above. A validator that accepts tokens it should not is a hole no check here can close
+- The VTN trusts its `auth.Validator` completely: the client ID and scopes it returns decide everything above. A validator that accepts tokens it should not is a hole no check here can close. An identity without a client ID is answered 500, since every object and target of a client is found by it
 - [docs/CONFORMANCE.md](docs/CONFORMANCE.md) lists where these rules are a reading of text the specification leaves open
 
 ### A VTN without authentication
@@ -55,13 +55,13 @@ OpenADR 3.1 requires HTTPS. The library speaks HTTP over whatever it is given an
 
 - **Everything without targets becomes public**: every program and event that has no targets can be read by anyone who can reach the VTN, with all its payloads. A program that was only "not targeted yet" is public the moment the switch is on
 - Nothing else is opened. A client without a token has no client ID: it cannot read reports, vens, resources, subscriptions or resource groups, cannot write anything, cannot open a WebSocket, and names targets to no effect. These answer 401
-- A request with a token is validated as always. A wrong token is not downgraded to anonymous access
+- A request with a token is validated as always. A wrong token is not downgraded to anonymous access, and neither is an `Authorization` header that is present but empty: that is a 401
 - The VTN's `Limiter` can count requests without a token as one client, which does not hold back someone who means harm: an open VTN is as exposed as any public web server. Put a proxy in front of it
 - Leaving `Validator` out as well makes a VTN on which nobody can authenticate, and so nobody can write through the API: such a VTN is filled through its `Store`
 
 ### Compression
 
-Answers are compressed only on request and never mix a secret with text an attacker chooses in one answer in the way the attacks on compressed TLS need: the VTN does not echo request input into the bodies it compresses, and problem answers, which name what was wrong with a request, are not compressed. Turn it off with `Config.DisableCompression` if your threat model wants none.
+Answers are compressed only on request, and an answer that holds a secret is never compressed together with text another client chose. The secrets the VTN returns are the bearer tokens of subscriptions; answers about subscriptions (`/subscriptions` and `/subscriptions/{id}`) are never compressed, since a list of them holds the tokens of several clients next to names and URLs other clients chose, and the length of a compressed answer would tell how much of that text matches a token. Problem answers, which name what was wrong with a request, are not compressed either. Turn it off with `Config.DisableCompression` if your threat model wants none.
 
 ### Discovery on the local network
 
@@ -70,7 +70,7 @@ Multicast DNS is not authenticated. `discovery.Browse` returns whatever answers 
 - **What is found is an address, not a VTN to trust.** A VEN that takes its VTN from discovery must still verify the TLS certificate of what it connects to, against a certificate authority it was given, and should not send its client secret to a VTN it cannot verify. The specification lets a VEN be configured to accept unverified certificates for local gateways with self-signed ones; with discovery, that combination gives the VEN's credentials and its obedience to whoever announces first
 - `requires_auth=False` in an announcement is a claim too. A VEN that expects to authenticate should not stop because an announcement says it need not
 - `discovery.Advertise` tells the local network that a VTN is there, its host name, port, path, version and the program names it is given. Do not announce what the network should not know
-- The package parses packets from the network. The parser is bounded and fuzzed, takes no more than 9000 bytes per packet, and answers only queries from the subnet of the interface they arrive on
+- The package parses packets from the network. The parser is bounded and fuzzed, and takes no more than 9000 bytes per packet. The names of a packet may expand through compression to about four times its size and no more, and a compression pointer must point back, before the name that uses it. The Advertiser answers only queries from the link, and `Browse` reads only responses from port 5353 from the link: a source in a subnet of the interface they arrive on, or an IPv4 link-local one (169.254/16), as RFC 6762 section 11 has it. `Browse` keeps at most 64 instances and 8 addresses per host, and asks again about at most 16 records at a time; a reply to a one-shot resolver repeats only the questions it answers
 
 ### WebSockets
 
@@ -91,16 +91,16 @@ Business Logic writes them; a VEN reads the groups that hold a resource of its o
 A VTN with subscriptions sends HTTP requests to callback URLs that clients name. That is a server-side request forgery surface: a client could name an address inside the VTN's own network. `webhook.Sender` is built for it, and its defaults are the safe ones:
 
 - **https only**, and no credentials in the URL
-- **Public addresses only.** The check is made on the address the connection actually goes to, after name resolution, so a name that resolves to a loopback, private, link-local (the cloud metadata address among them) or shared address is refused, also when it resolves differently the second time
+- **Public addresses only.** The check is made on the address the connection actually goes to, after name resolution, so a name that resolves to a loopback, private, link-local (the cloud metadata address among them) or shared address is refused, also when it resolves differently the second time. So are the special-purpose IPv4 ranges 0.0.0.0/8, 192.0.0.0/24, 198.18.0.0/15 and 240.0.0.0/4, IPv4-compatible and IPv4-translated IPv6 addresses, site-local (fec0::/10), Teredo (2001::/32) and local-use NAT64 (64:ff9b:1::/48); a NAT64 address (64:ff9b::/96) and a 6to4 address (2002::/16) are judged by the IPv4 address they carry
 - **No redirects.** A 3xx is a failed delivery; the bearer token is never sent anywhere but the URL of the subscription
 - **No proxy** from the environment, which would make the connection on the sender's behalf
 - **Proof before use.** A subscription is accepted only after the URL has echoed a random challenge, so a client cannot aim the VTN's notifications at a server that does not expect them
 - **Nothing learned from failures.** What a client is told about a refused URL does not include what the VTN's network answered
-- Bounded: a timeout per request, a fixed number of attempts, a longest wait between them, bounded queues
+- Bounded: a timeout per request, a fixed number of attempts, a longest wait between them, a queue per webhook host. A webhook host has one request on its way at a time, and a notification that waits for its next attempt holds no worker, so a webhook that is slow, down or asks to wait holds up its own notifications only
 
 `SenderConfig.AllowInsecure` turns the scheme and address rules off and is for tests and closed networks. A custom `SenderConfig.HTTPClient` replaces the default client and its address rule entirely: the rules are then yours to keep.
 
-What remains with the operator: a client with `write_subscriptions` can make the VTN send requests to any public https server that echoes a challenge, at the rate objects change. `server.Config.Limits` bounds how many subscriptions a client keeps (100 by default) and how many distinct callback URLs one names (16, verified four at a time); rate-limit subscriptions if more matters.
+What remains with the operator: a client with `write_subscriptions` can make the VTN send requests to any public https server that echoes a challenge, at the rate objects change. `server.Config.Limits` bounds how many subscriptions a client keeps (100 by default) and how many distinct callback URLs one names (16, verified four at a time), and, with an `Outbox`, how many notifications the subscriptions of one client keep recorded and undelivered (`Deliveries`, 10000, and `DeliveryBytes`, 64 MiB): past those, notifications for that client's webhooks are dropped and logged. A recorded notification is sent with the subscription's current token, and given up once the subscription no longer names its URL. Rate-limit subscriptions if more matters.
 
 **On the receiving side**, a `webhook.Handler` without a `BearerToken` accepts notifications from anyone who can reach it, and a client that acts on events would act on forged ones. Set a token made up for the subscription, serve the handler over https, and treat a notification as a prompt to read from the VTN when the consequence of a forged one is serious. The subscription's bearer token is stored by the VTN and returned to the subscriber and to Business Logic when they read the subscription.
 
@@ -120,7 +120,7 @@ The MQTT client in this module is its own implementation of MQTT 3.1.1. It is fu
 
 ### Tokens from an identity provider
 
-`auth.JWTValidator` verifies the signature before it reads any claim, binds each key to the algorithms of its kind (so a public key cannot be passed off as an HMAC secret), refuses unsigned tokens and tokens with a `crit` header (RFC 7515: it understands no extensions), and requires an expiry; an `nbf` that is not a NumericDate is refused, not ignored. `NewJWTValidator` refuses keys it could not verify with, such as an Ed25519 key of the wrong length. A key set that cannot be fetched is asked for again once a minute at most, also before it has ever been had. What it cannot know is your provider:
+`auth.JWTValidator` verifies the signature before it reads any claim, binds each key to the algorithms of its kind (so a public key cannot be passed off as an HMAC secret), refuses unsigned tokens and tokens with a `crit` header (RFC 7515: it understands no extensions), and requires an expiry; an `nbf` that is not a NumericDate is refused, not ignored. `NewJWTValidator` refuses keys it could not verify with, such as an Ed25519 key of the wrong length. A key set that cannot be fetched is asked for again once a minute at most, also before it has ever been had. The fetch does not depend on the request that started it: a client that goes away does not cancel it, and tokens with known keys do not wait for it. What it cannot know is your provider:
 
 - **Set `Audiences`** when the provider also issues tokens for other services. Otherwise any of its tokens, for any service, is accepted here
 - **Set `Issuer`** when the key set is shared between issuers
@@ -137,7 +137,7 @@ The same holds for a store on a database, such as those in `examples/storage`: t
 
 Nothing is logged or counted unless a logger or a metrics implementation is configured. When one is:
 
-- Bodies, bearer tokens, client secrets and the query of a callback URL are never logged
+- Bodies, bearer tokens, client secrets and the query of a callback URL are never logged. The webhook sender takes the query out of the error of a failed request too, before it is logged, given to `Metrics.OnFailed` or to the done function of `SendConfirmed`
 - A debug line of a call or request names the operation (`GET /events/{id}`), not the path. An error line names the path, which holds an object ID; object IDs are not secrets in OpenADR, but they are in your logs then
 - The labels given to metrics are operations, statuses, mechanisms and object types: a fixed set that a client cannot widen. A request to a path the VTN does not have is counted as `other`
 - An error passed to a metrics callback is the error the caller gets, with its path and the VTN's detail. Label by category (`errors.Is`), do not use its text as a label
@@ -153,6 +153,9 @@ A retry policy makes a client send a request again. The client only does so wher
 - Internal errors are logged, when a logger is configured, and answered with a bare 500: no detail of the failure reaches the client
 - The decoders are fuzzed: of JSON objects, of ISO 8601 durations, of MQTT packets, of WebSocket frames, of DNS messages and of CSV tables
 - `timeline` refuses to lay out a table of more than about a million rows, so that an event that repeats one-second intervals for years costs an error and not the memory. `timeline.ReadCSV` reads at most about a million rows and bounds neither a line nor its input: a program that reads a table it was sent, such as an upload, reads it through an `io.LimitReader`
+- The JSON decoder refuses a `\u` escape of a surrogate that is not one of a pair (RFC 8259 section 8.2), as it refuses a body that is not UTF-8
+- Strings an MQTT broker sends (topics, and decoding errors that quote them) are cut to 256 bytes in log entries
+- `storage.File` refuses a change whose journal line would be longer than 64 MiB, the longest line it reads back
 - The MQTT and WebSocket decoders check a declared length against their limit (4 MiB; 64 KiB for what a client sends a VTN over its WebSocket) before they allocate for it; tests hold them, and the decoding of a notification, to a budget (see [TESTING.md](TESTING.md#allocation-budgets))
 - Application code that the module calls (callbacks, metrics hooks, a logger's handler, and on a VTN's own goroutines its `WebhookSender`, outbox and store) and that does not return normally is logged and does not stop the component it was called from; see [OBSERVABILITY.md](OBSERVABILITY.md#callbacks-that-do-not-return-normally)
 

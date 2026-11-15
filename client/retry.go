@@ -5,9 +5,12 @@ package client
 import (
 	"context"
 	"errors"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	openadr "github.com/otfabric/go-openadr"
@@ -165,14 +168,21 @@ func retryAfter(err error) time.Duration {
 	return 0
 }
 
-// parseRetryAfter reads a Retry-After header: seconds, or a date.
+// parseRetryAfter reads a Retry-After header: delay-seconds, which are
+// digits only (RFC 9110 section 10.2.3), or an HTTP-date. Anything else,
+// such as "1.5", "+7" or "5m", is not a wait the VTN asked for.
 func parseRetryAfter(h http.Header, now time.Time) time.Duration {
 	v := h.Get("Retry-After")
 	if v == "" {
 		return 0
 	}
-	if seconds, err := time.ParseDuration(v + "s"); err == nil && seconds >= 0 {
-		return seconds
+	if strings.Trim(v, "0123456789") == "" {
+		seconds, err := strconv.ParseUint(v, 10, 64)
+		if err != nil || seconds > math.MaxInt64/uint64(time.Second) {
+			// More than a Duration holds: longer than any call waits.
+			return math.MaxInt64
+		}
+		return time.Duration(seconds) * time.Second
 	}
 	if at, err := http.ParseTime(v); err == nil && at.After(now) {
 		return at.Sub(now)

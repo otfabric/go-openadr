@@ -199,19 +199,19 @@ func appendRecord(b []byte, r record) ([]byte, error) {
 	return b, nil
 }
 
-// readName reads the name at off, following compression pointers, and
-// returns the offset after the name where it was first read.
-func readName(msg []byte, off int) (name, int, error) {
-	var (
-		n      name
-		after  = -1
-		length = 0
-	)
-	// A pointer always points back, so the number of jumps is bounded by
-	// the size of the message; this bound is far below that.
-	for jumps := 0; jumps < 64; {
+// walkName follows the name at off, compression pointers included, and
+// calls label, when not nil, for each of its labels. It returns the offset
+// after the name where it was first read, the number of labels and the
+// length of the name as written uncompressed, the root octet included.
+//
+// A pointer has to point before the labels that led to it (RFC 1035,
+// section 4.1.4: to a prior occurrence), so a name ends after at most as
+// many pointers as the message has bytes.
+func walkName(msg []byte, off int, label func([]byte)) (after, labels, size int, err error) {
+	after, size = -1, 1
+	for start := off; ; {
 		if off >= len(msg) {
-			return nil, 0, errMalformed
+			return 0, 0, 0, errMalformed
 		}
 		c := int(msg[off])
 		switch {
@@ -219,31 +219,59 @@ func readName(msg []byte, off int) (name, int, error) {
 			if after < 0 {
 				after = off + 1
 			}
-			return n, after, nil
+			return after, labels, size, nil
 		case c&0xC0 == 0xC0:
 			if off+1 >= len(msg) {
-				return nil, 0, errMalformed
+				return 0, 0, 0, errMalformed
 			}
 			if after < 0 {
 				after = off + 2
 			}
-			off = (c&0x3F)<<8 | int(msg[off+1])
-			jumps++
+			to := (c&0x3F)<<8 | int(msg[off+1])
+			if to >= start {
+				return 0, 0, 0, errMalformed
+			}
+			start, off = to, to
 		case c&0xC0 != 0:
-			return nil, 0, errMalformed
+			return 0, 0, 0, errMalformed
 		default:
 			if off+1+c > len(msg) {
-				return nil, 0, errMalformed
+				return 0, 0, 0, errMalformed
 			}
-			if length += 1 + c; length > 255 {
-				return nil, 0, errMalformed
+			if size += 1 + c; size > 255 {
+				return 0, 0, 0, errMalformed
 			}
-			n = append(n, string(msg[off+1:off+1+c]))
+			if label != nil {
+				label(msg[off+1 : off+1+c])
+			}
+			labels++
 			off += 1 + c
 		}
 	}
-	return nil, 0, errMalformed
 }
+
+// readName reads the name at off and returns the offset after the name
+// where it was first read. budget is what remains of the bytes the names
+// of the message may take uncompressed; the name is charged to it, so that
+// pointers cannot make a small message into many large names.
+func readName(msg []byte, off int, budget *int) (name, int, error) {
+	after, labels, size, err := walkName(msg, off, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	if *budget -= size; *budget < 0 {
+		return nil, 0, errMalformed
+	}
+	n := make(name, 0, labels)
+	_, _, _, _ = walkName(msg, off, func(l []byte) { n = append(n, string(l)) })
+	return n, after, nil
+}
+
+// nameBudget is how many bytes the names of a message may take
+// uncompressed, in all: a few times the message, which compression of
+// ordinary records stays well within, but not the hundreds of times that
+// pointers to one long name could make of it.
+func nameBudget(msg []byte) int { return 4*len(msg) + 1024 }
 
 func parseMessage(msg []byte) (message, error) {
 	if len(msg) < 12 || len(msg) > maxMessage {
@@ -259,10 +287,11 @@ func parseMessage(msg []byte) (message, error) {
 		counts[i] = int(binary.BigEndian.Uint16(msg[4+2*i:]))
 	}
 	off := 12
+	budget := nameBudget(msg)
 	var err error
 	for range counts[0] {
 		var q question
-		if q.name, off, err = readName(msg, off); err != nil {
+		if q.name, off, err = readName(msg, off, &budget); err != nil {
 			return message{}, err
 		}
 		if off+4 > len(msg) {
@@ -279,7 +308,7 @@ func parseMessage(msg []byte) (message, error) {
 	for section := 1; section < 4; section++ {
 		for range counts[section] {
 			var r record
-			if r.name, off, err = readName(msg, off); err != nil {
+			if r.name, off, err = readName(msg, off, &budget); err != nil {
 				return message{}, err
 			}
 			if off+10 > len(msg) {
@@ -295,7 +324,7 @@ func parseMessage(msg []byte) (message, error) {
 			if end > len(msg) {
 				return message{}, errMalformed
 			}
-			known, err := parseData(msg, off, end, &r)
+			known, err := parseData(msg, off, end, &r, &budget)
 			if err != nil {
 				return message{}, err
 			}
@@ -315,17 +344,17 @@ func parseMessage(msg []byte) (message, error) {
 
 // parseData reads the data of a record, which lies in msg[off:end], and
 // reports whether the record is of a type that is understood.
-func parseData(msg []byte, off, end int, r *record) (bool, error) {
+func parseData(msg []byte, off, end int, r *record, budget *int) (bool, error) {
 	var err error
 	switch r.rtype {
 	case typePTR:
-		r.target, _, err = readName(msg[:end], off)
+		r.target, _, err = readName(msg[:end], off, budget)
 	case typeSRV:
 		if end-off < 7 {
 			return false, errMalformed
 		}
 		r.port = binary.BigEndian.Uint16(msg[off+4:])
-		r.target, _, err = readName(msg[:end], off+6)
+		r.target, _, err = readName(msg[:end], off+6, budget)
 	case typeTXT:
 		for off < end {
 			n := int(msg[off])

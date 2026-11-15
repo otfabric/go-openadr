@@ -120,7 +120,12 @@ number, a negative component (a negative duration sets `Negative`), or more
 weeks and days together than one number of days holds.
 
 The same type reports a message that cannot be decoded: a missing required
-property, a wrong JSON type, a duration that is not ISO 8601. For a client
+property, a wrong JSON type, a duration that is not ISO 8601, a 3.1.0
+notification whose `operation` is not `CREATE`, `READ`, `UPDATE` or
+`DELETE` (the value is not repeated in the reason), or a notification whose
+object carries an `objectType` that names another kind of object than the
+notification's `objectType`. A body with a `\u` escape of a surrogate that
+is not one of a pair is refused, as one that is not UTF-8 is. For a client
 that means the *VTN's answer* was invalid; the error is then wrapped with
 "decoding the response", and the request has taken effect on the VTN.
 
@@ -191,7 +196,7 @@ Opening a WebSocket (`NotificationStream` on a client) fails like any call:
 | The client has as many WebSockets open as the VTN allows | `*openadr.Error`, matches `openadr.ErrConflict` |
 | The VTN is shutting down | `*openadr.Error` with status 503 |
 | The context ended before the stream was open | `context.Canceled` or `context.DeadlineExceeded` |
-| The answer is not a WebSocket | a plain error that says so |
+| The answer is not a WebSocket, or names a subprotocol that was not offered | a plain error that says so |
 
 An OpenLEADR VTN answers 409 for a second WebSocket of one client, and goes
 on doing so after the first was closed, until it next fails to send to it.
@@ -200,6 +205,9 @@ on doing so after the first was closed, until it next fails to send to it.
 whichever side, and then it has ended for good: close it and open another.
 The error wraps the reason, a close code of the VTN (1001: it is shutting
 down; 1013: this client did not read fast enough) or a network error; a
+close frame that is not well formed (one byte, a code that may not be
+sent, a reason that is not UTF-8) ends the stream with a plain error, and
+the connection is closed with 1002; a
 program has no reason to tell them apart. A message that is not a
 notification is not an error: `Next` passes over it.
 
@@ -251,7 +259,9 @@ logger, and are nothing a caller hears of.
 journal it cannot replay. A `storage.File` whose journal can no longer be
 written returns an error that matches `storage.ErrReadOnly` for that write
 and every later one; the VTN answers 500 for them and keeps serving reads.
-A write to one that was closed matches `openadr.ErrClosed`.
+A write to one that was closed matches `openadr.ErrClosed`. A change whose
+journal line would be longer than 64 MiB is refused with an error and not
+applied; the store goes on accepting changes.
 
 `auth.Validator` implementations report:
 
@@ -259,12 +269,14 @@ A write to one that was closed matches `openadr.ErrClosed`.
 |-------|---------|-----------------|
 | `auth.ErrInvalidToken` | Unknown, malformed or expired token | 401 |
 | anything else | The validator failed | 500, logged |
+| nil, with an identity without a `ClientID` | The validator named no client | 500, logged |
 
 `auth.JWTValidator` returns `ErrInvalidToken` for every way a token can be
 wrong, without saying which: a bad signature, an algorithm that does not go
 with the key, expiry, issuer, audience, a missing client ID. Its only other
-error is that the provider's key set could not be fetched while no key is
-known.
+errors are that the provider's key set could not be fetched while no key is
+known, and that the context of the request ended while it waited for a
+fetch of the key set: that error wraps the context's error.
 
 Every error answer of the VTN is a problem object with the HTTP status in
 `status` and its name in `title`. The full list: 400 (invalid body,

@@ -176,3 +176,57 @@ func TestMemoryOrderAndConcurrency(t *testing.T) {
 		t.Errorf("order = %+v, want creation order c b a", got)
 	}
 }
+
+// The deliveries of a Memory are found by ID and by callback URL, and
+// stay in the order they were recorded through removals.
+func TestMemoryDeliveryIndexes(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	for i := range 6 {
+		d := Delivery{ID: fmt.Sprintf("d%d", i), CallbackURL: fmt.Sprintf("https://example.com/%d", i%2), Body: []byte(`{}`)}
+		if err := m.AddDelivery(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ids := func(list []Delivery) string {
+		s := ""
+		for _, d := range list {
+			s += d.ID
+		}
+		return s
+	}
+	to := func(url string) string {
+		t.Helper()
+		list, err := m.DeliveriesTo(ctx, url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ids(list)
+	}
+	if got := to("https://example.com/1"); got != "d1d3d5" {
+		t.Errorf("deliveries to /1: %s", got)
+	}
+	for _, id := range []string{"d3", "d0", "d2", "d4", "nope"} {
+		if err := m.RemoveDelivery(ctx, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := to("https://example.com/1"); got != "d1d5" {
+		t.Errorf("deliveries to /1 after removals: %s", got)
+	}
+	if got := to("https://example.com/0"); got != "" {
+		t.Errorf("deliveries to /0 after removing them all: %s", got)
+	}
+	if len(m.byURL) != 1 {
+		t.Errorf("an emptied URL is kept: %v", m.byURL)
+	}
+	if all, _ := m.Deliveries(ctx); ids(all) != "d1d5" {
+		t.Errorf("all deliveries: %s", ids(all))
+	}
+	if err := m.AddDelivery(ctx, Delivery{ID: "d1"}); err == nil {
+		t.Error("a delivery with an ID in use was taken")
+	}
+	if err := m.AddDelivery(ctx, Delivery{ID: "d0"}); err != nil {
+		t.Errorf("a removed ID is free again: %v", err)
+	}
+}

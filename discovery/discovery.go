@@ -154,6 +154,11 @@ func (l link) onLink(addr net.Addr) bool {
 		return false
 	}
 	ip = ip.Unmap()
+	// A link-local source (169.254/16, RFC 3927; fe80::/10) is on the link
+	// by definition (RFC 6762 section 11), whatever the interface's subnets.
+	if ip.IsLinkLocalUnicast() {
+		return true
+	}
 	return slices.ContainsFunc(l.nets, func(p netip.Prefix) bool { return p.Contains(ip) })
 }
 

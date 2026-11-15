@@ -66,11 +66,29 @@ func (s *Server) grantedTargets(ctx context.Context, clientID string) ([]string,
 	var granted []string
 	for _, v := range vens {
 		granted = append(granted, v.Targets...)
-		resources, err := s.store.Resources().List(ctx, storage.ResourceFilter{VENID: v.ID})
-		if err != nil {
-			return nil, err
-		}
-		for _, res := range resources {
+	}
+	// The resources of those vens, found with at most one search whatever
+	// the number of vens: one per ven would cost the number of vens times
+	// that of all resources with a store that scans. The clientID of a
+	// resource is not used to find them, as a ven Business Logic gave to
+	// another client keeps resources that carry the old one.
+	var f storage.ResourceFilter
+	switch len(vens) {
+	case 0:
+		return granted, nil
+	case 1:
+		f.VENID = vens[0].ID
+	}
+	ids := make(map[string]bool, len(vens))
+	for _, v := range vens {
+		ids[v.ID] = true
+	}
+	resources, err := s.store.Resources().List(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	for _, res := range resources {
+		if ids[res.VENID] {
 			granted = append(granted, res.Targets...)
 		}
 	}

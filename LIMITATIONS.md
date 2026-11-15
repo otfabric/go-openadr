@@ -27,7 +27,17 @@ in [INTEROP.md](INTEROP.md), the security consequences in
 
 - VENs, resources and reports have no limit per client unless
   `server.Config.Limits` sets one. Subscriptions are limited to 100 per
-  client by default, and callback URLs to 16 per subscription.
+  client by default, and callback URLs to 16 per subscription. With an
+  `Outbox`, the webhook notifications recorded and not yet delivered for the
+  subscriptions of one client are limited to 10000 and 64 MiB by default;
+  past that, notifications for that client are dropped and logged, not
+  recorded.
+- A notification recorded in the `Outbox` is kept once for each
+  subscription and callback URL it goes to, body included.
+- `discovery.Browse` reads responses only from sources on the link: in a
+  subnet of the interface, or IPv4 link-local (169.254/16). A responder
+  that answers from any other address, such as one on a subnet the host has
+  no address in, is not found.
 - `timeline.ReadCSV` stops after about a million rows, and bounds neither
   the length of a line nor the size of its input: wrap an input that is not
   trusted in an `io.LimitReader`.

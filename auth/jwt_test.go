@@ -336,3 +336,171 @@ func TestJWKS(t *testing.T) {
 		t.Errorf("no key set available: %v, want an error that is not ErrInvalidToken", err)
 	}
 }
+
+// slowKeySet is a provider whose answers, while hold is set, wait until
+// release is closed.
+type slowKeySet struct {
+	srv     *httptest.Server
+	set     atomic.Value
+	hold    atomic.Bool
+	hit     chan struct{}
+	release chan struct{}
+	fetches atomic.Int64
+}
+
+func newSlowKeySet(t *testing.T, keys ...claims) *slowKeySet {
+	t.Helper()
+	p := &slowKeySet{hit: make(chan struct{}, 8), release: make(chan struct{})}
+	p.set.Store(keys)
+	p.hold.Store(true)
+	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.fetches.Add(1)
+		if p.hold.Load() {
+			p.hit <- struct{}{}
+			select {
+			case <-p.release:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		_ = json.NewEncoder(w).Encode(claims{"keys": p.set.Load()})
+	}))
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+func (p *slowKeySet) waitHit(t *testing.T) {
+	t.Helper()
+	select {
+	case <-p.hit:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the key set was not fetched")
+	}
+}
+
+// validateCancelled starts a Validate whose context is cancelled while the
+// key set it asked for is being fetched, and returns its error.
+func validateCancelled(t *testing.T, v *JWTValidator, p *slowKeySet, token string) error {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	errc := make(chan error, 1)
+	go func() {
+		_, err := v.Validate(ctx, token)
+		errc <- err
+	}()
+	p.waitHit(t)
+	cancel()
+	select {
+	case err := <-errc:
+		return err
+	case <-time.After(5 * time.Second):
+		t.Fatal("Validate did not return when its context was cancelled")
+		return nil
+	}
+}
+
+// TestJWKSFetchNotTiedToRequest: a request that goes away while the key
+// set is being fetched for it neither stops the fetch nor keeps other
+// tokens from being validated.
+func TestJWKSFetchNotTiedToRequest(t *testing.T) {
+	ctx := context.Background()
+	unknown := sign(t, "RS256", "made-up", rsaKey2, good())
+
+	t.Run("rotation", func(t *testing.T) {
+		p := newSlowKeySet(t, jwk("rsa-1", &rsaKey.PublicKey))
+		now := jwtNow
+		v, _ := NewJWTValidator(JWTConfig{JWKSURL: p.srv.URL, Now: func() time.Time { return now }})
+		p.hold.Store(false)
+		if _, err := v.Validate(ctx, sign(t, "RS256", "rsa-1", rsaKey, good())); err != nil {
+			t.Fatal(err)
+		}
+		p.hold.Store(true)
+
+		// The provider rotates; the interval has passed.
+		p.set.Store([]claims{jwk("rsa-2", &rsaKey2.PublicKey)})
+		now = now.Add(2 * refetchAfter)
+		if err := validateCancelled(t, v, p, unknown); err == nil || errors.Is(err, ErrInvalidToken) || !errors.Is(err, context.Canceled) {
+			t.Errorf("cancelled Validate: %v, want an error wrapping context.Canceled", err)
+		}
+		close(p.release)
+		if _, err := v.Validate(ctx, sign(t, "RS256", "rsa-2", rsaKey2, good())); err != nil {
+			t.Errorf("rotated key after a cancelled fetch: %v", err)
+		}
+	})
+
+	t.Run("cold", func(t *testing.T) {
+		p := newSlowKeySet(t, jwk("rsa-1", &rsaKey.PublicKey))
+		v, _ := NewJWTValidator(JWTConfig{JWKSURL: p.srv.URL, Now: func() time.Time { return jwtNow }})
+		token := sign(t, "RS256", "rsa-1", rsaKey, good())
+		if err := validateCancelled(t, v, p, token); !errors.Is(err, context.Canceled) {
+			t.Errorf("cancelled Validate: %v", err)
+		}
+		close(p.release)
+		if _, err := v.Validate(ctx, token); err != nil {
+			t.Errorf("a cancelled fetch kept the validator from its key set: %v", err)
+		}
+		if n := p.fetches.Load(); n != 1 {
+			t.Errorf("%d fetches, want 1", n)
+		}
+	})
+
+	t.Run("known key does not wait", func(t *testing.T) {
+		p := newSlowKeySet(t, jwk("rsa-1", &rsaKey.PublicKey))
+		now := jwtNow
+		v, _ := NewJWTValidator(JWTConfig{JWKSURL: p.srv.URL, Now: func() time.Time { return now }})
+		p.hold.Store(false)
+		known := sign(t, "RS256", "rsa-1", rsaKey, good())
+		if _, err := v.Validate(ctx, known); err != nil {
+			t.Fatal(err)
+		}
+		p.hold.Store(true)
+		now = now.Add(2 * refetchAfter)
+
+		// Two tokens with unknown kids share the one fetch.
+		errc := make(chan error, 2)
+		for range 2 {
+			go func() {
+				_, err := v.Validate(ctx, unknown)
+				errc <- err
+			}()
+		}
+		p.waitHit(t)
+		done := make(chan error, 1)
+		go func() {
+			_, err := v.Validate(ctx, known)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Errorf("known key during a fetch: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Error("a token with a known key waited for the fetch")
+		}
+		close(p.release)
+		for range 2 {
+			if err := <-errc; !errors.Is(err, ErrInvalidToken) {
+				t.Errorf("unknown kid: %v", err)
+			}
+		}
+		if n := p.fetches.Load(); n != 2 {
+			t.Errorf("%d fetches, want 2", n)
+		}
+	})
+}
+
+// TestJWKSFetchTimeout: a provider that does not answer is given up on
+// after the fetch timeout even when the HTTP client has none.
+func TestJWKSFetchTimeout(t *testing.T) {
+	old := defaultFetchTimeout
+	defaultFetchTimeout = 20 * time.Millisecond
+	defer func() { defaultFetchTimeout = old }()
+	p := newSlowKeySet(t, jwk("rsa-1", &rsaKey.PublicKey))
+	defer close(p.release)
+	v, _ := NewJWTValidator(JWTConfig{JWKSURL: p.srv.URL, HTTPClient: &http.Client{}, Now: func() time.Time { return jwtNow }})
+	_, err := v.Validate(context.Background(), sign(t, "RS256", "rsa-1", rsaKey, good()))
+	if err == nil || errors.Is(err, ErrInvalidToken) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("provider that does not answer: %v", err)
+	}
+}

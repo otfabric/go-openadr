@@ -168,9 +168,12 @@ A notification is decided without a request and its token, so the store
 keeps with each subscription whether its client was Business Logic
 (`storage.SubscriptionRecord`).
 
-`notification/webhook.Sender` owns delivery: one queue per worker, a
-callback URL always on the same worker, so that order per callback holds
-across retries without a lock per URL. It also owns the rules for URLs that
+`notification/webhook.Sender` owns delivery: one lane per callback URL, of
+which only the head is attempted, so that order per callback holds across
+retries; the webhook hosts take turns, each with one request on its way at
+a time and its own share of the queue; and a retry waits on a timer, not on
+a worker, so that a webhook that is slow, down or asks to wait holds up
+only its own notifications. It also owns the rules for URLs that
 clients choose, because they have to hold for the verification request and
 for every delivery alike. The server sees an interface with two methods and
 does not import the package.
@@ -302,5 +305,10 @@ for now waits for the next round (`RedeliverEvery`) and holds back what
 came after it for the same URL, so that the order survives failures and
 restarts. The sender stays what it was, a queue with retries in memory; it
 only tells the outbox what became of each delivery (`SendConfirmed`).
+The outbox counts what the subscriptions of each client have recorded, in
+memory, and records nothing past `Limits.Deliveries` and `DeliveryBytes`;
+the count is set right against `Deliveries` on each round, so that what a
+previous VTN left is counted too. An outbox that implements
+`storage.URLOutbox` is asked for one callback URL at a time.
 `server/limit.go` is the rate limiting hook, asked in the one place every
 request is authorized.
