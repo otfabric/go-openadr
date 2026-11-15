@@ -87,7 +87,8 @@ type Config struct {
 	AllowAnonymous bool
 	// DisableCompression turns off compression of responses. By default a
 	// response of 1 KiB or more is compressed, with gzip or deflate, for a
-	// client that accepts one of them.
+	// client that accepts one of them; answers about subscriptions, which
+	// carry their bearer tokens, never are.
 	DisableCompression bool
 	// Logger receives internal errors, with the method and the path of the
 	// request and never its body or token; and at debug level one line
@@ -196,6 +197,14 @@ type Limits struct {
 	// makes ever more reports, so a limit on them needs the application to
 	// delete old ones.
 	VENs, Resources, Reports int
+	// Deliveries is the most webhook notifications the subscriptions of
+	// one client have recorded in the Outbox and not yet delivered, and
+	// DeliveryBytes the most bytes they take (bodies, callback URLs and
+	// tokens); 10000 and 64 MiB when zero. They apply with Config.Outbox
+	// only. A notification past either is not recorded and not sent, and
+	// a warning is logged: what one client's subscriptions cost the store
+	// stays bounded while their webhooks do not take what they are sent.
+	Deliveries, DeliveryBytes int
 }
 ```
 
@@ -287,7 +296,7 @@ RateLimiter is a Limiter that gives each client a budget of requests: a token bu
 func NewRateLimiter(perSecond float64, burst int) *RateLimiter
 ```
 
-NewRateLimiter returns a Limiter that lets each client make perSecond requests a second on average, and burst at once after a quiet time. A burst below 1 is 1.
+NewRateLimiter returns a Limiter that lets each client make perSecond requests a second on average, and burst at once after a quiet time. A burst below 1 is 1. A perSecond of 0 or less, or NaN, takes no request; +Inf takes every request.
 
 It is a guard against a client that has gone wrong, a loop without a pause, not a defence against an attack: it counts requests of clients it knows, after their token was checked. What arrives without a valid token is for a gateway before the VTN to limit.
 
@@ -308,6 +317,10 @@ type Server struct {
 
 	// creating is held while a create that is limited by Limits counts
 	// what the client keeps and stores the new object.
+
+	// writing is held while an object is created, replaced or deleted
+	// through kind, from the first look at the store to the write, and is
+	// taken before creating.
 
 }
 ```

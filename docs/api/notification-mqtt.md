@@ -51,7 +51,10 @@ type Metrics interface {
 	// OnPublished is called when the broker has confirmed a notification.
 	OnPublished()
 	// OnDropped is called when a notification is not queued, because the
-	// queue is full: the broker has been away for too long.
+	// queue is full: the broker has been away for too long. It is also
+	// called for a notification that MQTT cannot carry, a topic with a
+	// wildcard or NUL or a topic or body too long, which is dropped
+	// instead of sent again.
 	OnDropped()
 	// OnReceived is called for every notification a Subscriber hands to
 	// its Notify function, before it does. A notification is not handed
@@ -69,7 +72,9 @@ A callback that does not return normally is logged at error level, as "mqtt: cal
 
 ```go
 type Publisher struct {
-	// contains filtered or unexported fields
+
+	// runCtx bounds what run waits for; cancelRun ends it, with stop.
+
 }
 ```
 

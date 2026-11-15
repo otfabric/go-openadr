@@ -96,13 +96,26 @@ func (e *RefusedError) Unwrap() error
 ```go
 type Sender struct {
 
-	// stop ends the waits between attempts when Close runs out of time;
-	// stopped is cancelled with it, and ends the requests on their way.
+	// perHost and total bound the notifications that wait: for one
+	// webhook host, and for all of them.
+
+	// signalled when there is work, or nothing left
+	// closed: no more notifications are accepted. stopping: Close ran out
+	// of time, and what waits is given up on.
+
+	// by callback URL
+	// by host name
+	// hosts with a lane ready and nothing on its way, in turn
+	// notifications not on their way
+	// notifications not finished
+
+	// stopped is cancelled when Close returns or runs out of time, and
+	// ends the requests on their way.
 
 }
 ```
 
-Sender delivers notifications to webhooks. Notifications for one callback URL are delivered in the order they were sent, one at a time; a webhook that is slow or down delays those that share its worker, and nothing else.
+Sender delivers notifications to webhooks. Notifications for one callback URL are delivered in the order they were sent, one at a time. A webhook host has at most one request on its way and at most Queue notifications waiting, and a notification that waits for its next attempt holds no worker: a webhook that is slow, down or asks to wait delays its own notifications and fills its own share of the queue, and nothing else.
 
 Delivery is at least once while the Sender runs: a notification is sent again when the webhook did not confirm it, so a webhook may see one twice. It is not durable: what is queued when the process stops is lost, and so is a notification whose attempts are used up.
 
@@ -172,10 +185,13 @@ type SenderConfig struct {
 	// MaxBackoff is the longest wait between two attempts; 1 minute when
 	// zero.
 	MaxBackoff time.Duration
-	// Queue is the number of notifications that may wait per worker; 256
-	// when zero. A notification for a full queue is dropped.
+	// Queue is the number of notifications that may wait per webhook host
+	// (the host name of the callback URL), retries included; 256 when
+	// zero. Queue times Workers may wait in all, and no less than twice
+	// Queue. A notification for a full queue is dropped.
 	Queue int
-	// Workers is the number of deliveries that run at once; 4 when zero.
+	// Workers is the number of deliveries that run at once, each to a
+	// host of its own; 4 when zero.
 	Workers int
 	// Logger receives failed and dropped deliveries. Nil disables logging.
 	Logger *slog.Logger

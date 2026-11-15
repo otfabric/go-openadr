@@ -177,6 +177,14 @@ func (f *File) Deliveries(ctx context.Context) ([]Delivery, error)
 
 Deliveries implements Outbox.
 
+#### func (File) DeliveriesTo
+
+```go
+func (f *File) DeliveriesTo(ctx context.Context, callbackURL string) ([]Delivery, error)
+```
+
+DeliveriesTo implements URLOutbox.
+
 #### func (File) Events
 
 ```go
@@ -258,7 +266,9 @@ FileOptions adjusts OpenFile.
 ```go
 type Memory struct {
 
-	// The Outbox.
+	// The Outbox: the deliveries oldest first, and indexes of them by ID
+	// and by callback URL, so that neither a write nor the queue of one
+	// URL has to look through all of them.
 
 }
 ```
@@ -288,6 +298,14 @@ func (m *Memory) Deliveries(context.Context) ([]Delivery, error)
 ```
 
 Deliveries implements Outbox.
+
+#### func (Memory) DeliveriesTo
+
+```go
+func (m *Memory) DeliveriesTo(_ context.Context, callbackURL string) ([]Delivery, error)
+```
+
+DeliveriesTo implements URLOutbox.
 
 #### func (Memory) Events
 
@@ -448,11 +466,11 @@ Store gives access to the collections of a VTN. Implementations must be safe for
 A Store enforces what has to be decided atomically with a write:
 
   - program names and VEN names are unique, and so is a resource name within its VEN;
-  - an event refers to an existing program, a report to an existing event, a resource to an existing VEN, and a subscription that names a program to an existing one;
+  - an event refers to an existing program, a report to an existing event, a resource to an existing VEN, and a subscription that is created with, or updated to, a program to an existing one;
   - a program that has events and a VEN that has resources cannot be deleted;
   - the children of a resource group exist, and a resource or resource group that is deleted leaves the groups it was a child of.
 
-A violation is reported as a \*ConstraintError. Reports outlive the event they refer to.
+A violation is reported as a \*ConstraintError. Reports outlive the event they refer to, and subscriptions the program they name: such a subscription may still be updated as long as it keeps its programID, and a store that is reopened holds it as it was.
 
 ### type SubscriptionFilter
 
@@ -479,6 +497,20 @@ type SubscriptionRecord struct {
 ```
 
 SubscriptionRecord is a subscription as the VTN keeps it: the object of the API, and what the VTN has to remember about the subscriber to decide later, without a request and its token at hand, what to notify it of.
+
+### type URLOutbox
+
+```go
+type URLOutbox interface {
+	Outbox
+	// DeliveriesTo returns the deliveries recorded for a callback URL,
+	// oldest first: those Deliveries returns whose CallbackURL is
+	// callbackURL.
+	DeliveriesTo(ctx context.Context, callbackURL string) ([]Delivery, error)
+}
+```
+
+URLOutbox is an optional extension of Outbox for an outbox that can find the deliveries of one callback URL without going through all of them. The VTN uses it, when its Outbox has it, to take up the next notification of a URL. Memory and File implement it.
 
 ### type VENFilter
 
