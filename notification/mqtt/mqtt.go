@@ -187,9 +187,9 @@ type Publisher struct {
 	stop     chan struct{}
 	stopOnce sync.Once
 	done     chan struct{}
-	// runCtx bounds what run waits for; cancelRun ends it, with stop.
-	runCtx    context.Context
-	cancelRun context.CancelFunc
+	// running bounds what run waits for; Close ends it, with stop. It is a
+	// pointer so that Publisher stays comparable.
+	running *runContext
 
 	mu     sync.Mutex
 	closed bool
@@ -210,7 +210,8 @@ func NewPublisher(cfg PublisherConfig) (*Publisher, error) {
 		cfg.Queue = 1024
 	}
 	p := &Publisher{cfg: cfg, log: guard.NewLogger(cfg.Logger, "mqtt"), queue: make(chan message, cfg.Queue), stop: make(chan struct{}), done: make(chan struct{})}
-	p.runCtx, p.cancelRun = context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	p.running = &runContext{ctx: ctx, cancel: cancel}
 	go p.run()
 	return p, nil
 }
@@ -264,7 +265,7 @@ func (p *Publisher) Close(ctx context.Context) error {
 		// A PUBLISH waiting for its acknowledgement is given up too.
 		p.stopOnce.Do(func() {
 			close(p.stop)
-			p.cancelRun()
+			p.running.cancel()
 		})
 		<-p.done
 		return ctx.Err()
@@ -284,7 +285,7 @@ func metric(log guard.Logger, m Metrics, callback string, f func(Metrics)) {
 
 func (p *Publisher) run() {
 	defer close(p.done)
-	defer p.cancelRun()
+	defer p.running.cancel()
 	var conn *imqtt.Conn
 	defer func() {
 		if conn != nil {
@@ -308,7 +309,7 @@ func (p *Publisher) run() {
 				}
 				metric(p.log, p.cfg.Metrics, "Metrics.OnConnected", Metrics.OnConnected)
 			}
-			ctx, cancel := context.WithTimeout(p.runCtx, 30*time.Second)
+			ctx, cancel := context.WithTimeout(p.running.ctx, 30*time.Second)
 			err := conn.Publish(ctx, m.topic, m.body)
 			cancel()
 			if err == nil {
@@ -323,7 +324,7 @@ func (p *Publisher) run() {
 				metric(p.log, p.cfg.Metrics, "Metrics.OnDropped", Metrics.OnDropped)
 				break
 			}
-			if p.runCtx.Err() != nil {
+			if p.running.ctx.Err() != nil {
 				return // Close gave up on it; the connection is closed on the way out
 			}
 			metric(p.log, p.cfg.Metrics, "Metrics.OnDisconnected", func(m Metrics) { m.OnDisconnected(err) })
@@ -336,6 +337,12 @@ func (p *Publisher) run() {
 			wait = nextWait(wait)
 		}
 	}
+}
+
+// runContext is the context of a Publisher's run goroutine.
+type runContext struct {
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // maxLogged is the most bytes of a string from the broker, or of an error

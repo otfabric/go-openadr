@@ -73,7 +73,8 @@ A callback that does not return normally is logged at error level, as "mqtt: cal
 ```go
 type Publisher struct {
 
-	// runCtx bounds what run waits for; cancelRun ends it, with stop.
+	// running bounds what run waits for; Close ends it, with stop. It is a
+	// pointer so that Publisher stays comparable.
 
 }
 ```

@@ -208,3 +208,12 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	defer l.mu.Unlock()
 	return l.w.Write(p)
 }
+
+// isComparable compiles only for a comparable type.
+func isComparable[T comparable]() {}
+
+// Publisher stays comparable, as it was before Close could give up a
+// publish in flight.
+func TestPublisherComparable(t *testing.T) {
+	isComparable[Publisher]()
+}
