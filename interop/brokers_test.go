@@ -28,7 +28,7 @@ import (
 // people wrote: the VTN of this module publishes its notifications to the
 // broker in a container, and this module's subscriber receives them from
 // it. Each broker runs as its maker ships it, apart from what is needed to
-// let a client in without a password.
+// let a client in without a password, and NanoMQ's worker count (below).
 
 // brokers are the brokers to test on, and how each is started.
 var brokers = []struct {
@@ -42,11 +42,16 @@ var brokers = []struct {
 	// Mosquitto 2 listens on loopback only unless given a configuration;
 	// the image ships this one, which opens port 1883 to everyone.
 	{name: "mosquitto", args: []string{"mosquitto", "-c", "/mosquitto-no-auth.conf"}},
-	// Under a burst, NanoMQ 0.25 now and then logs "Client ID collision"
-	// for a client that connected once, and closes its connection: the
-	// subscriber, with a clean session, misses what is published until it
-	// is back. It has also lost one message of a burst with no disconnect.
-	{name: "nanomq", loses: "NanoMQ 0.25 drops subscriber sessions, and messages, under a burst (INTEROP.md)"},
+	// NanoMQ 0.25 runs with one worker context: with more, the default,
+	// it may deliver two QoS 1 messages of one publisher to a subscriber
+	// in swapped order (nanomq/nanomq#2480, fix proposed in
+	// nanomq/NanoNNG#1719 and nanomq/nanomq#2481, tracked in
+	// otfabric/openadr-interop#30). Drop the setting once a release has it.
+	// On Docker Desktop for macOS, NanoMQ now and then logs "Client ID
+	// collision" for a subscriber that connected once and closes its
+	// connection; with a clean session it misses what is published until it
+	// is back. That has not been seen in CI, nor explained (INTEROP.md).
+	{name: "nanomq", args: []string{"--parallel", "1"}, loses: "NanoMQ 0.25 drops subscriber sessions under a burst on Docker Desktop for macOS (INTEROP.md)"},
 	{name: "hivemq"},
 	{name: "emqx"},
 }

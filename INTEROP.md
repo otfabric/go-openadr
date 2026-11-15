@@ -14,7 +14,7 @@ specific tests against specific versions.
 | ElaadNL client over TLS, and its answers compressed | go-openadr | Passing, run locally | `make interop` |
 | ElaadNL client: subscriptions (webhook delivered), MQTT listener, resource groups, no token | go-openadr | Passing, run locally | `make interop` |
 | go-openadr MQTT subscriber, on Mosquitto | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
-| go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.7, HiveMQ CE 2026.5, EMQX 6.3.3 | Passing, run locally; NanoMQ loses messages of a burst (below) | `make interop` |
+| go-openadr VTN (MQTT publisher) and MQTT subscriber | on Eclipse Mosquitto 2.1.2, NanoMQ 0.25.7, HiveMQ CE 2026.5, EMQX 6.3.3 | Passing, run locally; NanoMQ with one worker context, and it may lose messages of a burst on Docker Desktop for macOS (below) | `make interop` |
 | go-openadr WebSocket subscriber | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr BL and VEN, resource groups | OpenLEADR v0.2.8 | Passing, run locally | `make interop` |
 | go-openadr VEN and BL, **OpenADR 3.0.1** | OpenLEADR v0.1.4 (Rust) | Passing, run locally | `make interop` |
@@ -115,7 +115,8 @@ the question is not only whether another VTN's notifications can be read,
 but whether brokers other people wrote accept what it sends. For each of
 Eclipse Mosquitto, NanoMQ, HiveMQ Community Edition and EMQX, the test
 starts the broker in a container, as its maker ships it (Mosquitto with the
-open configuration its image carries), and puts this module's VTN on it as
+open configuration its image carries, NanoMQ with `--parallel 1`; see
+below), and puts this module's VTN on it as
 publisher and this module's `mqtt.Subscriber` on it twice, as a VEN and as
 Business Logic, on the topics the VTN names for each:
 
@@ -123,7 +124,8 @@ Business Logic, on the topics the VTN names for each:
   Logic with all targets, at the VEN with the one it was granted;
 - an event for another group does not appear on the VEN's topics;
 - a burst of 200 events arrives complete and in order, at QoS 1 (on
-  NanoMQ: in order, but not always complete; see below);
+  NanoMQ under Docker Desktop for macOS: in order, but not always
+  complete; see below);
 - an event of a thousand intervals, about 60 kB, arrives whole;
 - the broker is restarted: the subscriber connects and subscribes again,
   the publisher connects again, and what is published after arrives.
@@ -132,21 +134,41 @@ All four passed without a change to the client. The images are pinned by
 digest in `interop/harness_test.go`; `OPENADR_INTEROP_MOSQUITTO_IMAGE`,
 `..._NANOMQ_IMAGE`, `..._HIVEMQ_IMAGE` and `..._EMQX_IMAGE` select others.
 
-**NanoMQ loses messages of a burst.** Now and then, during the burst,
-NanoMQ logs `nni_pipe_set_pid: Client ID collision or set ID failed!` for a
-subscriber that connected once, reports it offline and online again, and
-closes its connection. The subscriber connects again at once, but with the
-clean session it uses (as documented for `mqtt.Subscriber`) it misses what
-was published in between: the first notifications of the burst, from one to
-twenty-three of them. In CI, one run on linux/amd64 lost a single message
-in the middle of a burst with no disconnect in the broker's log. Mosquitto,
-HiveMQ CE and EMQX delivered every burst complete, in 10 runs each, with
-no connection dropped before the planned restart. Measured on a developer
-machine (linux/arm64 containers on macOS), 2026-11-13: NanoMQ 0.25.6 lost
-messages in 3 of 160 runs, 0.25.7 in 38 of 120. The publisher sends one
-message at a time and the subscriber hands every PUBLISH it reads to
-`Notify`; nothing on this module's side skips one. So on NanoMQ the test
-asserts that what arrives comes in order and once, and logs what was lost.
+**NanoMQ reorders QoS 1 messages with more than one worker context.** With
+its default configuration, NanoMQ 0.25.6 and 0.25.7 now and then deliver two
+adjacent messages of the burst in swapped order, `burst-091` before
+`burst-090`, to a subscriber that stays connected. NanoMQ sends the PUBACK
+when it reads a PUBLISH and forwards the message later on a task-queue
+thread, so the publisher's next message can be forwarded first. MQTT 3.1.1
+and 5.0, section 4.6, require the order to be kept. Reported as
+[nanomq/nanomq#2480](https://github.com/nanomq/nanomq/issues/2480), with a
+standalone reproduction (about 110 to 140 swaps in 5000 messages with the
+default configuration, none with `--parallel 1`); tracked in
+[openadr-interop#30](https://github.com/otfabric/openadr-interop/issues/30).
+A fix is proposed in
+[nanomq/NanoNNG#1719](https://github.com/nanomq/NanoNNG/pull/1719) and
+[nanomq/nanomq#2481](https://github.com/nanomq/nanomq/pull/2481).
+CI saw it twice, once on each version; the 0.25.6 failure ("notification
+63 of the burst is of burst-064") was this swap, not a lost message. The
+test starts NanoMQ with `--parallel 1`, one worker context, until a fixed
+release is pinned.
+
+**NanoMQ drops subscriber sessions on Docker Desktop for macOS.** Now and
+then, during the burst, NanoMQ logs `nni_pipe_set_pid: Client ID collision
+or set ID failed!` for a subscriber that connected once, reports it offline
+and online again, and closes its connection. The subscriber connects again
+at once, but with the clean session it uses (as documented for
+`mqtt.Subscriber`) it misses what was published in between. The broker's
+debug log shows the second connection with that client ID coming from a new
+peer port, and this module's client did not dial it. It has not been seen in
+CI (linux/amd64), and it did not happen in 30 runs with a TCP relay in the
+broker's network namespace in front of NanoMQ, so whether NanoMQ or Docker
+Desktop's port forwarding causes it is open. Measured on a developer machine
+(linux/arm64 containers on macOS), 2026-11-13: NanoMQ 0.25.6 lost messages
+in 3 of 160 runs, 0.25.7 in 38 of 120. So on NanoMQ the test accepts missing
+messages, asserts that what arrives comes in order and once, and logs what
+was lost. Mosquitto, HiveMQ CE and EMQX delivered every burst complete, in
+10 runs each, with no connection dropped before the planned restart.
 
 What this does not show: TLS and logins on these brokers (the test connects
 in the clear, without a password), their access control, which is what
