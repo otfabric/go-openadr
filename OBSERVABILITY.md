@@ -21,6 +21,7 @@ to standard error.
 | Client | `client.Config.Logger` | every call: operation, duration, error | a token renewed because the VTN refused the old one | every retry: operation, attempt, wait, error | a callback that did not return normally |
 | VTN | `server.Config.Logger` | every request: operation, status, duration | | with an `Outbox`: a recorded notification given up (too old, its subscription gone or no longer naming its callback URL, refused for good), the notifications recorded for the subscriptions of a client at their limit (once, until one is recorded again) | a failure answered with 500: method, path, error; a notification that could not be decided; a callback that did not return normally |
 | Webhook sender | `webhook.SenderConfig.Logger` | | | a notification dropped or not delivered | a callback that did not return normally |
+| Webhook handler | `webhook.Handler.Logger` | | | a request refused (below) | a notification answered 500 (below); a `Notify` that did not return normally |
 | MQTT publisher, subscriber | `mqtt.PublisherConfig.Logger`, `mqtt.SubscriberConfig.Logger` | | | broker unreachable, connection lost, notification dropped, a notification MQTT cannot carry (dropped), a message that is not a notification (topic and error cut to 256 bytes) | a callback that did not return normally |
 | WebSocket subscriber | `websocket.SubscriberConfig.Logger` | | | VTN unreachable, connection lost | a callback that did not return normally |
 | Advertiser | `discovery.Advertisement.Logger` | | | a packet that could not be sent or received | a handler of the Logger that did not return normally |
@@ -40,6 +41,25 @@ an error names its path, as the error itself does.
 
 The context of a call is passed to the logger (`DebugContext`, ...), so a
 handler that reads trace IDs from the context sees them.
+
+### The webhook handler
+
+`webhook.Handler` writes one entry for each request it refuses or fails
+on, and none for a request it answers 200; the context of the request goes
+to the logger. Every entry has the fields `status` and `reason`:
+
+| Level | Message | `reason` | Other fields |
+|---|---|---|---|
+| Warn | `webhook: request refused` | `echo parameter missing or longer than 256 bytes` (400), `method not allowed` (405), `bearer token missing or wrong` (401), `body longer than MaxBodyBytes` (413), `body could not be read` (400), `not a notification` (400) | `method`; `error` for a body that could not be read or is not a notification |
+| Error | `webhook: notification failed` | `Notify returned an error`, `no Notify`, `Version not supported` (500) | `error`, the error of `Notify` or of `Version` |
+
+The handler never logs a token, the body, the path or the query of the
+request (the callback URL may hold a secret of the subscription). What the
+request chose, the `method` and an `error` that may quote the body, and the
+error of `Notify`, are cut to 256 bytes at a character boundary and quoted
+as a Go string, so that no line break or control character of the peer's
+reaches the log: `"PUT"`, and for one that was cut its first 256 bytes and
+its length, `"XX…XX"... (300 bytes)`.
 
 ## Metrics
 
@@ -114,9 +134,19 @@ for the sender to say:
 | Who | Configuration | Callbacks |
 |---|---|---|
 | Webhook sender | `webhook.SenderConfig.Metrics` | `OnDelivered(attempts, duration)`, `OnFailed(attempts, duration, err)`, `OnDropped()`: every notification ends in exactly one |
-| MQTT publisher | `mqtt.PublisherConfig.Metrics` | `OnPublished()`, `OnDropped()` (a full queue, or a notification MQTT cannot carry: a topic with a wildcard or NUL, a topic or body too long), `OnConnected()`, `OnDisconnected(err)` |
-| MQTT subscriber | `mqtt.SubscriberConfig.Metrics` | `OnReceived()`, `OnConnected()`, `OnDisconnected(err)` |
+| MQTT publisher | `mqtt.PublisherConfig.Metrics` | `OnPublished()`, `OnDropped()` (a full queue, or a notification MQTT cannot carry: a topic with a wildcard or NUL, a topic or body too long), `OnConnected()`, `OnDisconnected(err)`; `OnLateAck()` with `mqtt.LateAckMetrics` |
+| MQTT subscriber | `mqtt.SubscriberConfig.Metrics` | `OnReceived()`, `OnConnected()`, `OnDisconnected(err)`; `OnLateAck()` with `mqtt.LateAckMetrics` |
 | WebSocket subscriber | `websocket.SubscriberConfig.Metrics` | `OnReceived()`, `OnConnected()`, `OnDisconnected(err)` |
+
+A `Metrics` of the MQTT publisher or subscriber that also implements
+`mqtt.LateAckMetrics` is told by `OnLateAck()` of every acknowledgement
+from the broker (PUBACK, SUBACK, UNSUBACK) that nothing waits for: the
+answer to a publish or a subscription that was given up on (its 30 seconds
+ran out, or `Close` gave it up), which came after all, or one that answers
+nothing. It is dropped and completes no other request. A few after a
+timeout are expected; a steady count is a broker that answers late or
+answers what was not asked. It runs on the goroutine that reads the
+connection and, like the other callbacks, must not block.
 
 The ones to alert on: `OnDropped` anywhere (a queue was full: a webhook or
 the broker has been away too long, and notifications are being lost; for
@@ -149,9 +179,10 @@ not return normally for that entry either, the entry is dropped. Without a
 logger nothing is written, and the module goes on all the same.
 
 A `Notify` of `webhook.Handler` runs in an HTTP request instead: one that
-does not return normally is answered 500, and written with its stack where
-the `http.Server` that serves the Handler writes errors (its `ErrorLog`, or
-the standard logger), as `net/http` writes a handler that does not return
+does not return normally is answered 500. With a `Logger` it is reported
+there as above; without one it is written with its stack where the
+`http.Server` that serves the Handler writes errors (its `ErrorLog`, or the
+standard logger), as `net/http` writes a handler that does not return
 normally. `http.ErrAbortHandler` is passed on to `net/http`.
 
 ## Retries

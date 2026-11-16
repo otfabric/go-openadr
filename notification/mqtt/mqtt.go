@@ -155,6 +155,37 @@ type Metrics interface {
 	OnReceived()
 }
 
+// LateAckMetrics is an extension of Metrics: a Metrics value of a Publisher
+// or a Subscriber that also has OnLateAck is told of every acknowledgement
+// from the broker that nothing waits for.
+type LateAckMetrics interface {
+	// OnLateAck is called for an acknowledgement (PUBACK, SUBACK or
+	// UNSUBACK) of a packet identifier that no request of the connection
+	// waits for: the answer to a publish or a subscription that was given
+	// up on, which came after all, or one that answers nothing. It is
+	// dropped, and completes no other request. OnLateAck runs on the
+	// goroutine that reads the connection. Like the other callbacks it must
+	// not block, and one that does not return normally is logged in the
+	// same way.
+	OnLateAck()
+}
+
+// lateAck returns the OnLateAck of m, called through log, or nil when m has
+// none. enter, when not nil, is called first and the function it returns
+// after.
+func lateAck(log guard.Logger, m Metrics, enter func() (leave func())) func() {
+	late, ok := m.(LateAckMetrics)
+	if !ok {
+		return nil
+	}
+	return func() {
+		if enter != nil {
+			defer enter()()
+		}
+		log.Call("Metrics.OnLateAck", late.OnLateAck)
+	}
+}
+
 // PublisherConfig configures a Publisher.
 type PublisherConfig struct {
 	Broker
@@ -190,6 +221,10 @@ type Publisher struct {
 	// running bounds what run waits for; Close ends it, with stop. It is a
 	// pointer so that Publisher stays comparable.
 	running *runContext
+	// waitedFor are the goroutines Close waits for: that of run, and one
+	// that reads a connection while it is in OnLateAck, which run may wait
+	// for. A Close on one of them does not wait. A pointer, as running.
+	waitedFor *goid.Set
 
 	mu     sync.Mutex
 	closed bool
@@ -209,7 +244,8 @@ func NewPublisher(cfg PublisherConfig) (*Publisher, error) {
 	if cfg.Queue <= 0 {
 		cfg.Queue = 1024
 	}
-	p := &Publisher{cfg: cfg, log: guard.NewLogger(cfg.Logger, "mqtt"), queue: make(chan message, cfg.Queue), stop: make(chan struct{}), done: make(chan struct{})}
+	p := &Publisher{cfg: cfg, log: guard.NewLogger(cfg.Logger, "mqtt"), queue: make(chan message, cfg.Queue), stop: make(chan struct{}), done: make(chan struct{}),
+		waitedFor: &goid.Set{}}
 	ctx, cancel := context.WithCancel(context.Background())
 	p.running = &runContext{ctx: ctx, cancel: cancel}
 	go p.run()
@@ -251,6 +287,14 @@ func (p *Publisher) enqueue(m message) bool {
 // have reached the broker, or until ctx ends, whichever is first. It may be
 // called more than once and from several goroutines at the same time; each
 // call waits in the same way.
+//
+// Close may also be called from the Metrics callbacks and the Logger's
+// handler. On a goroutine of the Publisher, which it would wait for, it does
+// not wait: it stops accepting notifications and returns nil at once, and
+// the Publisher goes on, once that callback has returned, until what is
+// queued has reached the broker or ctx has ended, as it does for a Close on
+// another goroutine. OnDropped for a full queue, and its log entry, run on
+// the goroutine that called Publish: a Close there waits.
 func (p *Publisher) Close(ctx context.Context) error {
 	p.mu.Lock()
 	if !p.closed {
@@ -258,11 +302,20 @@ func (p *Publisher) Close(ctx context.Context) error {
 		close(p.queue)
 	}
 	p.mu.Unlock()
+	if p.waitedFor.Has() {
+		go func() { _ = p.wait(ctx) }()
+		return nil
+	}
+	return p.wait(ctx)
+}
+
+// wait waits until run has ended, or until ctx ends: then what is queued,
+// and a PUBLISH waiting for its acknowledgement, are given up.
+func (p *Publisher) wait(ctx context.Context) error {
 	select {
 	case <-p.done:
 		return nil
 	case <-ctx.Done():
-		// A PUBLISH waiting for its acknowledgement is given up too.
 		p.stopOnce.Do(func() {
 			close(p.stop)
 			p.running.cancel()
@@ -286,6 +339,9 @@ func metric(log guard.Logger, m Metrics, callback string, f func(Metrics)) {
 func (p *Publisher) run() {
 	defer close(p.done)
 	defer p.running.cancel()
+	defer p.waitedFor.Enter()()
+	o := p.cfg.options()
+	o.OnLateAck = lateAck(p.log, p.cfg.Metrics, p.waitedFor.Enter)
 	var conn *imqtt.Conn
 	defer func() {
 		if conn != nil {
@@ -301,7 +357,7 @@ func (p *Publisher) run() {
 		// the next connection, before anything that came after it.
 		for {
 			if conn == nil {
-				conn = p.cfg.connect(p.stop, p.cfg.options(), func(err error) {
+				conn = p.cfg.connect(p.stop, o, func(err error) {
 					p.warn("mqtt: cannot connect to the broker", slog.Any("error", err))
 				})
 				if conn == nil {
@@ -479,11 +535,11 @@ func (s *Subscriber) Sessions() int {
 // Close may be called more than once, from several goroutines at the same
 // time, and from Notify, the Metrics callbacks and the Logger's handler.
 // From one of those it does not wait for the callback it is called from,
-// which goes on until it returns. Called from Notify or OnReceived, it
-// returns when the rest of the Subscriber has stopped. Called from
-// OnConnected, OnDisconnected or the Logger's handler, it may return
-// before that: the Subscriber stops once that callback has returned, and a
-// Notify in progress goes on until it returns. In every case no Notify
+// which goes on until it returns. Called from Notify, OnReceived or
+// OnLateAck, it returns when the rest of the Subscriber has stopped.
+// Called from OnConnected, OnDisconnected or the Logger's handler, it may
+// return before that: the Subscriber stops once that callback has
+// returned, and a Notify in progress goes on until it returns. In every case no Notify
 // begins after Close has returned. A goroutine that Notify waits for is not
 // Notify: a Close there waits for Notify, which must not wait for it.
 func (s *Subscriber) Close() error {
@@ -531,6 +587,7 @@ func (s *Subscriber) run() {
 	}()
 
 	o := s.cfg.options()
+	o.OnLateAck = lateAck(s.log, s.cfg.Metrics, nil)
 	o.OnMessage = func(topic string, payload []byte) {
 		n, err := codec.UnmarshalNotification(payload)
 		if err != nil {

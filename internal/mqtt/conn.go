@@ -32,6 +32,12 @@ type Options struct {
 	// order they arrive. It must not block for long: nothing else is read
 	// meanwhile. A message is acknowledged when OnMessage has returned.
 	OnMessage func(topic string, payload []byte)
+	// OnLateAck, when not nil, is called for every acknowledgement of a
+	// packet identifier that no request waits for: one that came after its
+	// request had ended, or one that answers nothing. The acknowledgement is
+	// dropped, and completes no other request. It runs on the goroutine that
+	// reads the connection: nothing else is read meanwhile.
+	OnLateAck func()
 }
 
 // Conn is a connection to a broker. It is safe for concurrent use.
@@ -39,6 +45,7 @@ type Conn struct {
 	conn      net.Conn
 	keepAlive time.Duration
 	onMessage func(string, []byte)
+	onLateAck func()
 
 	writeMu sync.Mutex
 
@@ -147,7 +154,7 @@ func Dial(ctx context.Context, uri string, o Options) (*Conn, error) {
 	}
 
 	c := &Conn{
-		conn: nc, keepAlive: time.Duration(seconds) * time.Second, onMessage: o.OnMessage,
+		conn: nc, keepAlive: time.Duration(seconds) * time.Second, onMessage: o.OnMessage, onLateAck: o.OnLateAck,
 		waiting: map[uint16]pending{}, done: make(chan struct{}), lastSeen: time.Now(),
 	}
 	go c.read()
@@ -299,6 +306,8 @@ func (c *Conn) read() {
 			c.mu.Unlock()
 			if ok {
 				w.ch <- p
+			} else if c.onLateAck != nil {
+				c.onLateAck()
 			}
 		case TypePingresp:
 		default:

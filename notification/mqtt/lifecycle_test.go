@@ -615,3 +615,203 @@ func TestCallbacksThatDoNotReturnNormally(t *testing.T) {
 	stop()
 	_ = lost.Close(expired)
 }
+
+// publisherHooks is Metrics, with OnLateAck, that calls f from the
+// callback named hook.
+type publisherHooks struct {
+	hook string
+	f    func()
+}
+
+func (h *publisherHooks) call(hook string) {
+	if h.hook == hook {
+		h.f()
+	}
+}
+func (h *publisherHooks) OnConnected()       { h.call("OnConnected") }
+func (h *publisherHooks) OnPublished()       { h.call("OnPublished") }
+func (h *publisherHooks) OnDropped()         { h.call("OnDropped") }
+func (h *publisherHooks) OnLateAck()         { h.call("OnLateAck") }
+func (*publisherHooks) OnDisconnected(error) {}
+func (*publisherHooks) OnReceived()          {}
+
+// L10: Close called from a callback on a goroutine of the Publisher, which
+// it would wait for, returns at once; what is queued still reaches the
+// broker, and the Publisher stops once it has. OnDropped here is for a
+// notification MQTT cannot carry, which run drops; OnLateAck runs on the
+// goroutine that reads the connection, which run waits for.
+func TestPublisherCallbackCallsClose(t *testing.T) {
+	for _, hook := range []string{"OnConnected", "OnPublished", "OnDropped", "OnLateAck"} {
+		t.Run(hook, func(t *testing.T) {
+			b := newStrayBroker(t)
+			var (
+				p        *Publisher
+				created  = make(chan struct{})
+				returned = make(chan struct{})
+				once     sync.Once
+			)
+			m := &publisherHooks{hook: hook, f: func() {
+				once.Do(func() {
+					<-created
+					if err := p.Close(context.Background()); err != nil {
+						t.Errorf("Close from %s: %v", hook, err)
+					}
+					close(returned)
+				})
+			}}
+			pub, err := NewPublisher(PublisherConfig{Broker: Broker{URL: b.url(), Backoff: 10 * time.Millisecond}, Metrics: m})
+			if err != nil {
+				t.Fatal(err)
+			}
+			p = pub
+			if hook == "OnDropped" {
+				pub.Publish("events/#", []byte(eventNotification))
+			}
+			for range 3 {
+				pub.Publish("events/create", []byte(eventNotification))
+			}
+			close(created)
+			within(t, "Close called from "+hook, returned)
+			within(t, "the Publisher, once what was queued was sent,", pub.done)
+			if n := b.published.Load(); n != 3 {
+				t.Errorf("the broker had %d of the 3 notifications", n)
+			}
+			if err := pub.Close(context.Background()); err != nil {
+				t.Errorf("Close after: %v", err)
+			}
+		})
+	}
+}
+
+// L10: the same from the Logger's handler, on the goroutine that connects.
+// The context of that Close still bounds what the Publisher does after:
+// one that has ended gives up what is queued.
+func TestPublisherLoggerCallsClose(t *testing.T) {
+	expired, cancel := context.WithCancel(context.Background())
+	cancel()
+	var p *Publisher
+	created := make(chan struct{})
+	h := &closingLog{returned: make(chan struct{}), close: func() error {
+		<-created
+		return p.Close(expired)
+	}}
+	pub, err := NewPublisher(PublisherConfig{Broker: nowhere, Logger: slog.New(h)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = pub
+	pub.Publish("events/create", []byte(eventNotification))
+	close(created)
+	within(t, "Close called from the Logger's handler", h.returned)
+	if err := h.err; err != nil {
+		t.Errorf("Close from the Logger's handler: %v, want nil", err)
+	}
+	within(t, "the Publisher, which gave up what was queued,", pub.done)
+	if err := pub.Close(context.Background()); err != nil {
+		t.Errorf("Close after: %v", err)
+	}
+}
+
+// closingLog is a log handler that calls close at its first entry, and
+// keeps what it returned.
+type closingLog struct {
+	first    atomic.Bool
+	close    func() error
+	err      error
+	returned chan struct{}
+}
+
+func (h *closingLog) Enabled(context.Context, slog.Level) bool { return true }
+func (h *closingLog) Handle(context.Context, slog.Record) error {
+	if h.first.CompareAndSwap(false, true) {
+		h.err = h.close()
+		close(h.returned)
+	}
+	return nil
+}
+func (h *closingLog) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *closingLog) WithGroup(string) slog.Handler      { return h }
+
+// OnDropped for a full queue runs on the goroutine that called Publish,
+// which the Publisher does not wait for: a Close there waits as any other.
+func TestPublisherCloseFromOnDroppedWaits(t *testing.T) {
+	expired, cancel := context.WithCancel(context.Background())
+	cancel()
+	var (
+		p       *Publisher
+		created = make(chan struct{})
+		once    sync.Once
+		closed  = make(chan error, 1)
+	)
+	m := &hooks{dropped: func() {
+		once.Do(func() {
+			<-created
+			closed <- p.Close(expired)
+			select {
+			case <-p.done:
+			default:
+				t.Error("Close from OnDropped returned before the Publisher stopped")
+			}
+		})
+	}}
+	pub, err := NewPublisher(PublisherConfig{Broker: nowhere, Queue: 1, Metrics: m})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p = pub
+	close(created)
+	// The Publisher holds one and queues one: the third, or an earlier
+	// one, is dropped.
+	for range 3 {
+		pub.Publish("events/create", []byte(eventNotification))
+	}
+	select {
+	case err := <-closed:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Close from OnDropped: %v", err)
+		}
+	default:
+		t.Fatal("no notification was dropped")
+	}
+}
+
+// L10: a Close from OnLateAck of a Subscriber, on the goroutine that reads
+// the connection, returns once the Subscriber has stopped: the subscription
+// that waited for its answer meanwhile is given up.
+func TestSubscriberOnLateAckCallsClose(t *testing.T) {
+	b := newStrayBroker(t)
+	var (
+		s        *Subscriber
+		created  = make(chan struct{})
+		returned = make(chan struct{})
+		once     sync.Once
+	)
+	m := &publisherHooks{hook: "OnLateAck", f: func() {
+		once.Do(func() {
+			<-created
+			if err := s.Close(); err != nil {
+				t.Errorf("Close from OnLateAck: %v", err)
+			}
+			select {
+			case <-s.done:
+			default:
+				t.Error("Close called from OnLateAck returned before the Subscriber stopped")
+			}
+			close(returned)
+		})
+	}}
+	sub, err := NewSubscriber(SubscriberConfig{Broker: Broker{URL: b.url(), Backoff: 10 * time.Millisecond}, Topics: []string{"events/+"}, Metrics: m,
+		Notify: func(context.Context, string, openadr.Notification) {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s = sub
+	close(created)
+	within(t, "Close called from OnLateAck", returned)
+	if n := sub.Sessions(); n != 0 {
+		t.Errorf("%d sessions after a Close while subscribing", n)
+	}
+	if err := sub.Close(); err != nil {
+		t.Errorf("Close after: %v", err)
+	}
+}

@@ -1,5 +1,33 @@
 # go-openadr Releases
 
+## v0.9.0
+
+**Date:** 2026-11-16
+**Previous release:** v0.8.0
+
+### Breaking
+
+- **`Close` of `webhook.Sender` and `mqtt.Publisher`, called from a callback on one of their own goroutines, returns at once.** From a Metrics callback, the done function of `SendConfirmed` or the Logger's handler on a worker of the Sender, and from a Metrics callback (`OnLateAck` included) or the Logger's handler on a goroutine of the Publisher, `Close` stops accepting notifications and returns `nil` without waiting, also when two callbacks call it at the same time. The Sender or Publisher goes on once that callback has returned: what is queued is delivered or given up on, or reaches the broker, as for a `Close` on another goroutine, and the context of that `Close` still bounds it. Until now such a `Close` waited for the goroutine it was called on, for ever, and API.md said it was not allowed; the subscribers have done the same since v0.7.3. The goroutine is told apart by its ID (`internal/goid`). Who notices: only a program that called `Close` from such a callback, which now goes on instead of waiting. A `Close` on any other goroutine, `OnDropped` for a full queue and a done function called before `SendConfirmed` returns included, waits as before. To wait until the Sender or Publisher has stopped, call `Close` from a goroutine of the application's own.
+
+### Added
+
+- **`mqtt.LateAckMetrics`**, an extension of `mqtt.Metrics` with one method, `OnLateAck()`. A `Metrics` of a Publisher or Subscriber that also implements it is told of every acknowledgement from the broker (PUBACK, SUBACK, UNSUBACK) that nothing waits for: the answer to a publish or a subscription that was given up on, which came after all, or one that answers nothing. Such an acknowledgement is dropped and completes no other request, as before; now it is counted. It runs on the goroutine that reads the connection, and one that does not return normally is logged as the other callbacks are. `mqtt.Metrics` does not change.
+- **`webhook.Handler.Logger`**, a `*slog.Logger`; nil, the zero value, logs nothing, as before. It receives each request the Handler refuses at warn level (`webhook: request refused`: a verification request without a usable echo, a method other than GET and POST, a bearer token missing or wrong, a body too long, unreadable or not a notification) and each notification it answers 500 at error level (`webhook: notification failed`: `Notify` returned an error, there is no `Notify`, `Version` is not supported), with the fields `status`, `reason`, `method` and `error`. No token, body, path or query is logged; the method, an error that may quote the body and the error of `Notify` are cut to 256 bytes and quoted. A `Notify` that does not return normally is reported through the Logger, as `webhook: callback did not return normally`, instead of the `ErrorLog` of the `http.Server`, which keeps it when there is no Logger.
+- The exported API changes only by these additions. `gorelease` against v0.8.0 is checked by CI on release.
+
+### Tests
+
+- L7: `TestCancelledRequestAndLateAnswer` (`internal/mqtt`) counts a late SUBACK and a PUBACK that answers nothing; `TestLateAcksAreCounted` and `TestLateAckThatDoesNotReturnNormally` (`notification/mqtt`) against a broker that sends an acknowledgement nothing waits for before every answer.
+- L10: `TestPublisherCallbackCallsClose` (OnConnected, OnPublished, OnDropped, OnLateAck), `TestPublisherLoggerCallsClose`, `TestPublisherCloseFromOnDroppedWaits` and, for the Subscriber, `TestSubscriberOnLateAckCallsClose` (`notification/mqtt`); `TestSenderCallbackCallsClose` (OnDelivered, OnFailed, the done function, the Logger), `TestSenderCloseFromTwoCallbacks` and `TestSenderCloseFromCallbackGivesUp` (`notification/webhook`). On v0.8.0's code each of these but `TestPublisherCloseFromOnDroppedWaits`, which holds what stays, fails when its bound of 10 seconds runs out.
+- `TestHandlerLogger`, `TestHandlerWithoutLoggerIsSilent`, `TestHandlerLoggerThatDoesNotReturnNormally` and `TestQuoted` (`notification/webhook`): the entry of each refusal and failure, no token, body, path or query in any entry, nothing written without a Logger.
+
+### Documentation
+
+- API.md: `webhook.Handler.Logger`, `mqtt.LateAckMetrics`, and in "Concurrency" what a `Close` of the Sender and the Publisher from their own callbacks does, in place of the sentence that did not allow it; so do the doc comments of `Sender.Close`, `SendConfirmed` and `Publisher.Close`.
+- OBSERVABILITY.md: the entries of the webhook handler, its fields and how they are quoted, and `OnLateAck`. SECURITY.md: what the webhook handler leaves out of its log. TESTING.md: L7 and L10 with the new tests, and the tests of what is logged.
+
+---
+
 ## v0.8.0
 
 **Date:** 2026-11-15

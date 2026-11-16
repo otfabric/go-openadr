@@ -25,12 +25,20 @@ type Handler struct {
 	// Version is the revision of OpenADR the VTN notifies in:
 	// openadr.Version310 when empty, or openadr.Version301.
 	Version openadr.Version
+	// Logger receives the requests the Handler refuses, at warn level, and
+	// the notifications it answers with 500, at error level; see
+	// OBSERVABILITY.md. Bodies, tokens, the path and the query are never
+	// logged, and what the request chose (its method, the reason a body is
+	// not a notification) is cut to 256 bytes and quoted, as is an error of
+	// Notify. A handler of the Logger that does not return normally costs
+	// its entry and is reported through the Logger. Nil disables logging.
+	Logger *slog.Logger
 }
 ```
 
 Handler receives the notifications of a VTN: it is what a subscription's callback URL points at.
 
-It answers the VTN's verification request (GET with an echo parameter), and for every notification (POST) checks the bearer token, decodes the body and calls Notify. The VTN is told 200 when Notify returns nil, and 500 otherwise, on which it sends the notification again later. A Notify that does not return normally is answered 500 too, and written with its stack where the http.Server that serves the Handler writes errors: its ErrorLog, or the standard logger.
+It answers the VTN's verification request (GET with an echo parameter), and for every notification (POST) checks the bearer token, decodes the body and calls Notify. The VTN is told 200 when Notify returns nil, and 500 otherwise, on which it sends the notification again later. A Notify that does not return normally is answered 500 too, and logged with its stack: through Logger when there is one, and otherwise where the http.Server that serves the Handler writes errors, its ErrorLog or the standard logger.
 
 Notify may be called concurrently, and with the same notification more than once: delivery is at least once. Notifications tell that something changed; a client that must not miss anything still polls from time to time.
 
@@ -109,8 +117,11 @@ type Sender struct {
 	// notifications not on their way
 	// notifications not finished
 
-	// stopped is cancelled when Close returns or runs out of time, and
-	// ends the requests on their way.
+	// workers are the goroutines of work, which Close waits for: a Close
+	// on one of them does not wait.
+
+	// stopped is cancelled when the workers have stopped after Close, or
+	// Close ran out of time, and ends the requests on their way.
 
 }
 ```
@@ -135,7 +146,9 @@ NewSender returns a running Sender.
 func (s *Sender) Close(ctx context.Context) error
 ```
 
-Close stops accepting notifications and waits until those that are queued have been delivered or given up on, or until ctx ends, whichever is first. When ctx ends first, the requests on their way are cancelled and what is still queued is given up on without being sent. It may be called more than once and from several goroutines at the same time; each call waits in the same way. It must not be called from a Metrics callback or a done function of SendConfirmed that runs on a goroutine of the Sender, which it waits for.
+Close stops accepting notifications and waits until those that are queued have been delivered or given up on, or until ctx ends, whichever is first. When ctx ends first, the requests on their way are cancelled and what is still queued is given up on without being sent. It may be called more than once and from several goroutines at the same time; each call waits in the same way.
+
+Close may also be called from the Metrics callbacks, the done function of SendConfirmed and the Logger's handler. On a goroutine of the Sender, which it would wait for, it does not wait: it stops accepting notifications and returns nil at once, and the Sender goes on, once that callback has returned, until what is queued has been delivered or given up on, or until ctx ends, as it does for a Close on another goroutine. OnDropped, and a done function called before SendConfirmed returns, run on the goroutine that called SendConfirmed: a Close there waits.
 
 #### func (Sender) Send
 
@@ -151,7 +164,7 @@ Send queues a notification for a webhook and returns at once. bearerToken is sen
 func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, done func(error))
 ```
 
-SendConfirmed is Send for a caller that wants to know what became of the notification. done is called exactly once, from another goroutine or, when the notification is not even queued, from this one: with nil when the webhook confirmed it, with a \*RefusedError when it will never take it, and otherwise with the reason it was given up on for now: its attempts are used up, the queue was full, the Sender was closed. A VTN uses it to keep a notification until it is delivered. done must not call Close: Close waits for the goroutines it runs on.
+SendConfirmed is Send for a caller that wants to know what became of the notification. done is called exactly once, from another goroutine or, when the notification is not even queued, from this one: with nil when the webhook confirmed it, with a \*RefusedError when it will never take it, and otherwise with the reason it was given up on for now: its attempts are used up, the queue was full, the Sender was closed. A VTN uses it to keep a notification until it is delivered. done may call Close (see Close).
 
 #### func (Sender) Verify
 
