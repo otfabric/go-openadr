@@ -285,8 +285,9 @@ func TestGoodbye(t *testing.T) {
 
 func TestBrowseSurvivesLoss(t *testing.T) {
 	n := newFakeNet("10.0.0.1", "10.0.0.2")
-	advertise(t, n.host(0), Advertisement{Port: 443})
-	// The first two queries are lost on the way.
+	// The first two queries are lost on the way. The rule is set before the
+	// advertiser starts, whose goroutines read it as they send; it sends
+	// responses only, so the queries it counts are the browser's.
 	var queries int
 	n.lose = func(data []byte, _ net.Addr) bool {
 		if m, err := parseMessage(data); err == nil && !m.response {
@@ -295,6 +296,7 @@ func TestBrowseSurvivesLoss(t *testing.T) {
 		}
 		return false
 	}
+	advertise(t, n.host(0), Advertisement{Port: 443})
 	if vtns := browse(t, n.host(1), Options{Timeout: 3 * time.Second, First: true}); len(vtns) != 1 {
 		t.Errorf("found %+v", vtns)
 	}
