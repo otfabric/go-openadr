@@ -6,11 +6,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -228,5 +232,218 @@ func TestHandlerNotifyThatDoesNotReturnNormally(t *testing.T) {
 	}
 	if got := errorLog.String(); got != entry {
 		t.Errorf("more in the ErrorLog than the one entry:\n%s", got[len(entry):])
+	}
+}
+
+// senderHooks is Metrics that calls f from the callback named hook.
+type senderHooks struct {
+	hook string
+	f    func()
+}
+
+func (h *senderHooks) call(hook string) {
+	if h.hook == hook {
+		h.f()
+	}
+}
+func (h *senderHooks) OnDelivered(int, time.Duration)     { h.call("OnDelivered") }
+func (h *senderHooks) OnFailed(int, time.Duration, error) { h.call("OnFailed") }
+func (h *senderHooks) OnDropped()                         { h.call("OnDropped") }
+
+// hookHandler is a log handler that calls f for every entry.
+type hookHandler struct{ f func() }
+
+func (h hookHandler) Enabled(context.Context, slog.Level) bool { return true }
+func (h hookHandler) Handle(context.Context, slog.Record) error {
+	h.f()
+	return nil
+}
+func (h hookHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h hookHandler) WithGroup(string) slog.Handler      { return h }
+
+// L10: Close called from a callback on a worker of the Sender, which it
+// would wait for, returns at once; what is queued is still delivered, and
+// the Sender stops once it has been.
+func TestSenderCallbackCallsClose(t *testing.T) {
+	for _, hook := range []string{"OnDelivered", "OnFailed", "done", "Logger"} {
+		t.Run(hook, func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.URL.Path == "/gone" {
+					w.WriteHeader(http.StatusGone)
+				}
+			}))
+			defer srv.Close()
+			var (
+				s        *Sender
+				created  = make(chan struct{})
+				returned = make(chan struct{})
+				once     sync.Once
+			)
+			closeOnce := func() {
+				once.Do(func() {
+					<-created
+					if err := s.Close(context.Background()); err != nil {
+						t.Errorf("Close from %s: %v", hook, err)
+					}
+					close(returned)
+				})
+			}
+			cfg := SenderConfig{AllowInsecure: true, Attempts: 1, Workers: 1}
+			first, done := "/ok", func() {}
+			switch hook {
+			case "OnDelivered", "OnFailed":
+				cfg.Metrics = &senderHooks{hook: hook, f: closeOnce}
+			case "done":
+				done = closeOnce
+			case "Logger":
+				cfg.Logger = slog.New(hookHandler{f: closeOnce})
+			}
+			if hook == "OnFailed" || hook == "Logger" {
+				first = "/gone" // not delivered: OnFailed, and a warning
+			}
+			s = NewSender(cfg)
+			outcomes := make(chan error, 3)
+			for i, path := range []string{first, "/ok", "/ok"} {
+				s.SendConfirmed(srv.URL+path, "", []byte(`{}`), func(err error) {
+					if i == 0 {
+						done()
+					}
+					outcomes <- err
+				})
+			}
+			close(created)
+			within(t, "Close called from "+hook, returned)
+			for i := range 3 {
+				select {
+				case err := <-outcomes:
+					if i > 0 && err != nil {
+						t.Errorf("notification %d after the Close: %v", i, err)
+					}
+				case <-time.After(10 * time.Second):
+					t.Fatalf("%d of 3 notifications were finished", i)
+				}
+			}
+			closeSender(t, s)
+			if n := requests.Load(); n != 3 {
+				t.Errorf("%d requests for 3 notifications", n)
+			}
+		})
+	}
+}
+
+// oneServer is an HTTP client that connects to srv whatever host a URL
+// names: two host names are two webhook hosts of the Sender.
+func oneServer(srv *httptest.Server) *http.Client {
+	var d net.Dialer
+	return &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return d.DialContext(ctx, network, srv.Listener.Addr().String())
+	}}}
+}
+
+// L10: two workers whose callbacks call Close at the same time both
+// return: neither waits for the other.
+func TestSenderCloseFromTwoCallbacks(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer srv.Close()
+	var (
+		s        *Sender
+		created  = make(chan struct{})
+		in       atomic.Int32
+		bothIn   = make(chan struct{})
+		returned = make(chan struct{}, 2)
+	)
+	m := &senderHooks{hook: "OnDelivered", f: func() {
+		<-created
+		if in.Add(1) == 2 {
+			close(bothIn)
+		}
+		select {
+		case <-bothIn:
+		case <-time.After(10 * time.Second):
+			t.Error("the two deliveries were not reported at the same time")
+		}
+		if err := s.Close(context.Background()); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+		returned <- struct{}{}
+	}}
+	s = NewSender(SenderConfig{AllowInsecure: true, HTTPClient: oneServer(srv), Workers: 2, Metrics: m})
+	s.Send("http://a.example/hook", "", []byte(`{}`))
+	s.Send("http://b.example/hook", "", []byte(`{}`))
+	close(created)
+	for i := range 2 {
+		select {
+		case <-returned:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%d of the 2 Close calls from OnDelivered returned within 10s", i)
+		}
+	}
+	closeSender(t, s)
+}
+
+// The context of a Close called from a callback still bounds what the
+// Sender does after: one that has ended gives up what is queued, as a
+// Close on another goroutine whose context ends.
+func TestSenderCloseFromCallbackGivesUp(t *testing.T) {
+	var waited atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wait" {
+			waited.Add(1)
+			// Read to the end first: then the server notices that the
+			// Sender gave the request up, and ends its context.
+			_, _ = io.Copy(io.Discard, r.Body)
+			select {
+			case <-r.Context().Done():
+			case <-release:
+			}
+		}
+	}))
+	defer srv.Close()
+	defer close(release)
+	expired, cancel := context.WithCancel(context.Background())
+	cancel()
+	var (
+		s       *Sender
+		created = make(chan struct{})
+		closed  = make(chan error, 1)
+		once    sync.Once
+	)
+	m := &senderHooks{hook: "OnDelivered", f: func() {
+		once.Do(func() {
+			<-created
+			closed <- s.Close(expired)
+		})
+	}}
+	s = NewSender(SenderConfig{AllowInsecure: true, Attempts: 2, Workers: 1, Metrics: m})
+	outcomes := make(chan error, 2)
+	s.Send(srv.URL+"/ok", "", []byte(`{}`))
+	for range 2 {
+		s.SendConfirmed(srv.URL+"/wait", "", []byte(`{}`), func(err error) { outcomes <- err })
+	}
+	close(created)
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Errorf("Close from OnDelivered: %v, want nil", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Close called from OnDelivered did not return within 10s")
+	}
+	for i := range 2 {
+		select {
+		case err := <-outcomes:
+			if !errors.Is(err, openadr.ErrClosed) {
+				t.Errorf("a notification queued when the context had ended: %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%d of 2 queued notifications were given up on", i)
+		}
+	}
+	closeSender(t, s)
+	if n := waited.Load(); n > 1 {
+		t.Errorf("%d requests of notifications that were given up on", n)
 	}
 }

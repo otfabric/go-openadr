@@ -27,6 +27,7 @@ import (
 
 	openadr "github.com/otfabric/go-openadr"
 	"github.com/otfabric/go-openadr/internal/backoff"
+	"github.com/otfabric/go-openadr/internal/goid"
 	"github.com/otfabric/go-openadr/internal/guard"
 )
 
@@ -122,9 +123,12 @@ type Sender struct {
 	waiting          int              // notifications not on their way
 	pending          int              // notifications not finished
 	wg               sync.WaitGroup
-	stopOnce         sync.Once
-	// stopped is cancelled when Close returns or runs out of time, and
-	// ends the requests on their way.
+	// workers are the goroutines of work, which Close waits for: a Close
+	// on one of them does not wait.
+	workers  goid.Set
+	stopOnce sync.Once
+	// stopped is cancelled when the workers have stopped after Close, or
+	// Close ran out of time, and ends the requests on their way.
 	stopped context.Context
 	abort   context.CancelFunc
 }
@@ -389,8 +393,8 @@ func (s *Sender) Send(callbackURL, bearerToken string, body []byte) {
 // the webhook confirmed it, with a *RefusedError when it will never take
 // it, and otherwise with the reason it was given up on for now: its
 // attempts are used up, the queue was full, the Sender was closed. A VTN
-// uses it to keep a notification until it is delivered. done must not
-// call Close: Close waits for the goroutines it runs on.
+// uses it to keep a notification until it is delivered. done may call
+// Close (see Close).
 func (s *Sender) SendConfirmed(callbackURL, bearerToken string, body []byte, done func(error)) {
 	d := &delivery{url: callbackURL, token: bearerToken, body: body, done: done}
 	name := hostOf(callbackURL)
@@ -532,9 +536,16 @@ func (s *Sender) takeWaiting() *delivery {
 // When ctx ends first, the requests on their way are cancelled and what is
 // still queued is given up on without being sent. It may be called more
 // than once and from several goroutines at the same time; each call waits
-// in the same way. It must not be called from a Metrics callback or a done
-// function of SendConfirmed that runs on a goroutine of the Sender, which
-// it waits for.
+// in the same way.
+//
+// Close may also be called from the Metrics callbacks, the done function of
+// SendConfirmed and the Logger's handler. On a goroutine of the Sender,
+// which it would wait for, it does not wait: it stops accepting
+// notifications and returns nil at once, and the Sender goes on, once that
+// callback has returned, until what is queued has been delivered or given
+// up on, or until ctx ends, as it does for a Close on another goroutine.
+// OnDropped, and a done function called before SendConfirmed returns, run
+// on the goroutine that called SendConfirmed: a Close there waits.
 func (s *Sender) Close(ctx context.Context) error {
 	s.mu.Lock()
 	if !s.closed {
@@ -542,6 +553,17 @@ func (s *Sender) Close(ctx context.Context) error {
 		s.cond.Broadcast()
 	}
 	s.mu.Unlock()
+	if s.workers.Has() {
+		go func() { _ = s.wait(ctx) }()
+		return nil
+	}
+	return s.wait(ctx)
+}
+
+// wait waits until the workers have stopped, or until ctx ends: then the
+// requests on their way are cancelled and what is still queued is given up
+// on.
+func (s *Sender) wait(ctx context.Context) error {
 	done := make(chan struct{})
 	go func() { s.wg.Wait(); close(done) }()
 	select {
@@ -567,6 +589,7 @@ func (s *Sender) Close(ctx context.Context) error {
 // left, or Close ran out of time and nothing is left to give up on.
 func (s *Sender) work() {
 	defer s.wg.Done()
+	defer s.workers.Enter()()
 	s.mu.Lock()
 	for {
 		if s.stopping {

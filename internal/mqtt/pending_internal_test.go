@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -13,7 +14,8 @@ import (
 // L6, L7: a request whose context ends returns the error of the context
 // and is no longer waited for; the next request on the connection has a
 // packet identifier of its own and succeeds, and the answer to the first,
-// when it comes after all, is dropped: it completes no other request.
+// when it comes after all, is dropped: it completes no other request, and
+// is counted by OnLateAck, as is an acknowledgement that answers nothing.
 func TestCancelledRequestAndLateAnswer(t *testing.T) {
 	saved := dial
 	t.Cleanup(func() { dial = saved })
@@ -40,7 +42,8 @@ func TestCancelledRequestAndLateAnswer(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, err := Dial(ctx, "mqtt://broker.invalid", Options{})
+	var late atomic.Int32
+	conn, err := Dial(ctx, "mqtt://broker.invalid", Options{OnLateAck: func() { late.Add(1) }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,5 +97,26 @@ func TestCancelledRequestAndLateAnswer(t *testing.T) {
 	suback(id2, 1)
 	if err := <-second; err != nil {
 		t.Errorf("the next request: %v", err)
+	}
+	// The connection reads in order: the late answer was read before the
+	// one that ended the second request.
+	if n := late.Load(); n != 1 {
+		t.Errorf("OnLateAck was called %d times for one late answer", n)
+	}
+
+	// A PUBACK of an identifier that was never asked for, then a third
+	// request, whose answer is read after it.
+	if _, err := broker.Write(Ack(TypePuback, id2+100).Encode()); err != nil {
+		t.Fatal(err)
+	}
+	third := make(chan error, 1)
+	go func() { third <- conn.Subscribe(ctx, "e/f") }()
+	id3 := next()
+	suback(id3, 1)
+	if err := <-third; err != nil {
+		t.Errorf("the third request: %v", err)
+	}
+	if n := late.Load(); n != 2 {
+		t.Errorf("OnLateAck was called %d times for two acknowledgements nothing waited for", n)
 	}
 }

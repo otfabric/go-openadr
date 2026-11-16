@@ -42,3 +42,34 @@ func TestParse(t *testing.T) {
 		}
 	}
 }
+
+func TestSet(t *testing.T) {
+	var s Set
+	if s.Has() {
+		t.Fatal("the zero Set has the calling goroutine")
+	}
+	leave := s.Enter()
+	if !s.Has() {
+		t.Fatal("not in the Set after Enter")
+	}
+	other := make(chan bool)
+	go func() { other <- s.Has() }()
+	if <-other {
+		t.Error("another goroutine is in the Set")
+	}
+	again := s.Enter()
+	leave()
+	if !s.Has() {
+		t.Error("not in the Set after one of two Enters left")
+	}
+	// Left on another goroutine: the one that entered is out.
+	done := make(chan struct{})
+	go func() { again(); close(done) }()
+	<-done
+	if s.Has() {
+		t.Error("in the Set after both Enters left")
+	}
+	if len(s.ids) != 0 {
+		t.Errorf("the Set keeps %d goroutines after all left", len(s.ids))
+	}
+}

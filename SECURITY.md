@@ -138,6 +138,7 @@ The same holds for a store on a database, such as those in `examples/storage`: t
 Nothing is logged or counted unless a logger or a metrics implementation is configured. When one is:
 
 - Bodies, bearer tokens, client secrets and the query of a callback URL are never logged. The webhook sender takes the query out of the error of a failed request too, before it is logged, given to `Metrics.OnFailed` or to the done function of `SendConfirmed`
+- The webhook handler logs neither the path nor the query of a request, and what the request chose (its method, the reason its body is not a notification) is cut to 256 bytes and quoted
 - A debug line of a call or request names the operation (`GET /events/{id}`), not the path. An error line names the path, which holds an object ID; object IDs are not secrets in OpenADR, but they are in your logs then
 - The labels given to metrics are operations, statuses, mechanisms and object types: a fixed set that a client cannot widen. A request to a path the VTN does not have is counted as `other`
 - An error passed to a metrics callback is the error the caller gets, with its path and the VTN's detail. Label by category (`errors.Is`), do not use its text as a label
